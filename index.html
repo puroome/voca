@@ -87,7 +87,7 @@
             </div>
         </div>
 
-        <button id="home-btn" class="hidden fixed top-4 right-4 bg-gray-700 hover:bg-gray-800 text-white font-bold p-3 rounded-full shadow-lg z-50" title="학년 선택으로 돌아가기">
+        <button id="home-btn" class="hidden fixed top-4 right-4 bg-gray-700 hover:bg-gray-800 text-white font-bold p-3 rounded-full shadow-lg z-50" title="모드 선택으로 돌아가기">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
         </button>
         
@@ -211,7 +211,7 @@
         let speechVoices = [];
         
         const backgroundImages = [
- 'https://raw.githubusercontent.com/puroome/voca/747ced4d5580ea02cb49f9959bda16614bd32cd3/batch_batch_1.jpg',
+'https://raw.githubusercontent.com/puroome/voca/747ced4d5580ea02cb49f9959bda16614bd32cd3/batch_batch_1.jpg',
 'https://raw.githubusercontent.com/puroome/voca/747ced4d5580ea02cb49f9959bda16614bd32cd3/batch_batch_2.jpg',
 'https://raw.githubusercontent.com/puroome/voca/747ced4d5580ea02cb49f9959bda16614bd32cd3/batch_batch_3.jpg',
 'https://raw.githubusercontent.com/puroome/voca/747ced4d5580ea02cb49f9959bda16614bd32cd3/batch_batch_4.jpg',
@@ -348,12 +348,37 @@
         });
 
         homeBtn.addEventListener('click', () => {
-            [quizModeContainer, learningModeContainer, selectionScreen, homeBtn].forEach(el => el.classList.add('hidden'));
-            gradeSelectionScreen.classList.remove('hidden');
+            // =============================================
+            // ===== 수정된 부분 시작 =========================
+            // =============================================
+            // 활성화된 모드 컨테이너들을 숨깁니다.
+            quizModeContainer.classList.add('hidden');
+            learningModeContainer.classList.add('hidden');
+
+            // 학습 모드 내부의 화면들을 명시적으로 초기 상태로 되돌립니다.
+            const learning_appContainer = document.getElementById('learning-app-container');
+            const learning_startScreen = document.getElementById('learning-start-screen');
+            const learning_loader = document.getElementById('learning-loader');
+            
+            learning_appContainer.classList.add('hidden'); // 단어 학습 화면 숨기기
+            learning_loader.classList.add('hidden'); // 로더 숨기기
+            learning_startScreen.classList.remove('hidden'); // *** 시작 화면 다시 보이게 하기 (핵심 수정) ***
+
+            // 모드 선택 화면을 보여줍니다.
+            selectionScreen.classList.remove('hidden');
+
+            // 학습/퀴즈 모드의 데이터와 상태를 초기화합니다.
             learning_resetStartScreen();
-            selectedSheet = '';
-            document.documentElement.style.setProperty('--bg-image', 'url("")');
+            learning_wordList = [];
+            learning_currentIndex = 0;
+            
+            quiz_shouldPreload = false; 
+            quiz_preloadedQuizzes = [];
+            // =============================================
+            // ===== 수정된 부분 끝 ===========================
+            // =============================================
         });
+
 
         document.addEventListener('mousemove', (e) => {
             if (!translationTooltip.classList.contains('hidden')) {
@@ -640,7 +665,7 @@
             learning_suggestionsContainer.classList.add('hidden');
             document.getElementById('learning-start-input-container').classList.remove('hidden');
             learning_startWordInput.value = '';
-            learning_startWordInput.focus();
+            // Don't focus automatically on reset, only when entering the screen.
         }
 
         async function startLearningMode() {
@@ -697,7 +722,7 @@
 
         learning_startBtn.addEventListener('click', startLearningMode);
         learning_startWordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') startLearningMode(); });
-        learning_backToStartBtn.addEventListener('click', learning_resetStartScreen);
+        learning_backToStartBtn.addEventListener('click', () => { learning_resetStartScreen(); learning_startWordInput.focus(); });
         learning_nextBtn.addEventListener('click', () => { learning_currentIndex = (learning_currentIndex + 1) % learning_wordList.length; learning_displayWord(learning_currentIndex); });
         learning_prevBtn.addEventListener('click', () => { learning_currentIndex = (learning_currentIndex - 1 + learning_wordList.length) % learning_wordList.length; learning_displayWord(learning_currentIndex); });
         learning_wordDisplay.addEventListener('click', () => {
@@ -731,4 +756,3 @@
     </script>
 </body>
 </html>
-
