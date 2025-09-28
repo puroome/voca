@@ -89,7 +89,6 @@
             </div>
         </div>
 
-        <!-- [수정] 좌측 상단 버튼 추가 -->
         <button id="back-to-grade-selection-btn" class="hidden fixed top-4 left-4 bg-indigo-700 hover:bg-indigo-800 text-white font-bold p-3 rounded-full shadow-lg z-[110]" title="학년 선택으로 돌아가기">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
         </button>
@@ -207,7 +206,7 @@
         const selectQuizBtn = document.getElementById('select-quiz-btn');
         const selectLearningBtn = document.getElementById('select-learning-btn');
         const homeBtn = document.getElementById('home-btn');
-        const backToGradeSelectionBtn = document.getElementById('back-to-grade-selection-btn'); // [수정] 새 버튼 변수
+        const backToGradeSelectionBtn = document.getElementById('back-to-grade-selection-btn');
         const translationTooltip = document.getElementById('translation-tooltip');
         const quizModeContainer = document.getElementById('quiz-mode-container');
         const learningModeContainer = document.getElementById('learning-mode-container');
@@ -340,7 +339,7 @@
                 selectionTitle.textContent = `${button.textContent} 어휘`;
                 selectionScreen.classList.remove('hidden');
                 homeBtn.classList.remove('hidden');
-                backToGradeSelectionBtn.classList.remove('hidden'); // [수정] 새 버튼 보이기
+                backToGradeSelectionBtn.classList.remove('hidden');
                 setBackgroundImage();
             });
         });
@@ -357,22 +356,17 @@
             learning_startWordInput.focus();
         });
         
-        // [수정] 좌측 상단 버튼 클릭 이벤트
         backToGradeSelectionBtn.addEventListener('click', () => {
-            // 모든 화면 숨기기
             quizModeContainer.classList.add('hidden');
             learningModeContainer.classList.add('hidden');
             selectionScreen.classList.add('hidden');
             quiz_finishedScreen.classList.add('hidden');
 
-            // 상단 버튼들 숨기기
             homeBtn.classList.add('hidden');
             backToGradeSelectionBtn.classList.add('hidden');
 
-            // 학년 선택 화면만 보이기
             gradeSelectionScreen.classList.remove('hidden');
 
-            // 모든 상태 초기화
             selectedSheet = '';
             document.documentElement.style.setProperty('--bg-image', 'url("")');
             learning_resetStartScreen();
@@ -487,6 +481,9 @@
                 quiz_currentQuiz = data;
                 quiz_displayQuiz(quiz_currentQuiz.question, quiz_currentQuiz.choices);
 
+                // [수정] 현재 퀴즈를 표시한 직후, 다음 퀴즈 미리 불러오기 시작
+                quiz_preloadNext();
+
             } catch (error) {
                 quiz_showError(error.message);
             } finally {
@@ -497,7 +494,6 @@
         function startQuizMode() {
             quiz_nextQuizPromise = null;
             quiz_currentQuiz = null;
-            quiz_preloadNext(); 
             quiz_showNext();
         }
 
@@ -533,7 +529,7 @@
                 });
             }
             
-            quiz_preloadNext();
+            // [수정] 미리 불러오는 호출을 여기서 제거
             setTimeout(quiz_showNext, 1500);
         }
 
@@ -578,7 +574,7 @@
         }
         
         quiz_passBtn.addEventListener('click', () => {
-            quiz_preloadNext();
+             // [수정] PASS 버튼에서는 다음 문제를 바로 보여주기만 함
             quiz_showNext();
         });
         quiz_sampleBtn.addEventListener('click', () => quiz_handleFlip('sample'));
