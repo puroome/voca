@@ -154,7 +154,8 @@
                 <div id="word-header" class="bg-green-100 p-6 rounded-lg mb-4">
                     <h1 id="word-display" class="text-4xl sm:text-5xl font-bold text-center text-gray-800 break-all" title="클릭하여 발음 듣기 및 복사"></h1>
                 </div>
-                <p id="pos-display" class="text-gray-600 text-center text-lg mb-6"></p>
+                <!-- POS 정보가 표시되던 p 태그. 이제 사용되지 않으므로 hidden 클래스 추가 -->
+                <p id="pos-display" class="text-gray-600 text-center text-lg mb-6 hidden"></p>
 
                 <div class="space-y-4">
                     <div id="meaning-container" class="border-2 border-gray-200 p-4 rounded-lg">
@@ -348,9 +349,6 @@
         });
 
         homeBtn.addEventListener('click', () => {
-            // =============================================
-            // ===== 수정된 부분 시작 =========================
-            // =============================================
             // 활성화된 모드 컨테이너들을 숨깁니다.
             quizModeContainer.classList.add('hidden');
             learningModeContainer.classList.add('hidden');
@@ -374,9 +372,6 @@
             
             quiz_shouldPreload = false; 
             quiz_preloadedQuizzes = [];
-            // =============================================
-            // ===== 수정된 부분 끝 ===========================
-            // =============================================
         });
 
 
@@ -590,7 +585,7 @@
         quiz_explanationBtn.addEventListener('click', () => quiz_handleFlip('explanation'));
         quiz_wordEl.addEventListener('click', () => speak(quiz_wordEl.textContent));
 
-        // ===== 학습 모드 로직 (이전과 동일) =====
+        // ===== 학습 모드 로직 =====
         const learning_startScreen = document.getElementById('learning-start-screen');
         const learning_startWordInput = document.getElementById('learning-start-word-input');
         const learning_startBtn = document.getElementById('learning-start-btn');
@@ -631,7 +626,8 @@
             const wordData = learning_wordList[index];
             if (!wordData) return;
             learning_wordDisplay.textContent = wordData.word;
-            learning_posDisplay.textContent = wordData.pos;
+            // POS 정보 표시 라인 제거
+            // learning_posDisplay.textContent = wordData.pos; 
             learning_meaningDisplay.innerHTML = wordData.meaning.replace(/\n/g, '<br>');
             renderInteractiveText(learning_explanationDisplay, wordData.explanation);
             const hasExplanation = wordData.explanation && wordData.explanation.trim();
@@ -665,7 +661,6 @@
             learning_suggestionsContainer.classList.add('hidden');
             document.getElementById('learning-start-input-container').classList.remove('hidden');
             learning_startWordInput.value = '';
-            // Don't focus automatically on reset, only when entering the screen.
         }
 
         async function startLearningMode() {
@@ -756,3 +751,4 @@
     </script>
 </body>
 </html>
+
