@@ -542,14 +542,15 @@
                 
                 quiz_currentQuiz = data;
                 quiz_displayQuiz(quiz_currentQuiz.question, quiz_currentQuiz.choices);
-
-                // [수정] 현재 퀴즈를 표시한 직후, 다음 퀴즈 미리 불러오기 시작
                 quiz_preloadNext();
 
             } catch (error) {
                 quiz_showError(error.message);
             } finally {
                 quiz_showLoader(false);
+                if(quiz_currentQuiz) {
+                    adjustFontSize(quiz_wordEl);
+                }
             }
         }
         
@@ -563,7 +564,7 @@
             quiz_card.classList.remove('is-flipped');
             quiz_flippedContentType = null;
             quiz_wordEl.textContent = word;
-            adjustFontSize(quiz_wordEl);
+            
             quiz_choicesEl.innerHTML = '';
             choices.forEach((choice, index) => {
                 const li = document.createElement('li');
@@ -593,7 +594,6 @@
                 });
             }
             
-            // [수정] 미리 불러오는 호출을 여기서 제거
             setTimeout(quiz_showNext, 1500);
         }
 
@@ -654,7 +654,6 @@
         }
         
         quiz_passBtn.addEventListener('click', () => {
-             // [수정] PASS 버튼에서는 다음 문제를 바로 보여주기만 함
              quiz_showNext();
         });
         quiz_sampleBtn.addEventListener('click', () => quiz_handleFlip('sample'));
