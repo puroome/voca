@@ -76,7 +76,10 @@
              </div>
         </div>
         
-        <div id="selection-screen" class="hidden content-panel p-8 rounded-2xl shadow-lg text-center">
+        <div id="selection-screen" class="hidden content-panel p-8 rounded-2xl shadow-lg text-center relative">
+            <a id="sheet-link" href="#" target="_blank" class="hidden absolute top-6 right-6 bg-gray-200 hover:bg-gray-300 text-gray-600 p-2 rounded-full shadow-sm z-[110]" title="단어 목록 시트 열기">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+            </a>
             <h1 id="selection-title" class="text-3xl font-bold text-gray-800 mb-2"></h1>
             <p class="text-gray-600 mb-8">원하는 학습 방식을 선택하세요.</p>
             <div class="space-y-4">
@@ -90,10 +93,10 @@
         </div>
 
         <button id="back-to-grade-selection-btn" class="hidden fixed top-4 left-4 bg-indigo-700 hover:bg-indigo-800 text-white font-bold p-3 rounded-full shadow-lg z-[110]" title="학년 선택으로 돌아가기">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
         </button>
         <button id="home-btn" class="hidden fixed top-4 right-4 bg-gray-700 hover:bg-gray-800 text-white font-bold p-3 rounded-full shadow-lg z-[110]" title="모드 선택으로 돌아가기">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
         </button>
         
         <div id="quiz-mode-container" class="hidden content-panel w-full p-6 sm:p-8 rounded-2xl shadow-lg">
@@ -208,6 +211,7 @@
         const homeBtn = document.getElementById('home-btn');
         const backToGradeSelectionBtn = document.getElementById('back-to-grade-selection-btn');
         const translationTooltip = document.getElementById('translation-tooltip');
+        const sheetLink = document.getElementById('sheet-link');
         const quizModeContainer = document.getElementById('quiz-mode-container');
         const learningModeContainer = document.getElementById('learning-mode-container');
 
@@ -216,6 +220,12 @@
         let tooltipTimeout;
         let speechVoices = [];
         
+        const sheetLinks = {
+            '1y': 'https://docs.google.com/spreadsheets/d/1r7fWUV1ea9CU-s2iSOwLKexEe2_7L8oUKhK0n1DpDUM/edit?usp=sharing',
+            '2y': 'https://docs.google.com/spreadsheets/d/1Xydj0im3Cqq9JhjN8IezZ-7DBp1-DV703cCIb3ORdc8/edit?usp=sharing',
+            '3y': 'https://docs.google.com/spreadsheets/d/1Z_n9IshFSC5cBBW6IkZNfQsLb2BBrp9QeOlsGsCkn2Y/edit?usp=sharing'
+        };
+
         const backgroundImages = [
 'https://raw.githubusercontent.com/puroome/voca/747ced4d5580ea02cb49f9959bda16614bd32cd3/batch_batch_1.jpg',
 'https://raw.githubusercontent.com/puroome/voca/747ced4d5580ea02cb49f9959bda16614bd32cd3/batch_batch_2.jpg',
@@ -340,6 +350,8 @@
                 selectionScreen.classList.remove('hidden');
                 homeBtn.classList.remove('hidden');
                 backToGradeSelectionBtn.classList.remove('hidden');
+                sheetLink.href = sheetLinks[selectedSheet];
+                sheetLink.classList.remove('hidden');
                 setBackgroundImage();
             });
         });
@@ -364,6 +376,7 @@
 
             homeBtn.classList.add('hidden');
             backToGradeSelectionBtn.classList.add('hidden');
+            sheetLink.classList.add('hidden');
 
             gradeSelectionScreen.classList.remove('hidden');
 
@@ -575,7 +588,7 @@
         
         quiz_passBtn.addEventListener('click', () => {
              // [수정] PASS 버튼에서는 다음 문제를 바로 보여주기만 함
-            quiz_showNext();
+             quiz_showNext();
         });
         quiz_sampleBtn.addEventListener('click', () => quiz_handleFlip('sample'));
         quiz_explanationBtn.addEventListener('click', () => quiz_handleFlip('explanation'));
@@ -745,4 +758,5 @@
     </script>
 </body>
 </html>
+"
 
