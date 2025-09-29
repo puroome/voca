@@ -58,6 +58,10 @@
         .correct { background-color: #28a745 !important; color: white !important; transform: scale(1.05); border-color: #28a745; }
         .incorrect { background-color: #dc3545 !important; color: white !important; border-color: #dc3545; }
         .disabled { pointer-events: none; opacity: 0.7; }
+        #word-display, #quiz-word {
+            white-space: nowrap; /* 자동 줄바꿈 방지 */
+            overflow: hidden; /* 넘치는 부분 숨기기 */
+        }
         #word-display:hover, .sample-sentence:hover { cursor: pointer; }
     </style>
 </head>
@@ -151,15 +155,15 @@
 
             <div id="learning-app-container" class="hidden content-panel p-6 sm:p-8 rounded-2xl shadow-lg">
                 <div id="word-header" class="bg-green-100 p-6 rounded-lg mb-4">
-                    <h1 id="word-display" class="text-4xl sm:text-5xl font-bold text-center text-gray-800 break-all" title="클릭하여 발음 듣기 및 복사"></h1>
+                    <h1 id="word-display" class="text-4xl sm:text-5xl font-bold text-center text-gray-800" title="클릭하여 발음 듣기 및 복사"></h1>
                 </div>
                 <p id="pos-display" class="text-gray-600 text-center text-lg mb-6 hidden"></p>
 
                 <div class="space-y-4">
-                    <div id="meaning-container" class="border-2 border-gray-200 p-4 rounded-lg">
+                    <div id="meaning-container" class="bg-white/60 p-4 rounded-lg">
                         <p class="text-gray-700 text-lg" id="meaning-display"></p>
                     </div>
-                    <div id="explanation-container" class="bg-gray-50 p-4 rounded-lg min-h-[100px]">
+                    <div id="explanation-container" class="bg-white/60 p-4 rounded-lg min-h-[100px]">
                         <div class="text-gray-700 whitespace-pre-wrap" id="explanation-display"></div>
                     </div>
                 </div>
@@ -257,6 +261,26 @@
             'https://i.imgur.com/pANKqmX.jpeg',
             'https://i.imgur.com/HFcG7SI.jpeg'
         ];
+
+        function adjustFontSize(element) {
+            // Reset font size to default defined by CSS classes
+            element.style.fontSize = '';
+
+            let currentFontSize = parseFloat(window.getComputedStyle(element).fontSize);
+            const container = element.parentElement;
+            
+            // Subtract padding from container width for accurate measurement
+            const containerStyle = window.getComputedStyle(container);
+            const containerWidth = container.clientWidth - parseFloat(containerStyle.paddingLeft) - parseFloat(containerStyle.paddingRight);
+
+            const minFontSize = 16; // Minimum font size in pixels
+
+            // Reduce font size until text fits within the container
+            while (element.scrollWidth > containerWidth && currentFontSize > minFontSize) {
+                currentFontSize--;
+                element.style.fontSize = currentFontSize + 'px';
+            }
+        }
 
         function setBackgroundImage() {
             if (backgroundImages.length === 0) return;
@@ -482,6 +506,7 @@
         
         let quiz_currentQuiz = null;
         let quiz_nextQuizPromise = null;
+        let quiz_flippedContentType = null;
 
         async function quiz_fetchData() {
             const url = new URL(SCRIPT_URL);
@@ -516,7 +541,6 @@
                 quiz_currentQuiz = data;
                 quiz_displayQuiz(quiz_currentQuiz.question, quiz_currentQuiz.choices);
 
-                // [수정] 현재 퀴즈를 표시한 직후, 다음 퀴즈 미리 불러오기 시작
                 quiz_preloadNext();
 
             } catch (error) {
@@ -534,11 +558,13 @@
 
         function quiz_displayQuiz({ word, sample, explanation }, choices) {
             quiz_card.classList.remove('is-flipped');
+            quiz_flippedContentType = null;
             quiz_wordEl.textContent = word;
+            adjustFontSize(quiz_wordEl);
             quiz_choicesEl.innerHTML = '';
             choices.forEach((choice, index) => {
                 const li = document.createElement('li');
-                li.className = 'choice-item border-2 border-gray-300 p-4 rounded-lg cursor-pointer flex items-start transition-all';
+                li.className = 'choice-item bg-white/60 hover:bg-white/80 p-4 rounded-lg cursor-pointer flex items-start transition-all';
                 li.innerHTML = `<span class="font-bold mr-3">${index + 1}.</span> <span>${choice}</span>`;
                 li.onclick = () => quiz_checkAnswer(li, choice);
                 quiz_choicesEl.appendChild(li);
@@ -564,7 +590,6 @@
                 });
             }
             
-            // [수정] 미리 불러오는 호출을 여기서 제거
             setTimeout(quiz_showNext, 1500);
         }
 
@@ -588,7 +613,9 @@
         }
         
         function quiz_handleFlip(type) {
-            if (quiz_card.classList.toggle('is-flipped')) {
+            const isFlipped = quiz_card.classList.contains('is-flipped');
+
+            const updateContent = () => {
                 const { word, sample, explanation } = quiz_currentQuiz.question;
                 quiz_backTitleEl.textContent = word;
                 quiz_backContentEl.innerHTML = '';
@@ -602,14 +629,27 @@
                         p.addEventListener('mouseout', handleSentenceMouseOut);
                         quiz_backContentEl.appendChild(p);
                     });
-                } else {
+                } else { // 'explanation'
                     renderInteractiveText(quiz_backContentEl, explanation);
                 }
+            };
+
+            if (isFlipped) {
+                if (quiz_flippedContentType !== type) {
+                    updateContent();
+                    quiz_flippedContentType = type;
+                } else {
+                    quiz_card.classList.remove('is-flipped');
+                    quiz_flippedContentType = null;
+                }
+            } else {
+                updateContent();
+                quiz_card.classList.add('is-flipped');
+                quiz_flippedContentType = type;
             }
         }
         
         quiz_passBtn.addEventListener('click', () => {
-             // [수정] PASS 버튼에서는 다음 문제를 바로 보여주기만 함
              quiz_showNext();
         });
         quiz_sampleBtn.addEventListener('click', () => quiz_handleFlip('sample'));
@@ -657,6 +697,7 @@
             const wordData = learning_wordList[index];
             if (!wordData) return;
             learning_wordDisplay.textContent = wordData.word;
+            adjustFontSize(learning_wordDisplay);
             learning_meaningDisplay.innerHTML = wordData.meaning.replace(/\n/g, '<br>');
             renderInteractiveText(learning_explanationDisplay, wordData.explanation);
             const hasExplanation = wordData.explanation && wordData.explanation.trim();
