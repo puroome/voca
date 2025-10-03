@@ -8,7 +8,25 @@ const app = {
             '1y': 'https://docs.google.com/spreadsheets/d/1r7fWUV1ea9CU-s2iSOwLKexEe2_7L8oUKhK0n1DpDUM/edit?usp=sharing',
             '2y': 'https://docs.google.com/spreadsheets/d/1Xydj0im3Cqq9JhjN8IezZ-7DBp1-DV703cCIb3ORdc8/edit?usp=sharing',
             '3y': 'https://docs.google.com/spreadsheets/d/1Z_n9IshFSC5cBBW6IkZNfQsLb2BBrp9QeOlsGsCkn2Y/edit?usp=sharing'
-        }
+        },
+        backgroundImages: [
+            'https://i.imgur.com/EvyV4x7.jpeg', 'https://i.imgur.com/xsnT8kO.jpeg',
+            'https://i.imgur.com/6gZtYDb.jpeg', 'https://i.imgur.com/SUVavHy.jpeg',
+            'https://i.imgur.com/JPAS1Cd.jpeg', 'https://i.imgur.com/Zv6jaCy.jpeg',
+            'https://i.imgur.com/ciQJtXo.jpeg', 'https://i.imgur.com/Gf3WIPZ.jpeg',
+            'https://i.imgur.com/LWQcDqg.jpeg', 'https://i.imgur.com/PBj5fpV.jpeg',
+            'https://i.imgur.com/zh67pPT.jpeg', 'https://i.imgur.com/k634cYs.jpeg',
+            'https://i.imgur.com/7KkgrB7.jpeg', 'https://i.imgur.com/alzwny5.jpeg',
+            'https://i.imgur.com/yUD82Tz.jpeg', 'https://i.imgur.com/45Lwias.jpeg',
+            'https://i.imgur.com/FalU86P.jpeg', 'https://i.imgur.com/NHCqHZd.jpeg',
+            'https://i.imgur.com/W1jMwGn.jpeg', 'https://i.imgur.com/yYwMN6q.jpeg',
+            'https://i.imgur.com/k8yhWVh.jpeg', 'https://i.imgur.com/cjtzRMf.jpeg',
+            'https://i.imgur.com/0nzdeg7.jpeg', 'https://i.imgur.com/Nv1c6o5.jpeg',
+            'https://i.imgur.com/VIZD0qs.jpeg', 'https://i.imgur.com/26HvkAH.jpeg',
+            'https://i.imgur.com/fuA0knu.jpeg', 'https://i.imgur.com/ig4y2TO.jpeg',
+            'https://i.imgur.com/ixv60Wf.jpeg', 'https://i.imgur.com/pANKqmX.jpeg',
+            'https://i.imgur.com/HFcG7SI.jpeg'
+        ]
     },
     state: {
         selectedSheet: '',
@@ -20,7 +38,7 @@ const app = {
         selectionScreen: document.getElementById('selection-screen'),
         selectionTitle: document.getElementById('selection-title'),
         sheetLink: document.getElementById('sheet-link'),
-        authorCredit: document.getElementById('author-credit'), // 제작자 문구 요소 추가
+        authorCredit: document.getElementById('author-credit'),
         quizModeContainer: document.getElementById('quiz-mode-container'),
         learningModeContainer: document.getElementById('learning-mode-container'),
         homeBtn: document.getElementById('home-btn'),
@@ -48,7 +66,8 @@ const app = {
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.homeBtn.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                this.elements.authorCredit.classList.remove('hidden'); // 제작자 문구 표시
+                this.elements.authorCredit.classList.remove('hidden');
+                this.setBackgroundImage();
             });
         });
 
@@ -87,9 +106,10 @@ const app = {
         this.elements.homeBtn.classList.add('hidden');
         this.elements.backToGradeSelectionBtn.classList.add('hidden');
         this.elements.sheetLink.classList.add('hidden');
-        this.elements.authorCredit.classList.add('hidden'); // 제작자 문구 숨기기
+        this.elements.authorCredit.classList.add('hidden');
         this.state.selectedSheet = '';
         this.elements.gradeSelectionScreen.classList.remove('hidden');
+        this.clearBackgroundImage();
     },
     showImeWarning() {
         this.elements.imeWarning.classList.remove('hidden');
@@ -105,6 +125,15 @@ const app = {
             msgEl.classList.add('opacity-0');
             setTimeout(() => msgEl.classList.add('hidden'), 500);
         }, 1500);
+    },
+    setBackgroundImage() {
+        if (this.config.backgroundImages.length === 0) return;
+        const randomIndex = Math.floor(Math.random() * this.config.backgroundImages.length);
+        const imageUrl = this.config.backgroundImages[randomIndex];
+        document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
+    },
+    clearBackgroundImage() {
+        document.documentElement.style.setProperty('--bg-image', 'url("")');
     }
 };
 
