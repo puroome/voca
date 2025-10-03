@@ -31,18 +31,18 @@
              <h1 class="text-3xl font-bold text-gray-800 mb-2">어휘 학습</h1>
              <p class="text-gray-600 mb-8">학습할 학년을 선택하세요.</p>
              <div class="grid grid-cols-3 gap-6 items-end perspective-container">
-                 <div class="grade-select-card" data-sheet="1y">
-                    <img src="https://images.icon-icons.com/1055/PNG/128/2-tag-cat_icon-icons.com_76678.png" alt="1학년" class="grade-1 w-full h-auto rounded-lg group">
-                    <span class="text-4xl mt-4 block emoji">🕐</span>
-                 </div>
-                 <div class="grade-select-card" data-sheet="2y">
-                    <img src="https://images.icon-icons.com/1055/PNG/128/17-cart-cat_icon-icons.com_76693.png" alt="2학년" class="grade-2 w-full h-auto rounded-lg group">
-                    <span class="text-4xl mt-4 block emoji">🕑</span>
-                 </div>
-                 <div class="grade-select-card" data-sheet="3y">
-                    <img src="https://images.icon-icons.com/1055/PNG/128/10-info-cat_icon-icons.com_76686.png" alt="3학년" class="grade-3 w-full h-auto rounded-lg group">
-                    <span class="text-4xl mt-4 block emoji">🕒</span>
-                 </div>
+                   <div class="grade-select-card" data-sheet="1y">
+                        <img src="https://images.icon-icons.com/1055/PNG/128/2-tag-cat_icon-icons.com_76678.png" alt="1학년" class="grade-1 w-full h-auto rounded-lg group">
+                        <span class="text-4xl mt-4 block emoji">🕐</span>
+                   </div>
+                   <div class="grade-select-card" data-sheet="2y">
+                        <img src="https://images.icon-icons.com/1055/PNG/128/17-cart-cat_icon-icons.com_76693.png" alt="2학년" class="grade-2 w-full h-auto rounded-lg group">
+                        <span class="text-4xl mt-4 block emoji">🕑</span>
+                   </div>
+                   <div class="grade-select-card" data-sheet="3y">
+                        <img src="https://images.icon-icons.com/1055/PNG/128/10-info-cat_icon-icons.com_76686.png" alt="3학년" class="grade-3 w-full h-auto rounded-lg group">
+                        <span class="text-4xl mt-4 block emoji">🕒</span>
+                   </div>
              </div>
         </div>
         
@@ -56,54 +56,52 @@
             </a>
             <h1 id="selection-title" class="text-3xl font-bold text-gray-800 mb-2"></h1>
             <p class="text-gray-600 mb-8">원하는 학습 방식을 선택하세요.</p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1 mt-8 mb-1">
-                <div>
-                    <div id="select-learning-btn" class="cursor-pointer group" title="학습 모드">
-                        <div class="overflow-hidden rounded-2xl shadow-lg group-hover:shadow-2xl transition-all duration-300 transform group-hover:scale-105 w-44 h-44 mx-auto">
-                            <img src="https://i.imgur.com/wLzv3kG.jpeg" alt="학습 모드 이미지" class="w-full h-full object-cover">
-                        </div>
+            <div class="flex flex-col sm:flex-row justify-center items-center sm:gap-x-20 gap-y-0 mt-0 mb-0">
+                <!-- 학습 모드 버튼 -->
+                <div class="flex flex-col items-center group cursor-pointer">
+                    <div id="select-learning-btn" class="overflow-hidden rounded-2xl shadow-lg group-hover:shadow-2xl transition-all duration-300 transform group-hover:scale-105 group-hover:-rotate-2 w-44 h-44" title="학습 모드">
+                        <img src="https://i.imgur.com/wLzv3kG.jpeg" alt="학습 모드 이미지" class="w-full h-full object-cover">
                     </div>
-                    <p class="mt-2 font-semibold text-transparent text-lg">학습 모드</p>
+                    <p class="mt-4 font-semibold text-transparent text-lg">학습 모드</p>
                 </div>
-                <div>
-                    <div id="select-quiz-btn" class="cursor-pointer group" title="퀴즈 모드">
-                        <div class="overflow-hidden rounded-2xl shadow-lg group-hover:shadow-2xl transition-all duration-300 transform group-hover:scale-105 w-44 h-44 mx-auto">
-                            <img src="https://i.imgur.com/9oREKDY.jpeg" alt="퀴즈 모드 이미지" class="w-full h-full object-cover">
-                        </div>
+                <!-- 퀴즈 모드 버튼 -->
+                <div class="flex flex-col items-center group cursor-pointer">
+                    <div id="select-quiz-btn" class="overflow-hidden rounded-2xl shadow-lg group-hover:shadow-2xl transition-all duration-300 transform group-hover:scale-105 group-hover:rotate-2 w-44 h-44" title="퀴즈 모드">
+                        <img src="https://i.imgur.com/9oREKDY.jpeg" alt="퀴즈 모드 이미지" class="w-full h-full object-cover">
                     </div>
-                    <p class="mt-2 font-semibold text-transparent text-lg">퀴즈 모드</p>
+                    <p class="mt-4 font-semibold text-transparent text-lg">퀴즈 모드</p>
                 </div>
             </div>
         </div>
         
         <div id="quiz-mode-container" class="hidden content-panel w-full p-4 sm:p-6 rounded-2xl shadow-lg">
              <div id="quiz-loader" class="text-center p-10">
-                 <div class="loader mx-auto"></div>
-                 <p id="quiz-loader-text" class="mt-4 text-gray-600">퀴즈 데이터를 불러오는 중...</p>
+                   <div class="loader mx-auto"></div>
+                   <p id="quiz-loader-text" class="mt-4 text-gray-600">퀴즈 데이터를 불러오는 중...</p>
              </div>
              <div id="quiz-content-container" class="hidden">
-                 <div class="relative">
-                    <div id="quiz-card-front" class="w-full">
-                        <div class="bg-green-100 p-3 rounded-lg mb-4 flex items-center justify-center">
-                            <h1 id="quiz-word" class="text-3xl sm:text-4xl font-bold text-center text-gray-800" title="클릭하여 발음 듣기"></h1>
+                   <div class="relative">
+                        <div id="quiz-card-front" class="w-full">
+                            <div class="bg-green-100 p-3 rounded-lg mb-4 flex items-center justify-center">
+                                <h1 id="quiz-word" class="text-3xl sm:text-4xl font-bold text-center text-gray-800" title="클릭하여 발음 듣기"></h1>
+                            </div>
+                            <div id="quiz-choices" class="space-y-4"></div>
                         </div>
-                        <div id="quiz-choices" class="space-y-4"></div>
-                    </div>
-                    <div id="quiz-card-back" class="w-full bg-gray-100 p-6 rounded-2xl hidden flex flex-col">
-                        <h2 id="quiz-back-title" class="text-2xl font-bold text-gray-800 mb-4 break-all flex-shrink-0"></h2>
-                        <div id="quiz-back-content" class="text-gray-700 whitespace-pre-wrap leading-relaxed overflow-y-auto flex-1"></div>
-                    </div>
-                 </div>
-                 <div id="quiz-button-container" class="mt-8 flex items-center space-x-4">
-                     <button id="quiz-pass-btn" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors">PASS</button>
-                     <button id="quiz-sample-btn" class="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors">예문</button>
-                     <button id="quiz-explanation-btn" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors hidden">보충자료</button>
-                 </div>
+                        <div id="quiz-card-back" class="w-full bg-gray-100 p-6 rounded-2xl hidden flex flex-col">
+                            <h2 id="quiz-back-title" class="text-2xl font-bold text-gray-800 mb-4 break-all flex-shrink-0"></h2>
+                            <div id="quiz-back-content" class="text-gray-700 whitespace-pre-wrap leading-relaxed overflow-y-auto flex-1"></div>
+                        </div>
+                   </div>
+                   <div id="quiz-button-container" class="mt-8 flex items-center space-x-4">
+                         <button id="quiz-pass-btn" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors">PASS</button>
+                         <button id="quiz-sample-btn" class="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors">예문</button>
+                         <button id="quiz-explanation-btn" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors hidden">보충자료</button>
+                   </div>
              </div>
              <div id="quiz-finished-screen" class="hidden text-center p-10">
                 <h2 class="text-3xl font-bold text-green-500 mb-4">축하합니다!</h2>
                 <p id="quiz-finished-message" class="text-gray-700 text-lg"></p>
-            </div>
+             </div>
         </div>
 
         <div id="learning-mode-container" class="hidden">
@@ -166,6 +164,4 @@
     <script src="script.js"></script>
 </body>
 </html>
-
-
 
