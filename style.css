@@ -1,9 +1,38 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
 
+/* 배경 이미지를 위한 가상 요소 추가 */
+:root {
+    --bg-image: url('');
+}
+
 body {
     font-family: 'Noto Sans KR', sans-serif;
     -webkit-tap-highlight-color: transparent;
     background-color: #f1f5f9;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-image: var(--bg-image);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.3; /* 투명도 조절 */
+    z-index: -1;
+    background-color: #f1f5f9;
+    transition: background-image 1s ease-in-out;
+}
+
+/* 앱 내부 화면을 위한 반투명 유리 효과 스타일 */
+.content-panel {
+    background-color: rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
 }
 
 .loader {
