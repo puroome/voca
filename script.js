@@ -67,7 +67,6 @@ const app = {
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.homeBtn.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                this.elements.authorCredit.classList.remove('hidden');
                 this.setBackgroundImage(); // 학년 선택 시 새 배경으로 변경
             });
         });
@@ -107,7 +106,6 @@ const app = {
         this.elements.homeBtn.classList.add('hidden');
         this.elements.backToGradeSelectionBtn.classList.add('hidden');
         this.elements.sheetLink.classList.add('hidden');
-        this.elements.authorCredit.classList.add('hidden');
         this.state.selectedSheet = '';
         this.elements.gradeSelectionScreen.classList.remove('hidden');
         // 여기서는 배경을 지우지 않고 유지합니다.
