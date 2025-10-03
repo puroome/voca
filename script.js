@@ -48,6 +48,7 @@ const app = {
         noSampleMessage: document.getElementById('no-sample-message'),
     },
     init() {
+        this.setBackgroundImage(); // 초기 로드 시 배경 설정
         this.bindGlobalEvents();
         quizMode.init();
         learningMode.init();
@@ -67,7 +68,7 @@ const app = {
                 this.elements.homeBtn.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
                 this.elements.authorCredit.classList.remove('hidden');
-                this.setBackgroundImage();
+                this.setBackgroundImage(); // 학년 선택 시 새 배경으로 변경
             });
         });
 
@@ -109,7 +110,7 @@ const app = {
         this.elements.authorCredit.classList.add('hidden');
         this.state.selectedSheet = '';
         this.elements.gradeSelectionScreen.classList.remove('hidden');
-        this.clearBackgroundImage();
+        // 여기서는 배경을 지우지 않고 유지합니다.
     },
     showImeWarning() {
         this.elements.imeWarning.classList.remove('hidden');
@@ -131,9 +132,6 @@ const app = {
         const randomIndex = Math.floor(Math.random() * this.config.backgroundImages.length);
         const imageUrl = this.config.backgroundImages[randomIndex];
         document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
-    },
-    clearBackgroundImage() {
-        document.documentElement.style.setProperty('--bg-image', 'url("")');
     }
 };
 
