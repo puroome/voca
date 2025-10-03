@@ -22,17 +22,20 @@ body::before {
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    opacity: 0.3; /* 투명도 조절 */
+    opacity: 0.5; /* 외부 배경 진하게 */
     z-index: -1;
     background-color: #f1f5f9;
     transition: background-image 1s ease-in-out;
 }
 
-/* 앱 내부 화면을 위한 반투명 유리 효과 스타일 */
+/* 앱 내부 화면을 위한 반투명 스타일 (블러 제거) */
 .content-panel {
-    background-color: rgba(255, 255, 255, 0.65);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    background-color: rgba(255, 255, 255, 0.85); /* 내부 패널 진하게 */
+}
+
+/* 제작자 문구 스타일 */
+.author-text {
+    color: rgba(107, 114, 128, 0.8); /* gray-500, 80% opacity */
 }
 
 .loader {
@@ -61,12 +64,12 @@ body::before {
 }
 .grade-select-card img.group {
     cursor: pointer;
-    transition: transform 0.4s ease, box-shadow 0.4s ease;
+    transition: transform 0.4s ease, filter 0.4s ease; /* filter transition 추가 */
     transform-style: preserve-3d;
 }
 .grade-select-card img.group:hover {
     transform: translateY(-10px) rotateX(5deg) scale(1.05);
-    box-shadow: 0 20px 30px -10px rgba(0,0,0,0.2);
+    filter: drop-shadow(0 15px 10px rgba(0, 0, 0, 0.3)); /* box-shadow 대신 drop-shadow 사용 */
 }
 .grade-select-card .emoji {
     pointer-events: none;
