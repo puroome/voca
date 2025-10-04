@@ -20,6 +20,10 @@
             <div id="author-credit" class="absolute top-5 left-1/2 -translate-x-1/2">
                 <p class="author-text text-center text-sm font-semibold">Made by JEONG KAPSU</p>
             </div>
+            <!-- 새로고침 아이콘 추가 -->
+            <button id="refresh-btn" class="hidden absolute top-4 right-16 bg-green-600 hover:bg-green-700 text-white font-bold p-3 rounded-full shadow-lg pointer-events-auto" title="어휘 자료 새로고침">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            </button>
             <button id="home-btn" class="hidden absolute top-4 right-4 bg-gray-700 hover:bg-gray-800 text-white font-bold p-3 rounded-full shadow-lg pointer-events-auto" title="모드 선택으로 돌아가기">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
             </button>
@@ -158,10 +162,21 @@
         </div>
     </div>
     
+    <!-- 새로고침 확인 모달 및 메시지 추가 -->
+    <div id="confirmation-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
+        <div class="bg-white p-6 rounded-lg shadow-xl text-center w-11/12 max-w-sm">
+            <p id="confirmation-message" class="mb-4 text-lg">어휘자료가 새로고침됩니다. 계속하시겠습니까?</p>
+            <div class="flex justify-center gap-4">
+                <button id="confirm-yes-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg">예</button>
+                <button id="confirm-no-btn" class="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-6 rounded-lg">아니오</button>
+            </div>
+        </div>
+    </div>
+    <div id="refresh-success-message" class="hidden opacity-0 fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-green-600 text-white py-2 px-4 rounded-full text-lg font-bold transition-opacity duration-300 pointer-events-none">새로고침 완료!</div>
+
     <div id="no-sample-message" class="hidden opacity-0 fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-800 text-white py-2 px-4 rounded-full text-lg font-bold transition-opacity duration-300 pointer-events-none">예문이 없어요</div>
     <div id="translation-tooltip" class="hidden absolute bg-black bg-opacity-80 text-white text-sm rounded-lg py-2 px-3 z-[110] max-w-sm pointer-events-none"></div>
 
     <script src="script.js"></script>
 </body>
 </html>
-
