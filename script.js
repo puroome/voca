@@ -803,7 +803,8 @@ const learningMode = {
         if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
             this.navigate(deltaX > 0 ? -1 : 1);
         } else if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 50) {
-            if (!e.target.closest('#learning-card-front')) {
+            // 예문(뒷면)이 보이지 않을 때만, 그리고 카드 바깥 영역에서만 위쪽 스와이프를 통한 '다음' 기능이 작동하도록 수정
+            if (!this.elements.cardBack.classList.contains('is-slid-up') && !e.target.closest('#learning-card-front')) {
                 if (deltaY < 0) { // 위로 스와이프 했을 때
                     this.navigate(1); // 다음으로 이동
                 }
