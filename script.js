@@ -71,7 +71,6 @@ const app = {
 
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.homeBtn.classList.remove('hidden');
-                this.elements.refreshBtn.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
                 this.setBackgroundImage(); // 학년 선택 시 새 배경으로 변경
             });
@@ -99,9 +98,11 @@ const app = {
     changeMode(mode) {
         this.elements.selectionScreen.classList.add('hidden');
         if (mode === 'quiz') {
+            this.elements.refreshBtn.classList.add('hidden'); // 퀴즈 모드에서는 숨김
             this.elements.quizModeContainer.classList.remove('hidden');
             quizMode.start();
         } else if (mode === 'learning') {
+            this.elements.refreshBtn.classList.remove('hidden'); // 학습 모드 시작 화면에서 보임
             this.elements.learningModeContainer.classList.remove('hidden');
             learningMode.resetStartScreen();
         }
@@ -109,6 +110,7 @@ const app = {
     showModeSelection() {
         this.elements.quizModeContainer.classList.add('hidden');
         this.elements.learningModeContainer.classList.add('hidden');
+        this.elements.refreshBtn.classList.add('hidden'); // 모드 선택 화면으로 돌아갈 때 숨김
         quizMode.reset();
         learningMode.reset();
         this.elements.selectionScreen.classList.remove('hidden');
@@ -117,7 +119,6 @@ const app = {
         this.showModeSelection();
         this.elements.selectionScreen.classList.add('hidden');
         this.elements.homeBtn.classList.add('hidden');
-        this.elements.refreshBtn.classList.add('hidden');
         this.elements.backToGradeSelectionBtn.classList.add('hidden');
         this.elements.sheetLink.classList.add('hidden');
         this.state.selectedSheet = '';
@@ -655,6 +656,7 @@ const learningMode = {
         this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">오류 발생</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
     },
     launchApp() {
+        app.elements.refreshBtn.classList.add('hidden'); // 실제 학습 시작 시 숨김
         this.elements.startScreen.classList.add('hidden');
         this.elements.loader.classList.add('hidden');
         this.elements.appContainer.classList.remove('hidden');
@@ -798,3 +800,4 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
