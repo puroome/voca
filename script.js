@@ -43,9 +43,14 @@ const app = {
         learningModeContainer: document.getElementById('learning-mode-container'),
         homeBtn: document.getElementById('home-btn'),
         backToGradeSelectionBtn: document.getElementById('back-to-grade-selection-btn'),
+        refreshBtn: document.getElementById('refresh-btn'),
         translationTooltip: document.getElementById('translation-tooltip'),
         imeWarning: document.getElementById('ime-warning'),
         noSampleMessage: document.getElementById('no-sample-message'),
+        refreshSuccessMessage: document.getElementById('refresh-success-message'),
+        confirmationModal: document.getElementById('confirmation-modal'),
+        confirmYesBtn: document.getElementById('confirm-yes-btn'),
+        confirmNoBtn: document.getElementById('confirm-no-btn'),
     },
     init() {
         this.setBackgroundImage(); // 초기 로드 시 배경 설정
@@ -66,6 +71,7 @@ const app = {
 
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.homeBtn.classList.remove('hidden');
+                this.elements.refreshBtn.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
                 this.setBackgroundImage(); // 학년 선택 시 새 배경으로 변경
             });
@@ -76,11 +82,18 @@ const app = {
 
         this.elements.homeBtn.addEventListener('click', () => this.showModeSelection());
         this.elements.backToGradeSelectionBtn.addEventListener('click', () => this.showGradeSelection());
-
-        document.addEventListener('mousemove', (e) => {
-            if (!this.elements.translationTooltip.classList.contains('hidden')) {
-                Object.assign(this.elements.translationTooltip.style, { left: `${e.pageX + 15}px`, top: `${e.pageY + 15}px` });
-            }
+        
+        // 새로고침 버튼 및 확인 모달 이벤트
+        this.elements.refreshBtn.addEventListener('click', () => {
+            if (!this.state.selectedSheet) return;
+            this.elements.confirmationModal.classList.remove('hidden');
+        });
+        this.elements.confirmNoBtn.addEventListener('click', () => {
+            this.elements.confirmationModal.classList.add('hidden');
+        });
+        this.elements.confirmYesBtn.addEventListener('click', () => {
+            this.elements.confirmationModal.classList.add('hidden');
+            this.forceRefreshData();
         });
     },
     changeMode(mode) {
@@ -104,11 +117,43 @@ const app = {
         this.showModeSelection();
         this.elements.selectionScreen.classList.add('hidden');
         this.elements.homeBtn.classList.add('hidden');
+        this.elements.refreshBtn.classList.add('hidden');
         this.elements.backToGradeSelectionBtn.classList.add('hidden');
         this.elements.sheetLink.classList.add('hidden');
         this.state.selectedSheet = '';
         this.elements.gradeSelectionScreen.classList.remove('hidden');
-        // 여기서는 배경을 지우지 않고 유지합니다.
+    },
+    async forceRefreshData() {
+        const sheet = this.state.selectedSheet;
+        if (!sheet) return;
+
+        // 클라이언트(브라우저) 캐시 삭제
+        localStorage.removeItem(`wordListCache_${sheet}`);
+        
+        try {
+            // 서버 캐시를 무시하고 새로운 데이터를 즉시 가져와서 클라이언트 캐시를 갱신
+            const data = await api.fetchFromGoogleSheet('getWords', { force_refresh: 'true' });
+            if (data.words) {
+                const cachePayload = { timestamp: Date.now(), words: data.words };
+                localStorage.setItem(`wordListCache_${sheet}`, JSON.stringify(cachePayload));
+                // 학습모드 데이터가 이미 로드된 상태라면 즉시 교체
+                if(learningMode.state.isWordListReady) {
+                    learningMode.state.wordList = data.words;
+                }
+            }
+            this.showRefreshSuccessMessage();
+        } catch(err) {
+            console.error("Error during data refresh:", err);
+            alert("데이터 새로고침에 실패했습니다.");
+        }
+    },
+    showRefreshSuccessMessage() {
+        const msgEl = this.elements.refreshSuccessMessage;
+        msgEl.classList.remove('hidden', 'opacity-0');
+        setTimeout(() => {
+            msgEl.classList.add('opacity-0');
+            setTimeout(() => msgEl.classList.add('hidden'), 500);
+        }, 1500);
     },
     showImeWarning() {
         this.elements.imeWarning.classList.remove('hidden');
@@ -230,7 +275,14 @@ const ui = {
     async handleSentenceMouseOver(event, sentence) {
         clearTimeout(app.state.tooltipTimeout);
         const tooltip = app.elements.translationTooltip;
-        Object.assign(tooltip.style, { left: `${event.pageX + 15}px`, top: `${event.pageY + 15}px` });
+        const targetRect = event.target.getBoundingClientRect();
+
+        // 툴팁 위치를 문장의 왼쪽 아래로 조정
+        Object.assign(tooltip.style, {
+            left: `${targetRect.left + window.scrollX}px`,
+            top: `${targetRect.bottom + window.scrollY + 5}px` // 5px 여백
+        });
+
         tooltip.textContent = '번역 중...';
         tooltip.classList.remove('hidden');
         const translatedText = await api.translateText(sentence);
@@ -482,7 +534,6 @@ const learningMode = {
         currentIndex: 0,
         touchstartX: 0,
         touchstartY: 0,
-        lastWheelTime: 0,
     },
     elements: {},
     init() {
@@ -529,7 +580,6 @@ const learningMode = {
             const word = this.state.wordList[this.state.currentIndex]?.word;
             if (word) { api.speak(word); api.copyToClipboard(word); }
         });
-        document.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
         document.addEventListener('mousedown', this.handleMiddleClick.bind(this));
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
         document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
@@ -541,6 +591,7 @@ const learningMode = {
             const cachedData = localStorage.getItem(`wordListCache_${sheet}`);
             if (cachedData) {
                 const { timestamp, words } = JSON.parse(cachedData);
+                // 24시간(86400000ms) 이내의 캐시 데이터는 유효
                 if (Date.now() - timestamp < 86400000) {
                     this.state.wordList = words;
                     this.state.isWordListReady = true;
@@ -694,18 +745,6 @@ const learningMode = {
     isLearningModeActive() {
         return !this.elements.appContainer.classList.contains('hidden');
     },
-    handleWheel(e) {
-        if (!this.isLearningModeActive()) return;
-        const now = new Date().getTime();
-        if (now - this.state.lastWheelTime < 250) {
-            e.preventDefault();
-            return;
-        }
-        this.state.lastWheelTime = now;
-        if (e.target.closest('.overflow-y-auto')) return;
-        e.preventDefault();
-        this.navigate(e.deltaY < 0 ? -1 : 1);
-    },
     handleMiddleClick(e) {
         if (this.isLearningModeActive() && e.button === 1) {
             e.preventDefault();
@@ -724,6 +763,7 @@ const learningMode = {
         } else if (e.key === ' ') {
              e.preventDefault();
             if (this.elements.cardBack.classList.contains('is-slid-up')) {
+                // 뒷면이 보일 때는 특별한 동작 없음
             } else {
                 api.speak(this.elements.wordDisplay.textContent);
             }
@@ -758,9 +798,3 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-
-
-
-
-
-
