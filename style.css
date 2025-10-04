@@ -127,5 +127,6 @@ body::before {
 
 
 #learning-card-front {
-    min-height: 60vh; /* 화면 높이의 45%를 최소 높이로 지정 */
+    min-height: 60vh; /* 화면 높이의 30%를 최소 높이로 지정 */
 }
+
