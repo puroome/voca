@@ -132,6 +132,9 @@ const app = {
         learningMode.elements.startBtn.textContent = '새로고침 중...';
         learningMode.elements.startBtn.disabled = true;
         learningMode.elements.startWordInput.disabled = true;
+        this.elements.homeBtn.disabled = true;
+        this.elements.refreshBtn.disabled = true;
+        this.elements.backToGradeSelectionBtn.disabled = true;
 
         // 클라이언트(브라우저) 캐시 삭제
         localStorage.removeItem(`wordListCache_${sheet}`);
@@ -156,6 +159,9 @@ const app = {
             learningMode.elements.startBtn.textContent = '학습 시작';
             learningMode.elements.startBtn.disabled = false;
             learningMode.elements.startWordInput.disabled = false;
+            this.elements.homeBtn.disabled = false;
+            this.elements.refreshBtn.disabled = false;
+            this.elements.backToGradeSelectionBtn.disabled = false;
         }
     },
     showRefreshSuccessMessage() {
