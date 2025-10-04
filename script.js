@@ -128,6 +128,11 @@ const app = {
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
 
+        // UI 비활성화 및 텍스트 변경
+        learningMode.elements.startBtn.textContent = '새로고침 중...';
+        learningMode.elements.startBtn.disabled = true;
+        learningMode.elements.startWordInput.disabled = true;
+
         // 클라이언트(브라우저) 캐시 삭제
         localStorage.removeItem(`wordListCache_${sheet}`);
         
@@ -146,6 +151,11 @@ const app = {
         } catch(err) {
             console.error("Error during data refresh:", err);
             alert("데이터 새로고침에 실패했습니다.");
+        } finally {
+            // UI 다시 활성화 및 텍스트 복원
+            learningMode.elements.startBtn.textContent = '학습 시작';
+            learningMode.elements.startBtn.disabled = false;
+            learningMode.elements.startWordInput.disabled = false;
         }
     },
     showRefreshSuccessMessage() {
