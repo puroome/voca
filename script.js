@@ -10,39 +10,31 @@ const app = {
             '3y': 'https://docs.google.com/spreadsheets/d/1Z_n9IshFSC5cBBW6IkZNfQsLb2BBrp9QeOlsGsCkn2Y/edit?usp=sharing'
         },
         backgroundImages: [
-            'https://i.imgur.com/EvyV4x7.jpeg', 'https://i.imgur.com/xsnT8kO.jpeg',
-            'https://i.imgur.com/6gZtYDb.jpeg', 'https://i.imgur.com/SUVavHy.jpeg',
-            'https://i.imgur.com/JPAS1Cd.jpeg', 'https://i.imgur.com/Zv6jaCy.jpeg',
-            'https://i.imgur.com/ciQJtXo.jpeg', 'https://i.imgur.com/Gf3WIPZ.jpeg',
-            'https://i.imgur.com/LWQcDqg.jpeg', 'https://i.imgur.com/PBj5fpV.jpeg',
-            'https://i.imgur.com/zh67pPT.jpeg', 'https://i.imgur.com/k634cYs.jpeg',
-            'https://i.imgur.com/7KkgrB7.jpeg', 'https://i.imgur.com/alzwny5.jpeg',
-            'https://i.imgur.com/yUD82Tz.jpeg', 'https://i.imgur.com/45Lwias.jpeg',
-            'https://i.imgur.com/FalU86P.jpeg', 'https://i.imgur.com/NHCqHZd.jpeg',
-            'https://i.imgur.com/W1jMwGn.jpeg', 'https://i.imgur.com/yYwMN6q.jpeg',
-            'https://i.imgur.com/k8yhWVh.jpeg', 'https://i.imgur.com/cjtzRMf.jpeg',
-            'https://i.imgur.com/0nzdeg7.jpeg', 'https://i.imgur.com/Nv1c6o5.jpeg',
-            'https://i.imgur.com/VIZD0qs.jpeg', 'https://i.imgur.com/26HvkAH.jpeg',
-            'https://i.imgur.com/fuA0knu.jpeg', 'https://i.imgur.com/ig4y2TO.jpeg',
-            'https://i.imgur.com/ixv60Wf.jpeg', 'https://i.imgur.com/pANKqmX.jpeg',
-            'https://i.imgur.com/HFcG7SI.jpeg'
+            'https://i.imgur.com/EvyV4x7.jpeg', 'https://i.imgur.com/xsnT8kO.jpeg', 'https://i.imgur.com/6gZtYDb.jpeg', 'https://i.imgur.com/SUVavHy.jpeg',
+            'https://i.imgur.com/JPAS1Cd.jpeg', 'https://i.imgur.com/Zv6jaCy.jpeg', 'https://i.imgur.com/ciQJtXo.jpeg', 'https://i.imgur.com/Gf3WIPZ.jpeg',
+            'https://i.imgur.com/LWQcDqg.jpeg', 'https://i.imgur.com/PBj5fpV.jpeg', 'https://i.imgur.com/zh67pPT.jpeg', 'https://i.imgur.com/k634cYs.jpeg',
+            'https://i.imgur.com/7KkgrB7.jpeg', 'https://i.imgur.com/alzwny5.jpeg', 'https://i.imgur.com/yUD82Tz.jpeg', 'https://i.imgur.com/45Lwias.jpeg',
+            'https://i.imgur.com/FalU86P.jpeg', 'https://i.imgur.com/NHCqHZd.jpeg', 'https://i.imgur.com/W1jMwGn.jpeg', 'https://i.imgur.com/yYwMN6q.jpeg',
+            'https://i.imgur.com/k8yhWVh.jpeg', 'https://i.imgur.com/cjtzRMf.jpeg', 'https://i.imgur.com/0nzdeg7.jpeg', 'https://i.imgur.com/Nv1c6o5.jpeg',
+            'https://i.imgur.com/VIZD0qs.jpeg', 'https://i.imgur.com/26HvkAH.jpeg', 'https://i.imgur.com/fuA0knu.jpeg', 'https://i.imgur.com/ig4y2TO.jpeg',
+            'https://i.imgur.com/ixv60Wf.jpeg', 'https://i.imgur.com/pANKqmX.jpeg', 'https://i.imgur.com/HFcG7SI.jpeg'
         ]
     },
     state: {
         selectedSheet: '',
         translationCache: {},
         tooltipTimeout: null,
-        debouncedTranslate: null,
+        debounceTimer: null,
     },
     elements: {},
     init() {
         this.elements = {
             mainScreens: document.querySelectorAll('.main-screen'),
+            mainHeaderBtns: document.querySelectorAll('.main-header-btn'),
             gradeSelectionScreen: document.getElementById('grade-selection-screen'),
             selectionScreen: document.getElementById('selection-screen'),
             selectionTitle: document.getElementById('selection-title'),
             sheetLink: document.getElementById('sheet-link'),
-            authorCredit: document.getElementById('author-credit'),
             quizModeContainer: document.getElementById('quiz-mode-container'),
             learningModeContainer: document.getElementById('learning-mode-container'),
             homeBtn: document.getElementById('home-btn'),
@@ -55,11 +47,10 @@ const app = {
             confirmationModal: document.getElementById('confirmation-modal'),
             confirmYesBtn: document.getElementById('confirm-yes-btn'),
             confirmNoBtn: document.getElementById('confirm-no-btn'),
-            practiceModeContainer: document.getElementById('practice-mode-container'),
+            practiceModeControl: document.getElementById('practice-mode-control'),
+            practiceModeCheckbox: document.getElementById('practice-mode-checkbox'),
         };
-        this.state.debouncedTranslate = this.debounce(ui.handleSentenceMouseOver, 300);
         this.preloadImages();
-        this.setBackgroundImage();
         this.bindGlobalEvents();
         quizMode.init();
         learningMode.init();
@@ -71,70 +62,80 @@ const app = {
                 this.state.selectedSheet = card.dataset.sheet;
                 this.elements.selectionTitle.textContent = `${img.alt} 어휘`;
                 this.elements.sheetLink.href = this.config.sheetLinks[this.state.selectedSheet];
-                this.elements.sheetLink.classList.remove('hidden');
-                this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                this.showModeSelection();
+                this.showScreen('selection');
                 this.setBackgroundImage();
             });
         });
 
-        document.getElementById('select-quiz-btn').addEventListener('click', () => this.changeMode('quiz'));
-        document.getElementById('select-learning-btn').addEventListener('click', () => this.changeMode('learning'));
-
-        this.elements.homeBtn.addEventListener('click', () => this.showModeSelection());
-        this.elements.backToGradeSelectionBtn.addEventListener('click', () => this.showGradeSelection());
-        
+        document.getElementById('select-quiz-btn').addEventListener('click', () => this.showScreen('quiz'));
+        document.getElementById('select-learning-btn').addEventListener('click', () => this.showScreen('learning'));
+        this.elements.homeBtn.addEventListener('click', () => this.showScreen('selection'));
+        this.elements.backToGradeSelectionBtn.addEventListener('click', () => this.showScreen('gradeSelection'));
         this.elements.refreshBtn.addEventListener('click', () => this.elements.confirmationModal.classList.remove('hidden'));
         this.elements.confirmNoBtn.addEventListener('click', () => this.elements.confirmationModal.classList.add('hidden'));
         this.elements.confirmYesBtn.addEventListener('click', () => {
             this.elements.confirmationModal.classList.add('hidden');
             this.forceRefreshData();
         });
-    },
-    changeMode(mode) {
-        this.elements.mainScreens.forEach(screen => screen.classList.add('hidden'));
-        this.elements.homeBtn.classList.remove('hidden');
-        this.elements.practiceModeContainer.classList.add('hidden');
-
-        if (mode === 'quiz') {
-            this.elements.refreshBtn.classList.add('hidden');
-            this.elements.quizModeContainer.classList.remove('hidden');
-            this.elements.practiceModeContainer.classList.remove('hidden');
+        this.elements.practiceModeCheckbox.addEventListener('change', (e) => {
+            quizMode.state.isPracticeMode = e.target.checked;
             quizMode.start();
-        } else if (mode === 'learning') {
-            this.elements.refreshBtn.classList.remove('hidden');
-            this.elements.learningModeContainer.classList.remove('hidden');
-            learningMode.resetStartScreen();
+        });
+    },
+    showScreen(screenName) {
+        this.elements.mainScreens.forEach(el => el.classList.add('hidden'));
+        this.elements.mainHeaderBtns.forEach(el => el.classList.add('hidden'));
+        this.elements.practiceModeControl.classList.add('hidden');
+        learningMode.elements.fixedButtons.classList.add('hidden');
+
+        const showHeader = () => {
+            this.elements.homeBtn.classList.remove('hidden');
+            this.elements.backToGradeSelectionBtn.classList.remove('hidden');
+        };
+
+        switch(screenName) {
+            case 'gradeSelection':
+                this.elements.gradeSelectionScreen.classList.remove('hidden');
+                this.state.selectedSheet = '';
+                quizMode.reset();
+                learningMode.reset();
+                break;
+            case 'selection':
+                this.elements.selectionScreen.classList.remove('hidden');
+                this.elements.sheetLink.classList.remove('hidden');
+                showHeader();
+                quizMode.reset();
+                learningMode.reset();
+                break;
+            case 'quiz':
+                this.elements.quizModeContainer.classList.remove('hidden');
+                this.elements.practiceModeControl.classList.remove('hidden');
+                showHeader();
+                quizMode.start();
+                break;
+            case 'learning':
+                this.elements.learningModeContainer.classList.remove('hidden');
+                this.elements.refreshBtn.classList.remove('hidden');
+                showHeader();
+                learningMode.resetStartScreen();
+                break;
         }
-    },
-    showModeSelection() {
-        this.elements.mainScreens.forEach(screen => screen.classList.add('hidden'));
-        this.elements.selectionScreen.classList.remove('hidden');
-        this.elements.homeBtn.classList.remove('hidden');
-        this.elements.refreshBtn.classList.add('hidden');
-        this.elements.practiceModeContainer.classList.add('hidden');
-        quizMode.reset();
-        learningMode.reset();
-    },
-    showGradeSelection() {
-        this.elements.mainScreens.forEach(screen => screen.classList.add('hidden'));
-        this.elements.gradeSelectionScreen.classList.remove('hidden');
-        this.elements.homeBtn.classList.add('hidden');
-        this.elements.backToGradeSelectionBtn.classList.add('hidden');
-        this.elements.sheetLink.classList.add('hidden');
-        this.state.selectedSheet = '';
     },
     async forceRefreshData() {
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
 
+        const elementsToDisable = [
+            learningMode.elements.startBtn,
+            learningMode.elements.startWordInput,
+            this.elements.homeBtn,
+            this.elements.refreshBtn,
+            this.elements.backToGradeSelectionBtn,
+        ];
+        elementsToDisable.forEach(el => el.disabled = true);
+        const originalBtnText = learningMode.elements.startBtn.textContent;
         learningMode.elements.startBtn.textContent = '새로고침 중...';
-        learningMode.elements.startBtn.disabled = true;
-        learningMode.elements.startWordInput.disabled = true;
-        this.elements.homeBtn.disabled = true;
-        this.elements.refreshBtn.disabled = true;
-        this.elements.backToGradeSelectionBtn.disabled = true;
-
+        
         localStorage.removeItem(`wordListCache_${sheet}`);
         
         try {
@@ -142,7 +143,7 @@ const app = {
             if (data.words) {
                 const cachePayload = { timestamp: Date.now(), words: data.words };
                 localStorage.setItem(`wordListCache_${sheet}`, JSON.stringify(cachePayload));
-                if(learningMode.state.isWordListReady) {
+                if (learningMode.state.isWordListReady) {
                     learningMode.state.wordList = data.words;
                 }
             }
@@ -151,12 +152,8 @@ const app = {
             console.error("Error during data refresh:", err);
             alert("데이터 새로고침에 실패했습니다.");
         } finally {
-            learningMode.elements.startBtn.textContent = '학습 시작';
-            learningMode.elements.startBtn.disabled = false;
-            learningMode.elements.startWordInput.disabled = false;
-            this.elements.homeBtn.disabled = false;
-            this.elements.refreshBtn.disabled = false;
-            this.elements.backToGradeSelectionBtn.disabled = false;
+            elementsToDisable.forEach(el => el.disabled = false);
+            learningMode.elements.startBtn.textContent = originalBtnText;
         }
     },
     showRefreshSuccessMessage() {
@@ -193,14 +190,6 @@ const app = {
             const img = new Image();
             img.src = src;
         });
-    },
-    debounce(func, delay) {
-        let timeout;
-        return function(...args) {
-            const context = this;
-            clearTimeout(timeout);
-            timeout = setTimeout(() => func.apply(context, args), delay);
-        };
     }
 };
 
@@ -224,11 +213,7 @@ const api = {
     async translateText(text) {
         if (app.state.translationCache[text]) return app.state.translationCache[text];
         try {
-            const url = new URL(app.config.SCRIPT_URL);
-            url.searchParams.append('action', 'translateText');
-            url.searchParams.append('text', text);
-            const response = await fetch(url);
-            const data = await response.json();
+            const data = await this.fetchFromGoogleSheet('translateText', { text });
             if (data.success) {
                 app.state.translationCache[text] = data.translatedText;
                 return data.translatedText;
@@ -241,18 +226,19 @@ const api = {
     },
     speak(text) {
         if (!text || !text.trim() || !('speechSynthesis' in window)) return;
+        speechSynthesis.cancel();
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
         const utterance = new SpeechSynthesisUtterance(processedText);
-        const voices = window.speechSynthesis.getVoices();
+        const voices = speechSynthesis.getVoices();
         utterance.voice = voices.find(voice => voice.lang === 'en-US') || voices.find(voice => voice.lang.startsWith('en-'));
         utterance.lang = 'en-US';
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utterance);
+        speechSynthesis.speak(utterance);
     },
     async copyToClipboard(text) {
-        if (navigator.clipboard) {
-            try { await navigator.clipboard.writeText(text); } 
-            catch (err) { console.error('클립보드 복사 실패:', err); }
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (err) {
+            console.error('클립보드 복사 실패:', err);
         }
     },
 };
@@ -298,23 +284,22 @@ const ui = {
             targetElement.removeChild(targetElement.lastChild);
         }
     },
-    async handleSentenceMouseOver(event, sentence) {
-        clearTimeout(app.state.tooltipTimeout);
-        const tooltip = app.elements.translationTooltip;
-        const targetRect = event.target.getBoundingClientRect();
-        
-        Object.assign(tooltip.style, {
-            left: `${targetRect.left + window.scrollX}px`,
-            top: `${targetRect.bottom + window.scrollY + 5}px`
-        });
-
-        tooltip.textContent = '번역 중...';
-        tooltip.classList.remove('hidden');
-        const translatedText = await api.translateText(sentence);
-        tooltip.textContent = translatedText;
+    handleSentenceMouseOver(event, sentence) {
+        clearTimeout(app.state.debounceTimer);
+        app.state.debounceTimer = setTimeout(async () => {
+            const tooltip = app.elements.translationTooltip;
+            const targetRect = event.target.getBoundingClientRect();
+            tooltip.style.left = `${targetRect.left + window.scrollX}px`;
+            tooltip.style.top = `${targetRect.bottom + window.scrollY + 5}px`;
+            tooltip.textContent = '번역 중...';
+            tooltip.classList.remove('hidden');
+            const translatedText = await api.translateText(sentence);
+            tooltip.textContent = translatedText;
+        }, 300);
     },
     handleSentenceMouseOut() {
-        app.state.tooltipTimeout = setTimeout(() => app.elements.translationTooltip.classList.add('hidden'), 300);
+        clearTimeout(app.state.debounceTimer);
+        app.elements.translationTooltip.classList.add('hidden');
     },
     displaySentences(sentences, containerElement) {
         containerElement.innerHTML = '';
@@ -323,10 +308,14 @@ const ui = {
             p.textContent = sentence;
             p.className = 'p-2 rounded transition-colors cursor-pointer hover:bg-gray-200 sample-sentence';
             p.onclick = () => api.speak(sentence);
-            p.addEventListener('mouseover', (e) => app.state.debouncedTranslate(e, p.textContent));
+            p.addEventListener('mouseover', (e) => this.handleSentenceMouseOver(e, p.textContent));
             p.addEventListener('mouseout', this.handleSentenceMouseOut);
             containerElement.appendChild(p);
         });
+    },
+    giveFeedback(element) {
+        element.classList.add('active-feedback');
+        setTimeout(() => element.classList.remove('active-feedback'), 200);
     }
 };
 
@@ -345,11 +334,9 @@ const utils = {
     },
     getLearnedWords() {
         const data = localStorage.getItem('vocabLearnedWords');
-        if (data) {
-            const parsedData = JSON.parse(data);
-            return parsedData[app.state.selectedSheet] || [];
-        }
-        return [];
+        if (!data) return [];
+        const parsedData = JSON.parse(data);
+        return parsedData[app.state.selectedSheet] || [];
     },
     saveLearnedWord(word) {
         if (!word) return;
@@ -393,8 +380,7 @@ const quizMode = {
             sampleBtn: document.getElementById('quiz-sample-btn'),
             explanationBtn: document.getElementById('quiz-explanation-btn'),
             finishedScreen: document.getElementById('quiz-finished-screen'),
-            finishedMessage: document.getElementById('quiz-finished-message'),
-            practiceModeCheckbox: document.getElementById('practice-mode-checkbox'),
+            finishedMessage: document.getElementById('quiz-finished-message')
         };
         this.bindEvents();
     },
@@ -403,16 +389,11 @@ const quizMode = {
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip('sample'));
         this.elements.explanationBtn.addEventListener('click', () => this.handleFlip('explanation'));
         this.elements.word.addEventListener('click', (e) => {
-             api.speak(this.elements.word.textContent);
-             e.currentTarget.classList.add('active-feedback');
-             setTimeout(() => e.currentTarget.classList.remove('active-feedback'), 200);
-        });
-        this.elements.practiceModeCheckbox.addEventListener('change', (e) => {
-            this.state.isPracticeMode = e.target.checked;
-            this.start(); // 모드 변경 시 퀴즈 재시작
+            api.speak(this.elements.word.textContent);
+            ui.giveFeedback(e.currentTarget);
         });
         document.addEventListener('keydown', (e) => {
-            const isQuizModeActive = !this.elements.contentContainer.classList.contains('hidden') && !this.elements.choices.classList.contains('disabled');
+            const isQuizModeActive = !app.elements.quizModeContainer.classList.contains('hidden') && !this.elements.choices.classList.contains('disabled');
             if (!isQuizModeActive) return;
             const choiceIndex = parseInt(e.key) - 1;
             if (choiceIndex >= 0 && choiceIndex < 5 && this.elements.choices.children[choiceIndex]) {
@@ -430,10 +411,9 @@ const quizMode = {
         this.state.quizBatch = [];
         this.state.isFetching = false;
         this.state.isFinished = false;
-        this.state.practiceLearnedWords = []; // 연습모드 기록 초기화
-        // this.state.isPracticeMode 는 체크박스 상태를 따르므로 여기서 리셋하지 않음
+        this.state.practiceLearnedWords = [];
         this.showLoader(true);
-        this.elements.loader.querySelector('.loader').style.display = 'block';
+        this.elements.loader.style.display = 'block';
         this.elements.loaderText.textContent = "퀴즈 데이터를 불러오는 중...";
         this.elements.contentContainer.classList.add('hidden');
         this.elements.finishedScreen.classList.add('hidden');
@@ -442,17 +422,8 @@ const quizMode = {
         if (this.state.isFetching || this.state.isFinished) return;
         this.state.isFetching = true;
         try {
-            let learnedWordsForRequest = [];
-            // 연습 모드가 아닐 때만 실제 학습 기록을 사용
-            if (!this.state.isPracticeMode) {
-                learnedWordsForRequest = utils.getLearnedWords();
-            }
-            // 연습 모드일 때는 서버에 learnedWords를 보내지 않거나, isPractice 플래그를 보냄
-            const data = await api.fetchFromGoogleSheet('getQuizBatch', { 
-                learnedWords: learnedWordsForRequest.join(','),
-                isPractice: this.state.isPracticeMode
-            });
-
+            const learnedWords = this.state.isPracticeMode ? this.state.practiceLearnedWords : utils.getLearnedWords();
+            const data = await api.fetchFromGoogleSheet('getQuizBatch', { learnedWords: learnedWords.join(',') });
             if (data.finished) {
                 this.state.isFinished = true;
                 if (this.state.quizBatch.length === 0) {
@@ -460,13 +431,7 @@ const quizMode = {
                 }
                 return;
             }
-            // 연습모드일 경우, 임시 학습 기록을 제외
-            let newQuizzes = data.quizzes;
-            if (this.state.isPracticeMode) {
-                newQuizzes = data.quizzes.filter(q => !this.state.practiceLearnedWords.includes(q.question.word));
-            }
-
-            this.state.quizBatch.push(...newQuizzes);
+            this.state.quizBatch.push(...data.quizzes);
         } catch (error) {
             console.error("퀴즈 묶음 가져오기 실패:", error);
             this.showError(error.message);
@@ -475,7 +440,7 @@ const quizMode = {
         }
     },
     showError(message) {
-        this.elements.loader.querySelector('.loader').style.display = 'none';
+        this.elements.loader.style.display = 'none';
         this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">퀴즈를 가져올 수 없습니다.</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
     },
     displayNextQuiz() {
@@ -490,6 +455,9 @@ const quizMode = {
                     if (this.state.quizBatch.length > 0) {
                         clearInterval(checker);
                         this.displayNextQuiz();
+                    } else if (this.state.isFinished) {
+                        clearInterval(checker);
+                        this.showFinishedScreen("모든 단어 학습을 완료했습니다!");
                     }
                 }, 100)
             } else if (this.state.isFinished) {
@@ -516,16 +484,15 @@ const quizMode = {
             this.elements.choices.appendChild(li);
         });
         this.elements.choices.classList.remove('disabled');
-        this.elements.passBtn.disabled = false;
         this.elements.passBtn.innerHTML = 'PASS';
+        this.elements.passBtn.disabled = false;
         this.elements.sampleBtn.style.display = (question.sample && question.sample.trim()) ? 'block' : 'none';
         this.elements.explanationBtn.style.display = (question.explanation && question.explanation.trim()) ? 'block' : 'none';
     },
     checkAnswer(selectedLi, selectedChoice) {
         this.elements.choices.classList.add('disabled');
-        const originalPassText = this.elements.passBtn.textContent;
+        this.elements.passBtn.innerHTML = '<span class="loader-small"></span>';
         this.elements.passBtn.disabled = true;
-        this.elements.passBtn.innerHTML = `<div class="loader-small"></div>`;
         
         const isCorrect = selectedChoice === this.state.currentQuiz.answer;
         if (isCorrect) {
@@ -540,15 +507,11 @@ const quizMode = {
             const correctAnswerEl = Array.from(this.elements.choices.children).find(li => li.querySelector('span:last-child').textContent === this.state.currentQuiz.answer);
             correctAnswerEl?.classList.add('correct');
         }
-        setTimeout(() => {
-            this.elements.passBtn.innerHTML = originalPassText;
-            this.displayNextQuiz()
-        }, 1500);
+        setTimeout(() => this.displayNextQuiz(), 1500);
     },
     showLoader(isLoading) {
         this.elements.loader.classList.toggle('hidden', !isLoading);
         this.elements.contentContainer.classList.toggle('hidden', isLoading);
-        this.elements.finishedScreen.classList.add('hidden');
     },
     showFinishedScreen(message) {
         this.showLoader(false);
@@ -642,11 +605,10 @@ const learningMode = {
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip());
         this.elements.wordDisplay.addEventListener('click', (e) => {
             const word = this.state.wordList[this.state.currentIndex]?.word;
-            if (word) { 
-                api.speak(word); 
-                api.copyToClipboard(word); 
-                e.currentTarget.classList.add('active-feedback');
-                setTimeout(() => e.currentTarget.classList.remove('active-feedback'), 200);
+            if (word) {
+                api.speak(word);
+                api.copyToClipboard(word);
+                ui.giveFeedback(e.currentTarget);
             }
         });
         document.addEventListener('mousedown', this.handleMiddleClick.bind(this));
@@ -723,7 +685,6 @@ const learningMode = {
         this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">오류 발생</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
     },
     launchApp() {
-        app.elements.refreshBtn.classList.add('hidden');
         this.elements.startScreen.classList.add('hidden');
         this.elements.loader.classList.add('hidden');
         this.elements.appContainer.classList.remove('hidden');
@@ -731,15 +692,15 @@ const learningMode = {
         this.displayWord(this.state.currentIndex);
     },
     reset() {
+        this.state.wordList = [];
+        this.state.isWordListReady = false;
         this.elements.appContainer.classList.add('hidden');
         this.elements.loader.classList.add('hidden');
         this.elements.fixedButtons.classList.add('hidden');
-        this.state.wordList = [];
-        this.state.isWordListReady = false;
         this.elements.startScreen.classList.remove('hidden');
-        this.resetStartScreen();
     },
     resetStartScreen() {
+        this.reset();
         this.elements.startInputContainer.classList.remove('hidden');
         this.elements.suggestionsContainer.classList.add('hidden');
         this.elements.startWordInput.value = '';
@@ -826,14 +787,9 @@ const learningMode = {
         if (keyMap[e.key] !== undefined) {
             e.preventDefault();
             this.navigate(keyMap[e.key]);
-        } else if (e.key === 'Enter') {
-            e.preventDefault();
-            this.handleFlip();
-        } else if (e.key === ' ') {
+        } else if (e.key === 'Enter' || e.key === ' ') {
              e.preventDefault();
-            if (!this.elements.cardBack.classList.contains('is-slid-up')) {
-                this.elements.wordDisplay.click();
-            }
+             this.handleFlip();
         }
     },
     handleTouchStart(e) {
@@ -854,11 +810,8 @@ const learningMode = {
             this.navigate(deltaX > 0 ? -1 : 1);
         } 
         else if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 50) {
-            if (!e.target.closest('#learning-app-container')) {
-                if (deltaY < 0) {
-                    this.navigate(1);
-                }
-            }
+            if (deltaY < 0) this.handleFlip();
+            else this.handleFlip();
         }
         this.state.touchstartX = this.state.touchstartY = 0;
     }
@@ -867,3 +820,4 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
