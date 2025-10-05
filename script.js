@@ -10,47 +10,50 @@ const app = {
             '3y': 'https://docs.google.com/spreadsheets/d/1Z_n9IshFSC5cBBW6IkZNfQsLb2BBrp9QeOlsGsCkn2Y/edit?usp=sharing'
         },
         backgroundImages: [
-            'https://i.imgur.com/EvyV4x7.jpeg', 'https://i.imgur.com/xsnT8kO.jpeg', 'https://i.imgur.com/6gZtYDb.jpeg', 'https://i.imgur.com/SUVavHy.jpeg',
-            'https://i.imgur.com/JPAS1Cd.jpeg', 'https://i.imgur.com/Zv6jaCy.jpeg', 'https://i.imgur.com/ciQJtXo.jpeg', 'https://i.imgur.com/Gf3WIPZ.jpeg',
-            'https://i.imgur.com/LWQcDqg.jpeg', 'https://i.imgur.com/PBj5fpV.jpeg', 'https://i.imgur.com/zh67pPT.jpeg', 'https://i.imgur.com/k634cYs.jpeg',
-            'https://i.imgur.com/7KkgrB7.jpeg', 'https://i.imgur.com/alzwny5.jpeg', 'https://i.imgur.com/yUD82Tz.jpeg', 'https://i.imgur.com/45Lwias.jpeg',
-            'https://i.imgur.com/FalU86P.jpeg', 'https://i.imgur.com/NHCqHZd.jpeg', 'https://i.imgur.com/W1jMwGn.jpeg', 'https://i.imgur.com/yYwMN6q.jpeg',
-            'https://i.imgur.com/k8yhWVh.jpeg', 'https://i.imgur.com/cjtzRMf.jpeg', 'https://i.imgur.com/0nzdeg7.jpeg', 'https://i.imgur.com/Nv1c6o5.jpeg',
-            'https://i.imgur.com/VIZD0qs.jpeg', 'https://i.imgur.com/26HvkAH.jpeg', 'https://i.imgur.com/fuA0knu.jpeg', 'https://i.imgur.com/ig4y2TO.jpeg',
-            'https://i.imgur.com/ixv60Wf.jpeg', 'https://i.imgur.com/pANKqmX.jpeg', 'https://i.imgur.com/HFcG7SI.jpeg'
+            'https://i.imgur.com/EvyV4x7.jpeg', 'https://i.imgur.com/xsnT8kO.jpeg',
+            'https://i.imgur.com/6gZtYDb.jpeg', 'https://i.imgur.com/SUVavHy.jpeg',
+            'https://i.imgur.com/JPAS1Cd.jpeg', 'https://i.imgur.com/Zv6jaCy.jpeg',
+            'https://i.imgur.com/ciQJtXo.jpeg', 'https://i.imgur.com/Gf3WIPZ.jpeg',
+            'https://i.imgur.com/LWQcDqg.jpeg', 'https://i.imgur.com/PBj5fpV.jpeg',
+            'https://i.imgur.com/zh67pPT.jpeg', 'https://i.imgur.com/k634cYs.jpeg',
+            'https://i.imgur.com/7KkgrB7.jpeg', 'https://i.imgur.com/alzwny5.jpeg',
+            'https://i.imgur.com/yUD82Tz.jpeg', 'https://i.imgur.com/45Lwias.jpeg',
+            'https://i.imgur.com/FalU86P.jpeg', 'https://i.imgur.com/NHCqHZd.jpeg',
+            'https://i.imgur.com/W1jMwGn.jpeg', 'https://i.imgur.com/yYwMN6q.jpeg',
+            'https://i.imgur.com/k8yhWVh.jpeg', 'https://i.imgur.com/cjtzRMf.jpeg',
+            'https://i.imgur.com/0nzdeg7.jpeg', 'https://i.imgur.com/Nv1c6o5.jpeg',
+            'https://i.imgur.com/VIZD0qs.jpeg', 'https://i.imgur.com/26HvkAH.jpeg',
+            'https://i.imgur.com/fuA0knu.jpeg', 'https://i.imgur.com/ig4y2TO.jpeg',
+            'https://i.imgur.com/ixv60Wf.jpeg', 'https://i.imgur.com/pANKqmX.jpeg',
+            'https://i.imgur.com/HFcG7SI.jpeg'
         ]
     },
     state: {
         selectedSheet: '',
         translationCache: {},
         tooltipTimeout: null,
-        debounceTimer: null,
     },
-    elements: {},
+    elements: {
+        gradeSelectionScreen: document.getElementById('grade-selection-screen'),
+        selectionScreen: document.getElementById('selection-screen'),
+        selectionTitle: document.getElementById('selection-title'),
+        sheetLink: document.getElementById('sheet-link'),
+        authorCredit: document.getElementById('author-credit'),
+        quizModeContainer: document.getElementById('quiz-mode-container'),
+        learningModeContainer: document.getElementById('learning-mode-container'),
+        homeBtn: document.getElementById('home-btn'),
+        backToGradeSelectionBtn: document.getElementById('back-to-grade-selection-btn'),
+        refreshBtn: document.getElementById('refresh-btn'),
+        translationTooltip: document.getElementById('translation-tooltip'),
+        imeWarning: document.getElementById('ime-warning'),
+        noSampleMessage: document.getElementById('no-sample-message'),
+        refreshSuccessMessage: document.getElementById('refresh-success-message'),
+        confirmationModal: document.getElementById('confirmation-modal'),
+        confirmYesBtn: document.getElementById('confirm-yes-btn'),
+        confirmNoBtn: document.getElementById('confirm-no-btn'),
+    },
     init() {
-        this.elements = {
-            mainScreens: document.querySelectorAll('.main-screen'),
-            mainHeaderBtns: document.querySelectorAll('.main-header-btn'),
-            gradeSelectionScreen: document.getElementById('grade-selection-screen'),
-            selectionScreen: document.getElementById('selection-screen'),
-            selectionTitle: document.getElementById('selection-title'),
-            sheetLink: document.getElementById('sheet-link'),
-            quizModeContainer: document.getElementById('quiz-mode-container'),
-            learningModeContainer: document.getElementById('learning-mode-container'),
-            homeBtn: document.getElementById('home-btn'),
-            backToGradeSelectionBtn: document.getElementById('back-to-grade-selection-btn'),
-            refreshBtn: document.getElementById('refresh-btn'),
-            translationTooltip: document.getElementById('translation-tooltip'),
-            imeWarning: document.getElementById('ime-warning'),
-            noSampleMessage: document.getElementById('no-sample-message'),
-            refreshSuccessMessage: document.getElementById('refresh-success-message'),
-            confirmationModal: document.getElementById('confirmation-modal'),
-            confirmYesBtn: document.getElementById('confirm-yes-btn'),
-            confirmNoBtn: document.getElementById('confirm-no-btn'),
-            practiceModeControl: document.getElementById('practice-mode-control'),
-            practiceModeCheckbox: document.getElementById('practice-mode-checkbox'),
-        };
-        this.preloadImages();
+        this.setBackgroundImage(); // 초기 로드 시 배경 설정
         this.bindGlobalEvents();
         quizMode.init();
         learningMode.init();
@@ -60,90 +63,90 @@ const app = {
             img.addEventListener('click', () => {
                 const card = img.closest('.grade-select-card');
                 this.state.selectedSheet = card.dataset.sheet;
+                this.elements.gradeSelectionScreen.classList.add('hidden');
                 this.elements.selectionTitle.textContent = `${img.alt} 어휘`;
+                
                 this.elements.sheetLink.href = this.config.sheetLinks[this.state.selectedSheet];
-                this.showScreen('selection');
-                this.setBackgroundImage();
+                this.elements.sheetLink.classList.remove('hidden');
+
+                this.elements.selectionScreen.classList.remove('hidden');
+                this.elements.homeBtn.classList.remove('hidden');
+                this.elements.backToGradeSelectionBtn.classList.remove('hidden');
+                this.setBackgroundImage(); // 학년 선택 시 새 배경으로 변경
             });
         });
 
-        document.getElementById('select-quiz-btn').addEventListener('click', () => this.showScreen('quiz'));
-        document.getElementById('select-learning-btn').addEventListener('click', () => this.showScreen('learning'));
-        this.elements.homeBtn.addEventListener('click', () => this.showScreen('selection'));
-        this.elements.backToGradeSelectionBtn.addEventListener('click', () => this.showScreen('gradeSelection'));
-        this.elements.refreshBtn.addEventListener('click', () => this.elements.confirmationModal.classList.remove('hidden'));
-        this.elements.confirmNoBtn.addEventListener('click', () => this.elements.confirmationModal.classList.add('hidden'));
+        document.getElementById('select-quiz-btn').addEventListener('click', () => this.changeMode('quiz'));
+        document.getElementById('select-learning-btn').addEventListener('click', () => this.changeMode('learning'));
+
+        this.elements.homeBtn.addEventListener('click', () => this.showModeSelection());
+        this.elements.backToGradeSelectionBtn.addEventListener('click', () => this.showGradeSelection());
+        
+        // 새로고침 버튼 및 확인 모달 이벤트
+        this.elements.refreshBtn.addEventListener('click', () => {
+            if (!this.state.selectedSheet) return;
+            this.elements.confirmationModal.classList.remove('hidden');
+        });
+        this.elements.confirmNoBtn.addEventListener('click', () => {
+            this.elements.confirmationModal.classList.add('hidden');
+        });
         this.elements.confirmYesBtn.addEventListener('click', () => {
             this.elements.confirmationModal.classList.add('hidden');
             this.forceRefreshData();
         });
-        this.elements.practiceModeCheckbox.addEventListener('change', (e) => {
-            quizMode.state.isPracticeMode = e.target.checked;
-            quizMode.start();
-        });
     },
-    showScreen(screenName) {
-        this.elements.mainScreens.forEach(el => el.classList.add('hidden'));
-        this.elements.mainHeaderBtns.forEach(el => el.classList.add('hidden'));
-        this.elements.practiceModeControl.classList.add('hidden');
-        learningMode.elements.fixedButtons.classList.add('hidden');
-
-        const showHeader = () => {
-            this.elements.homeBtn.classList.remove('hidden');
-            this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-        };
-
-        switch(screenName) {
-            case 'gradeSelection':
-                this.elements.gradeSelectionScreen.classList.remove('hidden');
-                this.state.selectedSheet = '';
-                quizMode.reset();
-                learningMode.reset();
-                break;
-            case 'selection':
-                this.elements.selectionScreen.classList.remove('hidden');
-                this.elements.sheetLink.classList.remove('hidden');
-                showHeader();
-                quizMode.reset();
-                learningMode.reset();
-                break;
-            case 'quiz':
-                this.elements.quizModeContainer.classList.remove('hidden');
-                this.elements.practiceModeControl.classList.remove('hidden');
-                showHeader();
-                quizMode.start();
-                break;
-            case 'learning':
-                this.elements.learningModeContainer.classList.remove('hidden');
-                this.elements.refreshBtn.classList.remove('hidden');
-                showHeader();
-                learningMode.resetStartScreen();
-                break;
+    changeMode(mode) {
+        this.elements.selectionScreen.classList.add('hidden');
+        if (mode === 'quiz') {
+            this.elements.refreshBtn.classList.add('hidden'); // 퀴즈 모드에서는 숨김
+            this.elements.quizModeContainer.classList.remove('hidden');
+            quizMode.start();
+        } else if (mode === 'learning') {
+            this.elements.refreshBtn.classList.remove('hidden'); // 학습 모드 시작 화면에서 보임
+            this.elements.learningModeContainer.classList.remove('hidden');
+            learningMode.resetStartScreen();
         }
+    },
+    showModeSelection() {
+        this.elements.quizModeContainer.classList.add('hidden');
+        this.elements.learningModeContainer.classList.add('hidden');
+        this.elements.refreshBtn.classList.add('hidden'); // 모드 선택 화면으로 돌아갈 때 숨김
+        quizMode.reset();
+        learningMode.reset();
+        this.elements.selectionScreen.classList.remove('hidden');
+    },
+    showGradeSelection() {
+        this.showModeSelection();
+        this.elements.selectionScreen.classList.add('hidden');
+        this.elements.homeBtn.classList.add('hidden');
+        this.elements.backToGradeSelectionBtn.classList.add('hidden');
+        this.elements.sheetLink.classList.add('hidden');
+        this.state.selectedSheet = '';
+        this.elements.gradeSelectionScreen.classList.remove('hidden');
     },
     async forceRefreshData() {
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
 
-        const elementsToDisable = [
-            learningMode.elements.startBtn,
-            learningMode.elements.startWordInput,
-            this.elements.homeBtn,
-            this.elements.refreshBtn,
-            this.elements.backToGradeSelectionBtn,
-        ];
-        elementsToDisable.forEach(el => el.disabled = true);
-        const originalBtnText = learningMode.elements.startBtn.textContent;
+        // UI 비활성화 및 텍스트 변경
         learningMode.elements.startBtn.textContent = '새로고침 중...';
-        
+        learningMode.elements.startBtn.disabled = true;
+        learningMode.elements.startWordInput.disabled = true;
+        this.elements.homeBtn.disabled = true;
+        this.elements.refreshBtn.disabled = true;
+        this.elements.backToGradeSelectionBtn.disabled = true;
+
+        // 클라이언트(브라우저) 캐시 삭제
         localStorage.removeItem(`wordListCache_${sheet}`);
         
         try {
+            // 서버 캐시를 무시하고 새로운 데이터를 즉시 가져와서 클라이언트 캐시를 갱신
             const data = await api.fetchFromGoogleSheet('getWords', { force_refresh: 'true' });
             if (data.words) {
                 const cachePayload = { timestamp: Date.now(), words: data.words };
                 localStorage.setItem(`wordListCache_${sheet}`, JSON.stringify(cachePayload));
-                if (learningMode.state.isWordListReady) {
+                // 학습모드 데이터가 이미 로드된 상태라면 즉시 교체
+                if(learningMode.state.isWordListReady) {
                     learningMode.state.wordList = data.words;
                 }
             }
@@ -152,8 +155,13 @@ const app = {
             console.error("Error during data refresh:", err);
             alert("데이터 새로고침에 실패했습니다.");
         } finally {
-            elementsToDisable.forEach(el => el.disabled = false);
-            learningMode.elements.startBtn.textContent = originalBtnText;
+            // UI 다시 활성화 및 텍스트 복원
+            learningMode.elements.startBtn.textContent = '학습 시작';
+            learningMode.elements.startBtn.disabled = false;
+            learningMode.elements.startWordInput.disabled = false;
+            this.elements.homeBtn.disabled = false;
+            this.elements.refreshBtn.disabled = false;
+            this.elements.backToGradeSelectionBtn.disabled = false;
         }
     },
     showRefreshSuccessMessage() {
@@ -184,12 +192,6 @@ const app = {
         const randomIndex = Math.floor(Math.random() * this.config.backgroundImages.length);
         const imageUrl = this.config.backgroundImages[randomIndex];
         document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
-    },
-    preloadImages() {
-        this.config.backgroundImages.forEach(src => {
-            const img = new Image();
-            img.src = src;
-        });
     }
 };
 
@@ -213,7 +215,11 @@ const api = {
     async translateText(text) {
         if (app.state.translationCache[text]) return app.state.translationCache[text];
         try {
-            const data = await this.fetchFromGoogleSheet('translateText', { text });
+            const url = new URL(app.config.SCRIPT_URL);
+            url.searchParams.append('action', 'translateText');
+            url.searchParams.append('text', text);
+            const response = await fetch(url);
+            const data = await response.json();
             if (data.success) {
                 app.state.translationCache[text] = data.translatedText;
                 return data.translatedText;
@@ -226,19 +232,18 @@ const api = {
     },
     speak(text) {
         if (!text || !text.trim() || !('speechSynthesis' in window)) return;
-        speechSynthesis.cancel();
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
         const utterance = new SpeechSynthesisUtterance(processedText);
-        const voices = speechSynthesis.getVoices();
+        const voices = window.speechSynthesis.getVoices();
         utterance.voice = voices.find(voice => voice.lang === 'en-US') || voices.find(voice => voice.lang.startsWith('en-'));
         utterance.lang = 'en-US';
-        speechSynthesis.speak(utterance);
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
     },
     async copyToClipboard(text) {
-        try {
-            await navigator.clipboard.writeText(text);
-        } catch (err) {
-            console.error('클립보드 복사 실패:', err);
+        if (navigator.clipboard) {
+            try { await navigator.clipboard.writeText(text); } 
+            catch (err) { console.error('클립보드 복사 실패:', err); }
         }
     },
 };
@@ -284,22 +289,24 @@ const ui = {
             targetElement.removeChild(targetElement.lastChild);
         }
     },
-    handleSentenceMouseOver(event, sentence) {
-        clearTimeout(app.state.debounceTimer);
-        app.state.debounceTimer = setTimeout(async () => {
-            const tooltip = app.elements.translationTooltip;
-            const targetRect = event.target.getBoundingClientRect();
-            tooltip.style.left = `${targetRect.left + window.scrollX}px`;
-            tooltip.style.top = `${targetRect.bottom + window.scrollY + 5}px`;
-            tooltip.textContent = '번역 중...';
-            tooltip.classList.remove('hidden');
-            const translatedText = await api.translateText(sentence);
-            tooltip.textContent = translatedText;
-        }, 300);
+    async handleSentenceMouseOver(event, sentence) {
+        clearTimeout(app.state.tooltipTimeout);
+        const tooltip = app.elements.translationTooltip;
+        const targetRect = event.target.getBoundingClientRect();
+
+        // 툴팁 위치를 문장의 왼쪽 아래로 조정
+        Object.assign(tooltip.style, {
+            left: `${targetRect.left + window.scrollX}px`,
+            top: `${targetRect.bottom + window.scrollY + 5}px` // 5px 여백
+        });
+
+        tooltip.textContent = '번역 중...';
+        tooltip.classList.remove('hidden');
+        const translatedText = await api.translateText(sentence);
+        tooltip.textContent = translatedText;
     },
     handleSentenceMouseOut() {
-        clearTimeout(app.state.debounceTimer);
-        app.elements.translationTooltip.classList.add('hidden');
+        app.state.tooltipTimeout = setTimeout(() => app.elements.translationTooltip.classList.add('hidden'), 300);
     },
     displaySentences(sentences, containerElement) {
         containerElement.innerHTML = '';
@@ -312,10 +319,6 @@ const ui = {
             p.addEventListener('mouseout', this.handleSentenceMouseOut);
             containerElement.appendChild(p);
         });
-    },
-    giveFeedback(element) {
-        element.classList.add('active-feedback');
-        setTimeout(() => element.classList.remove('active-feedback'), 200);
     }
 };
 
@@ -334,9 +337,11 @@ const utils = {
     },
     getLearnedWords() {
         const data = localStorage.getItem('vocabLearnedWords');
-        if (!data) return [];
-        const parsedData = JSON.parse(data);
-        return parsedData[app.state.selectedSheet] || [];
+        if (data) {
+            const parsedData = JSON.parse(data);
+            return parsedData[app.state.selectedSheet] || [];
+        }
+        return [];
     },
     saveLearnedWord(word) {
         if (!word) return;
@@ -360,9 +365,7 @@ const quizMode = {
         quizBatch: [],
         isFetching: false,
         isFinished: false,
-        flippedContentType: null,
-        isPracticeMode: false,
-        practiceLearnedWords: [],
+        flippedContentType: null
     },
     elements: {},
     init() {
@@ -388,12 +391,9 @@ const quizMode = {
         this.elements.passBtn.addEventListener('click', () => this.displayNextQuiz());
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip('sample'));
         this.elements.explanationBtn.addEventListener('click', () => this.handleFlip('explanation'));
-        this.elements.word.addEventListener('click', (e) => {
-            api.speak(this.elements.word.textContent);
-            ui.giveFeedback(e.currentTarget);
-        });
+        this.elements.word.addEventListener('click', () => api.speak(this.elements.word.textContent));
         document.addEventListener('keydown', (e) => {
-            const isQuizModeActive = !app.elements.quizModeContainer.classList.contains('hidden') && !this.elements.choices.classList.contains('disabled');
+            const isQuizModeActive = !this.elements.contentContainer.classList.contains('hidden') && !this.elements.choices.classList.contains('disabled');
             if (!isQuizModeActive) return;
             const choiceIndex = parseInt(e.key) - 1;
             if (choiceIndex >= 0 && choiceIndex < 5 && this.elements.choices.children[choiceIndex]) {
@@ -411,9 +411,8 @@ const quizMode = {
         this.state.quizBatch = [];
         this.state.isFetching = false;
         this.state.isFinished = false;
-        this.state.practiceLearnedWords = [];
         this.showLoader(true);
-        this.elements.loader.style.display = 'block';
+        this.elements.loader.querySelector('.loader').style.display = 'block';
         this.elements.loaderText.textContent = "퀴즈 데이터를 불러오는 중...";
         this.elements.contentContainer.classList.add('hidden');
         this.elements.finishedScreen.classList.add('hidden');
@@ -422,7 +421,7 @@ const quizMode = {
         if (this.state.isFetching || this.state.isFinished) return;
         this.state.isFetching = true;
         try {
-            const learnedWords = this.state.isPracticeMode ? this.state.practiceLearnedWords : utils.getLearnedWords();
+            const learnedWords = utils.getLearnedWords();
             const data = await api.fetchFromGoogleSheet('getQuizBatch', { learnedWords: learnedWords.join(',') });
             if (data.finished) {
                 this.state.isFinished = true;
@@ -440,7 +439,7 @@ const quizMode = {
         }
     },
     showError(message) {
-        this.elements.loader.style.display = 'none';
+        this.elements.loader.querySelector('.loader').style.display = 'none';
         this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">퀴즈를 가져올 수 없습니다.</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
     },
     displayNextQuiz() {
@@ -455,9 +454,6 @@ const quizMode = {
                     if (this.state.quizBatch.length > 0) {
                         clearInterval(checker);
                         this.displayNextQuiz();
-                    } else if (this.state.isFinished) {
-                        clearInterval(checker);
-                        this.showFinishedScreen("모든 단어 학습을 완료했습니다!");
                     }
                 }, 100)
             } else if (this.state.isFinished) {
@@ -484,24 +480,17 @@ const quizMode = {
             this.elements.choices.appendChild(li);
         });
         this.elements.choices.classList.remove('disabled');
-        this.elements.passBtn.innerHTML = 'PASS';
         this.elements.passBtn.disabled = false;
         this.elements.sampleBtn.style.display = (question.sample && question.sample.trim()) ? 'block' : 'none';
         this.elements.explanationBtn.style.display = (question.explanation && question.explanation.trim()) ? 'block' : 'none';
     },
     checkAnswer(selectedLi, selectedChoice) {
         this.elements.choices.classList.add('disabled');
-        this.elements.passBtn.innerHTML = '<span class="loader-small"></span>';
         this.elements.passBtn.disabled = true;
-        
         const isCorrect = selectedChoice === this.state.currentQuiz.answer;
         if (isCorrect) {
             selectedLi.classList.add('correct');
-            if (this.state.isPracticeMode) {
-                this.state.practiceLearnedWords.push(this.state.currentQuiz.question.word);
-            } else {
-                utils.saveLearnedWord(this.state.currentQuiz.question.word);
-            }
+            utils.saveLearnedWord(this.state.currentQuiz.question.word);
         } else {
             selectedLi.classList.add('incorrect');
             const correctAnswerEl = Array.from(this.elements.choices.children).find(li => li.querySelector('span:last-child').textContent === this.state.currentQuiz.answer);
@@ -512,6 +501,7 @@ const quizMode = {
     showLoader(isLoading) {
         this.elements.loader.classList.toggle('hidden', !isLoading);
         this.elements.contentContainer.classList.toggle('hidden', isLoading);
+        this.elements.finishedScreen.classList.add('hidden');
     },
     showFinishedScreen(message) {
         this.showLoader(false);
@@ -603,13 +593,9 @@ const learningMode = {
         this.elements.nextBtn.addEventListener('click', () => this.navigate(1));
         this.elements.prevBtn.addEventListener('click', () => this.navigate(-1));
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip());
-        this.elements.wordDisplay.addEventListener('click', (e) => {
+        this.elements.wordDisplay.addEventListener('click', () => {
             const word = this.state.wordList[this.state.currentIndex]?.word;
-            if (word) {
-                api.speak(word);
-                api.copyToClipboard(word);
-                ui.giveFeedback(e.currentTarget);
-            }
+            if (word) { api.speak(word); api.copyToClipboard(word); }
         });
         document.addEventListener('mousedown', this.handleMiddleClick.bind(this));
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
@@ -622,6 +608,7 @@ const learningMode = {
             const cachedData = localStorage.getItem(`wordListCache_${sheet}`);
             if (cachedData) {
                 const { timestamp, words } = JSON.parse(cachedData);
+                // 24시간(86400000ms) 이내의 캐시 데이터는 유효
                 if (Date.now() - timestamp < 86400000) {
                     this.state.wordList = words;
                     this.state.isWordListReady = true;
@@ -685,6 +672,7 @@ const learningMode = {
         this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">오류 발생</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
     },
     launchApp() {
+        app.elements.refreshBtn.classList.add('hidden'); // 실제 학습 시작 시 숨김
         this.elements.startScreen.classList.add('hidden');
         this.elements.loader.classList.add('hidden');
         this.elements.appContainer.classList.remove('hidden');
@@ -692,15 +680,15 @@ const learningMode = {
         this.displayWord(this.state.currentIndex);
     },
     reset() {
-        this.state.wordList = [];
-        this.state.isWordListReady = false;
         this.elements.appContainer.classList.add('hidden');
         this.elements.loader.classList.add('hidden');
         this.elements.fixedButtons.classList.add('hidden');
+        this.state.wordList = [];
+        this.state.isWordListReady = false;
         this.elements.startScreen.classList.remove('hidden');
+        this.resetStartScreen();
     },
     resetStartScreen() {
-        this.reset();
         this.elements.startInputContainer.classList.remove('hidden');
         this.elements.suggestionsContainer.classList.add('hidden');
         this.elements.startWordInput.value = '';
@@ -787,9 +775,16 @@ const learningMode = {
         if (keyMap[e.key] !== undefined) {
             e.preventDefault();
             this.navigate(keyMap[e.key]);
-        } else if (e.key === 'Enter' || e.key === ' ') {
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            this.handleFlip();
+        } else if (e.key === ' ') {
              e.preventDefault();
-             this.handleFlip();
+            if (this.elements.cardBack.classList.contains('is-slid-up')) {
+                // 뒷면이 보일 때는 특별한 동작 없음
+            } else {
+                api.speak(this.elements.wordDisplay.textContent);
+            }
         }
     },
     handleTouchStart(e) {
@@ -806,12 +801,17 @@ const learningMode = {
         const deltaX = e.changedTouches[0].screenX - this.state.touchstartX;
         const deltaY = e.changedTouches[0].screenY - this.state.touchstartY;
         
+        // 수평 스와이프 (좌/우) 로 이전/다음 단어 이동
         if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
             this.navigate(deltaX > 0 ? -1 : 1);
         } 
+        // 수직 스와이프 (위) 이고, 앱 화면 바깥쪽일 경우 다음 단어로 이동
         else if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 50) {
-            if (deltaY < 0) this.handleFlip();
-            else this.handleFlip();
+            if (!e.target.closest('#learning-app-container')) {
+                if (deltaY < 0) { // 위로 스와이프
+                    this.navigate(1); // 다음 단어로 이동
+                }
+            }
         }
         this.state.touchstartX = this.state.touchstartY = 0;
     }
@@ -820,4 +820,3 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-
