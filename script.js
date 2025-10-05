@@ -32,28 +32,34 @@ const app = {
         selectedSheet: '',
         translationCache: {},
         tooltipTimeout: null,
+        debouncedTranslate: null,
     },
-    elements: {
-        gradeSelectionScreen: document.getElementById('grade-selection-screen'),
-        selectionScreen: document.getElementById('selection-screen'),
-        selectionTitle: document.getElementById('selection-title'),
-        sheetLink: document.getElementById('sheet-link'),
-        authorCredit: document.getElementById('author-credit'),
-        quizModeContainer: document.getElementById('quiz-mode-container'),
-        learningModeContainer: document.getElementById('learning-mode-container'),
-        homeBtn: document.getElementById('home-btn'),
-        backToGradeSelectionBtn: document.getElementById('back-to-grade-selection-btn'),
-        refreshBtn: document.getElementById('refresh-btn'),
-        translationTooltip: document.getElementById('translation-tooltip'),
-        imeWarning: document.getElementById('ime-warning'),
-        noSampleMessage: document.getElementById('no-sample-message'),
-        refreshSuccessMessage: document.getElementById('refresh-success-message'),
-        confirmationModal: document.getElementById('confirmation-modal'),
-        confirmYesBtn: document.getElementById('confirm-yes-btn'),
-        confirmNoBtn: document.getElementById('confirm-no-btn'),
-    },
+    elements: {},
     init() {
-        this.setBackgroundImage(); // 초기 로드 시 배경 설정
+        this.elements = {
+            mainScreens: document.querySelectorAll('.main-screen'),
+            gradeSelectionScreen: document.getElementById('grade-selection-screen'),
+            selectionScreen: document.getElementById('selection-screen'),
+            selectionTitle: document.getElementById('selection-title'),
+            sheetLink: document.getElementById('sheet-link'),
+            authorCredit: document.getElementById('author-credit'),
+            quizModeContainer: document.getElementById('quiz-mode-container'),
+            learningModeContainer: document.getElementById('learning-mode-container'),
+            homeBtn: document.getElementById('home-btn'),
+            backToGradeSelectionBtn: document.getElementById('back-to-grade-selection-btn'),
+            refreshBtn: document.getElementById('refresh-btn'),
+            translationTooltip: document.getElementById('translation-tooltip'),
+            imeWarning: document.getElementById('ime-warning'),
+            noSampleMessage: document.getElementById('no-sample-message'),
+            refreshSuccessMessage: document.getElementById('refresh-success-message'),
+            confirmationModal: document.getElementById('confirmation-modal'),
+            confirmYesBtn: document.getElementById('confirm-yes-btn'),
+            confirmNoBtn: document.getElementById('confirm-no-btn'),
+            practiceModeContainer: document.getElementById('practice-mode-container'),
+        };
+        this.state.debouncedTranslate = this.debounce(ui.handleSentenceMouseOver, 300);
+        this.preloadImages();
+        this.setBackgroundImage();
         this.bindGlobalEvents();
         quizMode.init();
         learningMode.init();
@@ -63,16 +69,12 @@ const app = {
             img.addEventListener('click', () => {
                 const card = img.closest('.grade-select-card');
                 this.state.selectedSheet = card.dataset.sheet;
-                this.elements.gradeSelectionScreen.classList.add('hidden');
                 this.elements.selectionTitle.textContent = `${img.alt} 어휘`;
-                
                 this.elements.sheetLink.href = this.config.sheetLinks[this.state.selectedSheet];
                 this.elements.sheetLink.classList.remove('hidden');
-
-                this.elements.selectionScreen.classList.remove('hidden');
-                this.elements.homeBtn.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                this.setBackgroundImage(); // 학년 선택 시 새 배경으로 변경
+                this.showModeSelection();
+                this.setBackgroundImage();
             });
         });
 
@@ -82,53 +84,50 @@ const app = {
         this.elements.homeBtn.addEventListener('click', () => this.showModeSelection());
         this.elements.backToGradeSelectionBtn.addEventListener('click', () => this.showGradeSelection());
         
-        // 새로고침 버튼 및 확인 모달 이벤트
-        this.elements.refreshBtn.addEventListener('click', () => {
-            if (!this.state.selectedSheet) return;
-            this.elements.confirmationModal.classList.remove('hidden');
-        });
-        this.elements.confirmNoBtn.addEventListener('click', () => {
-            this.elements.confirmationModal.classList.add('hidden');
-        });
+        this.elements.refreshBtn.addEventListener('click', () => this.elements.confirmationModal.classList.remove('hidden'));
+        this.elements.confirmNoBtn.addEventListener('click', () => this.elements.confirmationModal.classList.add('hidden'));
         this.elements.confirmYesBtn.addEventListener('click', () => {
             this.elements.confirmationModal.classList.add('hidden');
             this.forceRefreshData();
         });
     },
     changeMode(mode) {
-        this.elements.selectionScreen.classList.add('hidden');
+        this.elements.mainScreens.forEach(screen => screen.classList.add('hidden'));
+        this.elements.homeBtn.classList.remove('hidden');
+        this.elements.practiceModeContainer.classList.add('hidden');
+
         if (mode === 'quiz') {
-            this.elements.refreshBtn.classList.add('hidden'); // 퀴즈 모드에서는 숨김
+            this.elements.refreshBtn.classList.add('hidden');
             this.elements.quizModeContainer.classList.remove('hidden');
+            this.elements.practiceModeContainer.classList.remove('hidden');
             quizMode.start();
         } else if (mode === 'learning') {
-            this.elements.refreshBtn.classList.remove('hidden'); // 학습 모드 시작 화면에서 보임
+            this.elements.refreshBtn.classList.remove('hidden');
             this.elements.learningModeContainer.classList.remove('hidden');
             learningMode.resetStartScreen();
         }
     },
     showModeSelection() {
-        this.elements.quizModeContainer.classList.add('hidden');
-        this.elements.learningModeContainer.classList.add('hidden');
-        this.elements.refreshBtn.classList.add('hidden'); // 모드 선택 화면으로 돌아갈 때 숨김
+        this.elements.mainScreens.forEach(screen => screen.classList.add('hidden'));
+        this.elements.selectionScreen.classList.remove('hidden');
+        this.elements.homeBtn.classList.remove('hidden');
+        this.elements.refreshBtn.classList.add('hidden');
+        this.elements.practiceModeContainer.classList.add('hidden');
         quizMode.reset();
         learningMode.reset();
-        this.elements.selectionScreen.classList.remove('hidden');
     },
     showGradeSelection() {
-        this.showModeSelection();
-        this.elements.selectionScreen.classList.add('hidden');
+        this.elements.mainScreens.forEach(screen => screen.classList.add('hidden'));
+        this.elements.gradeSelectionScreen.classList.remove('hidden');
         this.elements.homeBtn.classList.add('hidden');
         this.elements.backToGradeSelectionBtn.classList.add('hidden');
         this.elements.sheetLink.classList.add('hidden');
         this.state.selectedSheet = '';
-        this.elements.gradeSelectionScreen.classList.remove('hidden');
     },
     async forceRefreshData() {
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
 
-        // UI 비활성화 및 텍스트 변경
         learningMode.elements.startBtn.textContent = '새로고침 중...';
         learningMode.elements.startBtn.disabled = true;
         learningMode.elements.startWordInput.disabled = true;
@@ -136,16 +135,13 @@ const app = {
         this.elements.refreshBtn.disabled = true;
         this.elements.backToGradeSelectionBtn.disabled = true;
 
-        // 클라이언트(브라우저) 캐시 삭제
         localStorage.removeItem(`wordListCache_${sheet}`);
         
         try {
-            // 서버 캐시를 무시하고 새로운 데이터를 즉시 가져와서 클라이언트 캐시를 갱신
             const data = await api.fetchFromGoogleSheet('getWords', { force_refresh: 'true' });
             if (data.words) {
                 const cachePayload = { timestamp: Date.now(), words: data.words };
                 localStorage.setItem(`wordListCache_${sheet}`, JSON.stringify(cachePayload));
-                // 학습모드 데이터가 이미 로드된 상태라면 즉시 교체
                 if(learningMode.state.isWordListReady) {
                     learningMode.state.wordList = data.words;
                 }
@@ -155,7 +151,6 @@ const app = {
             console.error("Error during data refresh:", err);
             alert("데이터 새로고침에 실패했습니다.");
         } finally {
-            // UI 다시 활성화 및 텍스트 복원
             learningMode.elements.startBtn.textContent = '학습 시작';
             learningMode.elements.startBtn.disabled = false;
             learningMode.elements.startWordInput.disabled = false;
@@ -192,6 +187,20 @@ const app = {
         const randomIndex = Math.floor(Math.random() * this.config.backgroundImages.length);
         const imageUrl = this.config.backgroundImages[randomIndex];
         document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
+    },
+    preloadImages() {
+        this.config.backgroundImages.forEach(src => {
+            const img = new Image();
+            img.src = src;
+        });
+    },
+    debounce(func, delay) {
+        let timeout;
+        return function(...args) {
+            const context = this;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), delay);
+        };
     }
 };
 
@@ -293,11 +302,10 @@ const ui = {
         clearTimeout(app.state.tooltipTimeout);
         const tooltip = app.elements.translationTooltip;
         const targetRect = event.target.getBoundingClientRect();
-
-        // 툴팁 위치를 문장의 왼쪽 아래로 조정
+        
         Object.assign(tooltip.style, {
             left: `${targetRect.left + window.scrollX}px`,
-            top: `${targetRect.bottom + window.scrollY + 5}px` // 5px 여백
+            top: `${targetRect.bottom + window.scrollY + 5}px`
         });
 
         tooltip.textContent = '번역 중...';
@@ -315,7 +323,7 @@ const ui = {
             p.textContent = sentence;
             p.className = 'p-2 rounded transition-colors cursor-pointer hover:bg-gray-200 sample-sentence';
             p.onclick = () => api.speak(sentence);
-            p.addEventListener('mouseover', (e) => this.handleSentenceMouseOver(e, p.textContent));
+            p.addEventListener('mouseover', (e) => app.state.debouncedTranslate(e, p.textContent));
             p.addEventListener('mouseout', this.handleSentenceMouseOut);
             containerElement.appendChild(p);
         });
@@ -365,7 +373,9 @@ const quizMode = {
         quizBatch: [],
         isFetching: false,
         isFinished: false,
-        flippedContentType: null
+        flippedContentType: null,
+        isPracticeMode: false,
+        practiceLearnedWords: [],
     },
     elements: {},
     init() {
@@ -383,7 +393,8 @@ const quizMode = {
             sampleBtn: document.getElementById('quiz-sample-btn'),
             explanationBtn: document.getElementById('quiz-explanation-btn'),
             finishedScreen: document.getElementById('quiz-finished-screen'),
-            finishedMessage: document.getElementById('quiz-finished-message')
+            finishedMessage: document.getElementById('quiz-finished-message'),
+            practiceModeCheckbox: document.getElementById('practice-mode-checkbox'),
         };
         this.bindEvents();
     },
@@ -391,7 +402,15 @@ const quizMode = {
         this.elements.passBtn.addEventListener('click', () => this.displayNextQuiz());
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip('sample'));
         this.elements.explanationBtn.addEventListener('click', () => this.handleFlip('explanation'));
-        this.elements.word.addEventListener('click', () => api.speak(this.elements.word.textContent));
+        this.elements.word.addEventListener('click', (e) => {
+             api.speak(this.elements.word.textContent);
+             e.currentTarget.classList.add('active-feedback');
+             setTimeout(() => e.currentTarget.classList.remove('active-feedback'), 200);
+        });
+        this.elements.practiceModeCheckbox.addEventListener('change', (e) => {
+            this.state.isPracticeMode = e.target.checked;
+            this.start(); // 모드 변경 시 퀴즈 재시작
+        });
         document.addEventListener('keydown', (e) => {
             const isQuizModeActive = !this.elements.contentContainer.classList.contains('hidden') && !this.elements.choices.classList.contains('disabled');
             if (!isQuizModeActive) return;
@@ -411,6 +430,8 @@ const quizMode = {
         this.state.quizBatch = [];
         this.state.isFetching = false;
         this.state.isFinished = false;
+        this.state.practiceLearnedWords = []; // 연습모드 기록 초기화
+        // this.state.isPracticeMode 는 체크박스 상태를 따르므로 여기서 리셋하지 않음
         this.showLoader(true);
         this.elements.loader.querySelector('.loader').style.display = 'block';
         this.elements.loaderText.textContent = "퀴즈 데이터를 불러오는 중...";
@@ -421,8 +442,17 @@ const quizMode = {
         if (this.state.isFetching || this.state.isFinished) return;
         this.state.isFetching = true;
         try {
-            const learnedWords = utils.getLearnedWords();
-            const data = await api.fetchFromGoogleSheet('getQuizBatch', { learnedWords: learnedWords.join(',') });
+            let learnedWordsForRequest = [];
+            // 연습 모드가 아닐 때만 실제 학습 기록을 사용
+            if (!this.state.isPracticeMode) {
+                learnedWordsForRequest = utils.getLearnedWords();
+            }
+            // 연습 모드일 때는 서버에 learnedWords를 보내지 않거나, isPractice 플래그를 보냄
+            const data = await api.fetchFromGoogleSheet('getQuizBatch', { 
+                learnedWords: learnedWordsForRequest.join(','),
+                isPractice: this.state.isPracticeMode
+            });
+
             if (data.finished) {
                 this.state.isFinished = true;
                 if (this.state.quizBatch.length === 0) {
@@ -430,7 +460,13 @@ const quizMode = {
                 }
                 return;
             }
-            this.state.quizBatch.push(...data.quizzes);
+            // 연습모드일 경우, 임시 학습 기록을 제외
+            let newQuizzes = data.quizzes;
+            if (this.state.isPracticeMode) {
+                newQuizzes = data.quizzes.filter(q => !this.state.practiceLearnedWords.includes(q.question.word));
+            }
+
+            this.state.quizBatch.push(...newQuizzes);
         } catch (error) {
             console.error("퀴즈 묶음 가져오기 실패:", error);
             this.showError(error.message);
@@ -481,22 +517,33 @@ const quizMode = {
         });
         this.elements.choices.classList.remove('disabled');
         this.elements.passBtn.disabled = false;
+        this.elements.passBtn.innerHTML = 'PASS';
         this.elements.sampleBtn.style.display = (question.sample && question.sample.trim()) ? 'block' : 'none';
         this.elements.explanationBtn.style.display = (question.explanation && question.explanation.trim()) ? 'block' : 'none';
     },
     checkAnswer(selectedLi, selectedChoice) {
         this.elements.choices.classList.add('disabled');
+        const originalPassText = this.elements.passBtn.textContent;
         this.elements.passBtn.disabled = true;
+        this.elements.passBtn.innerHTML = `<div class="loader-small"></div>`;
+        
         const isCorrect = selectedChoice === this.state.currentQuiz.answer;
         if (isCorrect) {
             selectedLi.classList.add('correct');
-            utils.saveLearnedWord(this.state.currentQuiz.question.word);
+            if (this.state.isPracticeMode) {
+                this.state.practiceLearnedWords.push(this.state.currentQuiz.question.word);
+            } else {
+                utils.saveLearnedWord(this.state.currentQuiz.question.word);
+            }
         } else {
             selectedLi.classList.add('incorrect');
             const correctAnswerEl = Array.from(this.elements.choices.children).find(li => li.querySelector('span:last-child').textContent === this.state.currentQuiz.answer);
             correctAnswerEl?.classList.add('correct');
         }
-        setTimeout(() => this.displayNextQuiz(), 1500);
+        setTimeout(() => {
+            this.elements.passBtn.innerHTML = originalPassText;
+            this.displayNextQuiz()
+        }, 1500);
     },
     showLoader(isLoading) {
         this.elements.loader.classList.toggle('hidden', !isLoading);
@@ -593,9 +640,14 @@ const learningMode = {
         this.elements.nextBtn.addEventListener('click', () => this.navigate(1));
         this.elements.prevBtn.addEventListener('click', () => this.navigate(-1));
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip());
-        this.elements.wordDisplay.addEventListener('click', () => {
+        this.elements.wordDisplay.addEventListener('click', (e) => {
             const word = this.state.wordList[this.state.currentIndex]?.word;
-            if (word) { api.speak(word); api.copyToClipboard(word); }
+            if (word) { 
+                api.speak(word); 
+                api.copyToClipboard(word); 
+                e.currentTarget.classList.add('active-feedback');
+                setTimeout(() => e.currentTarget.classList.remove('active-feedback'), 200);
+            }
         });
         document.addEventListener('mousedown', this.handleMiddleClick.bind(this));
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
@@ -608,7 +660,6 @@ const learningMode = {
             const cachedData = localStorage.getItem(`wordListCache_${sheet}`);
             if (cachedData) {
                 const { timestamp, words } = JSON.parse(cachedData);
-                // 24시간(86400000ms) 이내의 캐시 데이터는 유효
                 if (Date.now() - timestamp < 86400000) {
                     this.state.wordList = words;
                     this.state.isWordListReady = true;
@@ -672,7 +723,7 @@ const learningMode = {
         this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">오류 발생</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
     },
     launchApp() {
-        app.elements.refreshBtn.classList.add('hidden'); // 실제 학습 시작 시 숨김
+        app.elements.refreshBtn.classList.add('hidden');
         this.elements.startScreen.classList.add('hidden');
         this.elements.loader.classList.add('hidden');
         this.elements.appContainer.classList.remove('hidden');
@@ -780,10 +831,8 @@ const learningMode = {
             this.handleFlip();
         } else if (e.key === ' ') {
              e.preventDefault();
-            if (this.elements.cardBack.classList.contains('is-slid-up')) {
-                // 뒷면이 보일 때는 특별한 동작 없음
-            } else {
-                api.speak(this.elements.wordDisplay.textContent);
+            if (!this.elements.cardBack.classList.contains('is-slid-up')) {
+                this.elements.wordDisplay.click();
             }
         }
     },
@@ -801,15 +850,13 @@ const learningMode = {
         const deltaX = e.changedTouches[0].screenX - this.state.touchstartX;
         const deltaY = e.changedTouches[0].screenY - this.state.touchstartY;
         
-        // 수평 스와이프 (좌/우) 로 이전/다음 단어 이동
         if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
             this.navigate(deltaX > 0 ? -1 : 1);
         } 
-        // 수직 스와이프 (위) 이고, 앱 화면 바깥쪽일 경우 다음 단어로 이동
         else if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 50) {
             if (!e.target.closest('#learning-app-container')) {
-                if (deltaY < 0) { // 위로 스와이프
-                    this.navigate(1); // 다음 단어로 이동
+                if (deltaY < 0) {
+                    this.navigate(1);
                 }
             }
         }
