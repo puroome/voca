@@ -1,6 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
 
-/* 배경 이미지를 위한 가상 요소 추가 */
 :root {
     --bg-image: url('');
 }
@@ -22,20 +21,18 @@ body::before {
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    opacity: 0.5; /* 외부 배경 진하게 */
+    opacity: 0.5;
     z-index: -1;
     background-color: #f1f5f9;
     transition: background-image 1s ease-in-out;
 }
 
-/* 앱 내부 화면을 위한 반투명 스타일 (블러 제거) */
 .content-panel {
-    background-color: rgba(255, 255, 255, 0.8); /* 내부 패널 투명도 조정 */
+    background-color: rgba(255, 255, 255, 0.8);
 }
 
-/* 제작자 문구 스타일 */
 .author-text {
-    color: rgba(107, 114, 128, 0.8); /* gray-500, 80% opacity */
+    color: rgba(107, 114, 128, 0.8);
 }
 
 .loader {
@@ -46,13 +43,21 @@ body::before {
     height: 40px;
     animation: spin 1s linear infinite;
 }
+.loader-small {
+    display: inline-block;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    width: 20px;
+    height: 20px;
+    animation: spin 1s linear infinite;
+}
 
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
 
-/* 학년 선택 화면 스타일 수정 */
 .perspective-container {
     perspective: 1000px;
 }
@@ -64,42 +69,41 @@ body::before {
 }
 .grade-select-card img.group {
     cursor: pointer;
-    transition: transform 0.4s ease, filter 0.4s ease; /* filter transition 추가 */
+    transition: transform 0.4s ease, filter 0.4s ease;
     transform-style: preserve-3d;
 }
 .grade-select-card img.group:hover {
     transform: translateY(-10px) rotateX(5deg) scale(1.05);
-    filter: drop-shadow(0 15px 10px rgba(0, 0, 0, 0.3)); /* box-shadow 대신 drop-shadow 사용 */
+    filter: drop-shadow(0 15px 10px rgba(0, 0, 0, 0.3));
 }
 .grade-select-card .emoji {
     pointer-events: none;
 }
-/* 학년별 이미지 크기 조정 */
 .grade-3 { max-width: 100%; }
 .grade-2 { max-width: 90%; }
 .grade-1 { max-width: 80%; }
 
-
-/* 퀴즈 모드 스타일 */
 .choice-item:hover { transform: scale(1.02); }
 .correct { background-color: #28a745 !important; color: white !important; transform: scale(1.05); border-color: #28a745; }
 .incorrect { background-color: #dc3545 !important; color: white !important; border-color: #dc3545; }
 .disabled { pointer-events: none; opacity: 0.7; }
 
-/* 학습/퀴즈 공통 스타일 */
 #word-display, #quiz-word {
     white-space: nowrap;
+    transition: background-color 0.2s;
 }
 #word-display:hover, #quiz-word:hover { 
     color: #1e40af; 
     cursor: pointer; 
+}
+#word-display.active-feedback, #quiz-word.active-feedback {
+    background-color: #d1fae5;
 }
 .sample-sentence:hover { 
     background-color: #f0f4f8; 
     cursor: pointer; 
 }
 
-/* 학습 모드 - 슬라이드 패널 (A어플 스타일) */
 #learning-app-container .relative {
     overflow: hidden;
     border-radius: 0.5rem;
@@ -125,10 +129,6 @@ body::before {
     pointer-events: auto;
 }
 
-
 #learning-card-front {
-    min-height: 45vh; /* 화면 높이의 45%를 최소 높이로 지정 */
+    min-height: 45vh;
 }
-
-
-
