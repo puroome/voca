@@ -800,13 +800,16 @@ const learningMode = {
         }
         const deltaX = e.changedTouches[0].screenX - this.state.touchstartX;
         const deltaY = e.changedTouches[0].screenY - this.state.touchstartY;
+        
+        // 수평 스와이프 (좌/우) 로 이전/다음 단어 이동
         if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
             this.navigate(deltaX > 0 ? -1 : 1);
-        } else if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 50) {
-            // 예문(뒷면)이 보이지 않을 때만, 그리고 카드 바깥 영역에서만 위쪽 스와이프를 통한 '다음' 기능이 작동하도록 수정
-            if (!this.elements.cardBack.classList.contains('is-slid-up') && !e.target.closest('#learning-card-front')) {
-                if (deltaY < 0) { // 위로 스와이프 했을 때
-                    this.navigate(1); // 다음으로 이동
+        } 
+        // 수직 스와이프 (위) 이고, 앱 화면 바깥쪽일 경우 다음 단어로 이동
+        else if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 50) {
+            if (!e.target.closest('#learning-app-container')) {
+                if (deltaY < 0) { // 위로 스와이프
+                    this.navigate(1); // 다음 단어로 이동
                 }
             }
         }
@@ -817,4 +820,3 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-
