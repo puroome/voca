@@ -32,6 +32,7 @@ const app = {
         selectedSheet: '',
         translationCache: {},
         translateDebounceTimeout: null,
+        longPressTimer: null,
     },
     elements: {
         gradeSelectionScreen: document.getElementById('grade-selection-screen'),
@@ -53,6 +54,12 @@ const app = {
         confirmNoBtn: document.getElementById('confirm-no-btn'),
         practiceModeControl: document.getElementById('practice-mode-control'),
         practiceModeCheckbox: document.getElementById('practice-mode-checkbox'),
+        wordContextMenu: document.getElementById('word-context-menu'),
+        searchAppContextBtn: document.getElementById('search-app-context-btn'),
+        searchDaumContextBtn: document.getElementById('search-daum-context-btn'),
+        searchNaverContextBtn: document.getElementById('search-naver-context-btn'),
+        searchEtymContextBtn: document.getElementById('search-etym-context-btn'),
+        searchLongmanContextBtn: document.getElementById('search-longman-context-btn'),
     },
     init() {
         this.preloadImages();
@@ -97,20 +104,25 @@ const app = {
             this.forceRefreshData();
         });
         
-        // Practice Mode Event Listener
         this.elements.practiceModeCheckbox.addEventListener('change', (e) => {
             quizMode.state.isPracticeMode = e.target.checked;
-            quizMode.start(); // Restart quiz to apply mode
+            quizMode.start();
+        });
+
+        document.addEventListener('click', (e) => {
+            if (this.elements.wordContextMenu && !this.elements.wordContextMenu.contains(e.target)) {
+                ui.hideWordContextMenu();
+            }
         });
     },
     changeMode(mode) {
         this.elements.selectionScreen.classList.add('hidden');
-        this.elements.practiceModeControl.classList.add('hidden'); // Hide by default
+        this.elements.practiceModeControl.classList.add('hidden');
 
         if (mode === 'quiz') {
             this.elements.refreshBtn.classList.add('hidden');
             this.elements.quizModeContainer.classList.remove('hidden');
-            this.elements.practiceModeControl.classList.remove('hidden'); // Show for quiz mode
+            this.elements.practiceModeControl.classList.remove('hidden');
             quizMode.start();
         } else if (mode === 'learning') {
             this.elements.refreshBtn.classList.remove('hidden');
@@ -122,7 +134,7 @@ const app = {
         this.elements.quizModeContainer.classList.add('hidden');
         this.elements.learningModeContainer.classList.add('hidden');
         this.elements.refreshBtn.classList.add('hidden');
-        this.elements.practiceModeControl.classList.add('hidden'); // Hide practice mode checkbox
+        this.elements.practiceModeControl.classList.add('hidden');
         quizMode.reset();
         learningMode.reset();
         this.elements.selectionScreen.classList.remove('hidden');
@@ -205,7 +217,14 @@ const app = {
         const randomIndex = Math.floor(Math.random() * this.config.backgroundImages.length);
         const imageUrl = this.config.backgroundImages[randomIndex];
         document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
-    }
+    },
+    searchWordInLearningMode(word) {
+        if (!word || !learningMode.state.isWordListReady) return;
+        
+        learningMode.elements.startWordInput.value = word;
+        learningMode.start();
+        ui.hideWordContextMenu();
+    },
 };
 
 // ================================================================
@@ -276,7 +295,7 @@ const ui = {
     renderInteractiveText(targetElement, text) {
         targetElement.innerHTML = '';
         if (!text || !text.trim()) return;
-        const regex = /(\[.*?\]|\bS\+V\b)|([a-zA-Z'-]+(?:[\s'-]*[a-zA-Z'-]+)*)/g;
+        const regex = /(\[.*?\]|\bS\+V\b)|([a-zA-Z0-9'-]+(?:[\s'-]*[a-zA-Z0-9'-]+)*)/g;
         text.split('\n').forEach(line => {
             let lastIndex = 0;
             let match;
@@ -287,13 +306,27 @@ const ui = {
                     const span = document.createElement('span');
                     span.textContent = englishPhrase;
                     span.className = 'interactive-word cursor-pointer hover:bg-yellow-200 p-1 rounded-sm transition-colors';
-                    span.title = '클릭하여 듣기 및 복사';
+                    
                     span.onclick = (e) => { 
+                        clearTimeout(app.state.longPressTimer);
                         api.speak(englishPhrase); 
                         api.copyToClipboard(englishPhrase); 
-                        e.currentTarget.classList.add('word-clicked');
-                        setTimeout(() => e.currentTarget.classList.remove('word-clicked'), 300);
                     };
+                    span.oncontextmenu = (e) => {
+                        e.preventDefault();
+                        this.showWordContextMenu(e, englishPhrase);
+                    };
+                    let touchMove = false;
+                    span.addEventListener('touchstart', (e) => {
+                        touchMove = false;
+                        clearTimeout(app.state.longPressTimer);
+                        app.state.longPressTimer = setTimeout(() => {
+                            if (!touchMove) this.showWordContextMenu(e, englishPhrase);
+                        }, 700);
+                    }, { passive: true });
+                    span.addEventListener('touchmove', () => { touchMove = true; clearTimeout(app.state.longPressTimer); });
+                    span.addEventListener('touchend', () => clearTimeout(app.state.longPressTimer));
+
                     targetElement.appendChild(span);
                 } else if (nonClickable) {
                     targetElement.appendChild(document.createTextNode(nonClickable));
@@ -322,7 +355,7 @@ const ui = {
             tooltip.classList.remove('hidden');
             const translatedText = await api.translateText(sentence);
             tooltip.textContent = translatedText;
-        }, 1000); // 1초 디바운스
+        }, 1000);
     },
     handleSentenceMouseOut() {
         clearTimeout(app.state.translateDebounceTimeout);
@@ -332,13 +365,98 @@ const ui = {
         containerElement.innerHTML = '';
         sentences.filter(s => s.trim()).forEach(sentence => {
             const p = document.createElement('p');
-            p.textContent = sentence;
             p.className = 'p-2 rounded transition-colors cursor-pointer hover:bg-gray-200 sample-sentence';
-            p.onclick = () => api.speak(sentence);
-            p.addEventListener('mouseover', (e) => this.handleSentenceMouseOver(e, p.textContent));
+
+            p.onclick = () => api.speak(p.textContent);
+            p.addEventListener('mouseover', (e) => {
+                if (e.target.classList.contains('interactive-word')) {
+                    this.handleSentenceMouseOut();
+                    return;
+                }
+                this.handleSentenceMouseOver(e, p.textContent);
+            });
             p.addEventListener('mouseout', this.handleSentenceMouseOut);
+
+            const processTextInto = (targetElement, text) => {
+                const parts = text.split(/([,\s\.'])/g).filter(part => part);
+                parts.forEach(part => {
+                    if (/[a-zA-Z]/.test(part)) {
+                        const span = document.createElement('span');
+                        span.textContent = part;
+                        span.className = 'hover:bg-yellow-200 rounded-sm transition-colors interactive-word';
+                        
+                        span.onclick = (e) => { 
+                            e.stopPropagation(); 
+                            clearTimeout(app.state.longPressTimer); 
+                            api.speak(part); 
+                            api.copyToClipboard(part); 
+                        };
+                        
+                        span.oncontextmenu = (e) => { 
+                            e.preventDefault(); 
+                            e.stopPropagation(); 
+                            this.showWordContextMenu(e, part); 
+                        };
+                        
+                        let touchMove = false;
+                        span.addEventListener('touchstart', (e) => { 
+                            e.stopPropagation(); 
+                            touchMove = false; 
+                            clearTimeout(app.state.longPressTimer); 
+                            app.state.longPressTimer = setTimeout(() => { 
+                                if (!touchMove) { this.showWordContextMenu(e, part); } 
+                            }, 700); 
+                        }, { passive: true });
+                        span.addEventListener('touchmove', (e) => { e.stopPropagation(); touchMove = true; clearTimeout(app.state.longPressTimer); });
+                        span.addEventListener('touchend', (e) => { e.stopPropagation(); clearTimeout(app.state.longPressTimer); });
+                        
+                        targetElement.appendChild(span);
+                    } else {
+                        targetElement.appendChild(document.createTextNode(part));
+                    }
+                });
+            };
+            
+            const sentenceParts = sentence.split(/(\*.*?\*)/g);
+            sentenceParts.forEach(part => {
+                if (part.startsWith('*') && part.endsWith('*')) {
+                    const strong = document.createElement('strong');
+                    processTextInto(strong, part.slice(1, -1));
+                    p.appendChild(strong);
+                } else if (part) {
+                    processTextInto(p, part);
+                }
+            });
+
             containerElement.appendChild(p);
         });
+    },
+    showWordContextMenu(event, word, options = {}) {
+        event.preventDefault();
+        const menu = app.elements.wordContextMenu;
+
+        app.elements.searchAppContextBtn.style.display = options.hideAppSearch ? 'none' : 'block';
+        
+        const touch = event.touches ? event.touches[0] : null;
+        const x = touch ? touch.clientX : event.clientX;
+        const y = touch ? touch.clientY : event.clientY;
+
+        menu.style.top = `${y}px`;
+        menu.style.left = `${x}px`;
+        menu.classList.remove('hidden');
+
+        const encodedWord = encodeURIComponent(word);
+
+        app.elements.searchAppContextBtn.onclick = () => app.searchWordInLearningMode(word);
+        app.elements.searchDaumContextBtn.onclick = () => { window.open(`https://dic.daum.net/search.do?q=${encodedWord}`, 'daum_dictionary_window'); this.hideWordContextMenu(); };
+        app.elements.searchNaverContextBtn.onclick = () => { window.open(`https://en.dict.naver.com/#/search?query=${encodedWord}`, 'naver_dictionary_window'); this.hideWordContextMenu(); };
+        app.elements.searchEtymContextBtn.onclick = () => { window.open(`https://www.etymonline.com/search?q=${encodedWord}`, 'etymonline_window'); this.hideWordContextMenu(); };
+        app.elements.searchLongmanContextBtn.onclick = () => { window.open(`https://www.ldoceonline.com/dictionary/${encodedWord}`, 'longman_dictionary_window'); this.hideWordContextMenu(); };
+    },
+    hideWordContextMenu() {
+        if (app.elements.wordContextMenu) {
+            app.elements.wordContextMenu.classList.add('hidden');
+        }
     }
 };
 
@@ -415,8 +533,6 @@ const quizMode = {
         this.elements.explanationBtn.addEventListener('click', () => this.handleFlip('explanation'));
         this.elements.word.addEventListener('click', (e) => {
             api.speak(this.elements.word.textContent);
-            e.currentTarget.classList.add('word-clicked');
-            setTimeout(() => e.currentTarget.classList.remove('word-clicked'), 300);
         });
         document.addEventListener('keydown', (e) => {
             const isQuizModeActive = !this.elements.contentContainer.classList.contains('hidden') && !this.elements.choices.classList.contains('disabled');
@@ -437,7 +553,7 @@ const quizMode = {
         this.state.quizBatch = [];
         this.state.isFetching = false;
         this.state.isFinished = false;
-        this.state.practiceLearnedWords = []; // Reset practice words on each start
+        this.state.practiceLearnedWords = [];
         this.showLoader(true);
         this.elements.loader.querySelector('.loader').style.display = 'block';
         this.elements.loaderText.textContent = "퀴즈 데이터를 불러오는 중...";
@@ -630,15 +746,34 @@ const learningMode = {
         this.elements.nextBtn.addEventListener('click', () => this.navigate(1));
         this.elements.prevBtn.addEventListener('click', () => this.navigate(-1));
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip());
+        
         this.elements.wordDisplay.addEventListener('click', (e) => {
             const word = this.state.wordList[this.state.currentIndex]?.word;
             if (word) { 
                 api.speak(word); 
                 api.copyToClipboard(word); 
-                e.currentTarget.classList.add('word-clicked');
-                setTimeout(() => e.currentTarget.classList.remove('word-clicked'), 300);
             }
         });
+        this.elements.wordDisplay.oncontextmenu = (e) => {
+            e.preventDefault();
+            const wordData = this.state.wordList[this.state.currentIndex];
+            if(wordData) ui.showWordContextMenu(e, wordData.word, { hideAppSearch: true });
+        };
+        let wordDisplayTouchMove = false;
+        this.elements.wordDisplay.addEventListener('touchstart', (e) => {
+            wordDisplayTouchMove = false;
+            clearTimeout(app.state.longPressTimer);
+            app.state.longPressTimer = setTimeout(() => {
+                const wordData = this.state.wordList[this.state.currentIndex];
+                if (!wordDisplayTouchMove && wordData) {
+                    ui.showWordContextMenu(e, wordData.word, { hideAppSearch: true });
+                }
+            }, 700);
+        }, { passive: true });
+        this.elements.wordDisplay.addEventListener('touchmove', () => { wordDisplayTouchMove = true; clearTimeout(app.state.longPressTimer); });
+        this.elements.wordDisplay.addEventListener('touchend', () => clearTimeout(app.state.longPressTimer));
+
+
         document.addEventListener('mousedown', this.handleMiddleClick.bind(this));
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
         document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
@@ -830,6 +965,7 @@ const learningMode = {
     },
     handleTouchStart(e) {
         if (!this.isLearningModeActive()) return;
+        if (e.target.closest('.interactive-word, #word-display')) return;
         this.state.touchstartX = e.changedTouches[0].screenX;
         this.state.touchstartY = e.changedTouches[0].screenY;
     },
