@@ -91,6 +91,15 @@ body::before {
 #word-display, #quiz-word {
     white-space: nowrap;
 }
+
+/* 단어 위 텍스트 선택 방지 (터치 시 기본 메뉴 비활성화) */
+.interactive-word {
+    -webkit-user-select: none; /* Safari */
+    -moz-user-select: none;    /* Firefox */
+    -ms-user-select: none;     /* IE/Edge */
+    user-select: none;         /* Standard */
+}
+
 #word-display:hover, #quiz-word:hover, .interactive-word:hover { 
     color: #1e40af; 
     cursor: pointer; 
