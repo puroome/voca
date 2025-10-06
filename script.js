@@ -55,10 +55,8 @@ const app = {
         practiceModeControl: document.getElementById('practice-mode-control'),
         practiceModeCheckbox: document.getElementById('practice-mode-checkbox'),
         wordContextMenu: document.getElementById('word-context-menu'),
-        searchAppContextBtn: document.getElementById('search-app-context-btn'),
         searchDaumContextBtn: document.getElementById('search-daum-context-btn'),
         searchNaverContextBtn: document.getElementById('search-naver-context-btn'),
-        searchEtymContextBtn: document.getElementById('search-etym-context-btn'),
         searchLongmanContextBtn: document.getElementById('search-longman-context-btn'),
     },
     init() {
@@ -431,11 +429,9 @@ const ui = {
             containerElement.appendChild(p);
         });
     },
-    showWordContextMenu(event, word, options = {}) {
+    showWordContextMenu(event, word) {
         event.preventDefault();
         const menu = app.elements.wordContextMenu;
-
-        app.elements.searchAppContextBtn.style.display = options.hideAppSearch ? 'none' : 'block';
         
         const touch = event.touches ? event.touches[0] : null;
         const x = touch ? touch.clientX : event.clientX;
@@ -447,10 +443,8 @@ const ui = {
 
         const encodedWord = encodeURIComponent(word);
 
-        app.elements.searchAppContextBtn.onclick = () => app.searchWordInLearningMode(word);
         app.elements.searchDaumContextBtn.onclick = () => { window.open(`https://dic.daum.net/search.do?q=${encodedWord}`, 'daum_dictionary_window'); this.hideWordContextMenu(); };
         app.elements.searchNaverContextBtn.onclick = () => { window.open(`https://en.dict.naver.com/#/search?query=${encodedWord}`, 'naver_dictionary_window'); this.hideWordContextMenu(); };
-        app.elements.searchEtymContextBtn.onclick = () => { window.open(`https://www.etymonline.com/search?q=${encodedWord}`, 'etymonline_window'); this.hideWordContextMenu(); };
         app.elements.searchLongmanContextBtn.onclick = () => { window.open(`https://www.ldoceonline.com/dictionary/${encodedWord}`, 'longman_dictionary_window'); this.hideWordContextMenu(); };
     },
     hideWordContextMenu() {
@@ -757,7 +751,7 @@ const learningMode = {
         this.elements.wordDisplay.oncontextmenu = (e) => {
             e.preventDefault();
             const wordData = this.state.wordList[this.state.currentIndex];
-            if(wordData) ui.showWordContextMenu(e, wordData.word, { hideAppSearch: true });
+            if(wordData) ui.showWordContextMenu(e, wordData.word);
         };
         let wordDisplayTouchMove = false;
         this.elements.wordDisplay.addEventListener('touchstart', (e) => {
@@ -766,7 +760,7 @@ const learningMode = {
             app.state.longPressTimer = setTimeout(() => {
                 const wordData = this.state.wordList[this.state.currentIndex];
                 if (!wordDisplayTouchMove && wordData) {
-                    ui.showWordContextMenu(e, wordData.word, { hideAppSearch: true });
+                    ui.showWordContextMenu(e, wordData.word);
                 }
             }, 700);
         }, { passive: true });
@@ -995,3 +989,4 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
