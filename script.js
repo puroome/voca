@@ -123,6 +123,17 @@ const app = {
             }
         });
 
+        // 브라우저 기본 컨텍스트 메뉴 비활성화 (지정한 팝업 외)
+        document.addEventListener('contextmenu', (e) => {
+            // 커스텀 메뉴를 띄워야 하는 대상인지 확인
+            const isWhitelisted = e.target.closest('.interactive-word, #word-display, #quiz-word');
+            
+            // 허용된 대상이 아니면 기본 메뉴를 막음
+            if (!isWhitelisted) {
+                e.preventDefault();
+            }
+        });
+
         window.addEventListener('popstate', (e) => {
             const state = e.state || { view: 'grade' };
             this._renderView(state.view, state.grade);
