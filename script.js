@@ -57,7 +57,6 @@ const app = {
         searchDaumContextBtn: document.getElementById('search-daum-context-btn'),
         searchNaverContextBtn: document.getElementById('search-naver-context-btn'),
         searchLongmanContextBtn: document.getElementById('search-longman-context-btn'),
-        searchAppContextBtn: document.getElementById('search-app-context-btn'),
     },
     async init() {
         this.preloadImages();
@@ -543,7 +542,6 @@ const ui = {
 
         const encodedWord = encodeURIComponent(word);
 
-        app.elements.searchAppContextBtn.onclick = () => app.searchWordInLearningMode(word);
         app.elements.searchDaumContextBtn.onclick = () => { window.open(`https://dic.daum.net/search.do?q=${encodedWord}`, 'daum_dictionary_window'); this.hideWordContextMenu(); };
         app.elements.searchNaverContextBtn.onclick = () => { window.open(`https://en.dict.naver.com/#/search?query=${encodedWord}`, 'naver_dictionary_window'); this.hideWordContextMenu(); };
         app.elements.searchLongmanContextBtn.onclick = () => { window.open(`https://www.ldoceonline.com/dictionary/${encodedWord}`, 'longman_dictionary_window'); this.hideWordContextMenu(); };
