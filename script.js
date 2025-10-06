@@ -3,6 +3,7 @@
 // ================================================================
 const app = {
     config: {
+        TTS_API_KEY: "AIzaSyAJmQBGY4H9DVMlhMtvAAVMi_4N7__DfKA", // A앱의 TTS 키 추가
         SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec",
         sheetLinks: {
             '1y': 'https://docs.google.com/spreadsheets/d/1r7fWUV1ea9CU-s2iSOwLKexEe2_7L8oUKhK0n1DpDUM/edit?usp=sharing',
@@ -30,9 +31,11 @@ const app = {
     },
     state: {
         selectedSheet: '',
-        translationCache: {},
         translateDebounceTimeout: null,
         longPressTimer: null,
+        currentVoiceSet: 'UK',
+        isSpeaking: false,
+        audioContext: null,
     },
     elements: {
         gradeSelectionScreen: document.getElementById('grade-selection-screen'),
@@ -45,6 +48,8 @@ const app = {
         homeBtn: document.getElementById('home-btn'),
         backToGradeSelectionBtn: document.getElementById('back-to-grade-selection-btn'),
         refreshBtn: document.getElementById('refresh-btn'),
+        ttsToggleBtn: document.getElementById('tts-toggle-btn'), // TTS 버튼 추가
+        ttsToggleText: document.getElementById('tts-toggle-text'), // TTS 버튼 텍스트 추가
         translationTooltip: document.getElementById('translation-tooltip'),
         imeWarning: document.getElementById('ime-warning'),
         noSampleMessage: document.getElementById('no-sample-message'),
@@ -58,45 +63,58 @@ const app = {
         searchDaumContextBtn: document.getElementById('search-daum-context-btn'),
         searchNaverContextBtn: document.getElementById('search-naver-context-btn'),
         searchLongmanContextBtn: document.getElementById('search-longman-context-btn'),
+        searchAppContextBtn: document.getElementById('search-app-context-btn'),
     },
-    init() {
+    async init() {
         this.preloadImages();
         this.setBackgroundImage();
+        
+        try {
+            await audioCache.init();
+            await translationDBCache.init();
+        } catch (e) {
+            console.error("캐시를 초기화할 수 없습니다.", e);
+        }
+
         this.bindGlobalEvents();
         quizMode.init();
         learningMode.init();
+
+        const hash = window.location.hash.substring(1);
+        const [mode, grade] = hash.split('-');
+        
+        let initialState = { view: 'grade' };
+
+        if (grade && ['1y', '2y', '3y'].includes(grade)) {
+            if (['mode', 'quiz', 'learning'].includes(mode)) {
+                initialState = { view: mode, grade: grade };
+            } else {
+                initialState = { view: 'mode', grade: mode }; // #1y 같은 경우
+            }
+        }
+        
+        history.replaceState(initialState, '');
+        this._renderView(initialState.view, initialState.grade);
     },
     bindGlobalEvents() {
         document.querySelectorAll('.grade-select-card img.group').forEach(img => {
             img.addEventListener('click', () => {
-                const card = img.closest('.grade-select-card');
-                this.state.selectedSheet = card.dataset.sheet;
-                this.elements.gradeSelectionScreen.classList.add('hidden');
-                this.elements.selectionTitle.textContent = `${img.alt} 어휘`;
-                
-                this.elements.sheetLink.href = this.config.sheetLinks[this.state.selectedSheet];
-                this.elements.sheetLink.classList.remove('hidden');
-
-                this.elements.selectionScreen.classList.remove('hidden');
-                this.elements.homeBtn.classList.remove('hidden');
-                this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                this.setBackgroundImage();
+                const grade = img.closest('.grade-select-card').dataset.sheet;
+                this.navigateTo('mode', grade);
             });
         });
 
-        document.getElementById('select-quiz-btn').addEventListener('click', () => this.changeMode('quiz'));
-        document.getElementById('select-learning-btn').addEventListener('click', () => this.changeMode('learning'));
+        document.getElementById('select-quiz-btn').addEventListener('click', () => this.navigateTo('quiz', this.state.selectedSheet));
+        document.getElementById('select-learning-btn').addEventListener('click', () => this.navigateTo('learning', this.state.selectedSheet));
 
-        this.elements.homeBtn.addEventListener('click', () => this.showModeSelection());
-        this.elements.backToGradeSelectionBtn.addEventListener('click', () => this.showGradeSelection());
+        this.elements.homeBtn.addEventListener('click', () => this.navigateTo('mode', this.state.selectedSheet));
+        this.elements.backToGradeSelectionBtn.addEventListener('click', () => this.navigateTo('grade'));
         
         this.elements.refreshBtn.addEventListener('click', () => {
             if (!this.state.selectedSheet) return;
             this.elements.confirmationModal.classList.remove('hidden');
         });
-        this.elements.confirmNoBtn.addEventListener('click', () => {
-            this.elements.confirmationModal.classList.add('hidden');
-        });
+        this.elements.confirmNoBtn.addEventListener('click', () => this.elements.confirmationModal.classList.add('hidden'));
         this.elements.confirmYesBtn.addEventListener('click', () => {
             this.elements.confirmationModal.classList.add('hidden');
             this.forceRefreshData();
@@ -112,39 +130,84 @@ const app = {
                 ui.hideWordContextMenu();
             }
         });
-    },
-    changeMode(mode) {
-        this.elements.selectionScreen.classList.add('hidden');
-        this.elements.practiceModeControl.classList.add('hidden');
 
-        if (mode === 'quiz') {
-            this.elements.refreshBtn.classList.add('hidden');
-            this.elements.quizModeContainer.classList.remove('hidden');
-            this.elements.practiceModeControl.classList.remove('hidden');
-            quizMode.start();
-        } else if (mode === 'learning') {
-            this.elements.refreshBtn.classList.remove('hidden');
-            this.elements.learningModeContainer.classList.remove('hidden');
-            learningMode.resetStartScreen();
-        }
+        document.body.addEventListener('click', () => {
+            if (!this.state.audioContext) {
+                this.state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }, { once: true });
+
+        this.elements.ttsToggleBtn.addEventListener('click', this.toggleVoiceSet.bind(this));
+
+        window.addEventListener('popstate', (e) => {
+            const state = e.state || { view: 'grade' };
+            this._renderView(state.view, state.grade);
+        });
     },
-    showModeSelection() {
+    navigateTo(view, grade) {
+        const currentState = history.state || {};
+        if (currentState.view === view && currentState.grade === grade) return;
+
+        let hash = '';
+        if (view !== 'grade') {
+            hash = grade ? `#${view}-${grade}` : `#${view}`;
+        }
+        history.pushState({ view, grade }, '', window.location.pathname + window.location.search + hash);
+        this._renderView(view, grade);
+    },
+    _renderView(view, grade) {
+        this.elements.gradeSelectionScreen.classList.add('hidden');
+        this.elements.selectionScreen.classList.add('hidden');
         this.elements.quizModeContainer.classList.add('hidden');
         this.elements.learningModeContainer.classList.add('hidden');
-        this.elements.refreshBtn.classList.add('hidden');
-        this.elements.practiceModeControl.classList.add('hidden');
-        quizMode.reset();
-        learningMode.reset();
-        this.elements.selectionScreen.classList.remove('hidden');
-    },
-    showGradeSelection() {
-        this.showModeSelection();
-        this.elements.selectionScreen.classList.add('hidden');
         this.elements.homeBtn.classList.add('hidden');
         this.elements.backToGradeSelectionBtn.classList.add('hidden');
+        this.elements.refreshBtn.classList.add('hidden');
+        this.elements.practiceModeControl.classList.add('hidden');
+        this.elements.ttsToggleBtn.classList.add('hidden');
         this.elements.sheetLink.classList.add('hidden');
-        this.state.selectedSheet = '';
-        this.elements.gradeSelectionScreen.classList.remove('hidden');
+
+        if (grade) {
+            this.state.selectedSheet = grade;
+            this.elements.sheetLink.href = this.config.sheetLinks[grade];
+            this.elements.sheetLink.classList.remove('hidden');
+            const gradeText = grade.replace('y', '학년');
+            this.elements.selectionTitle.textContent = `${gradeText} 어휘`;
+        } else {
+            this.state.selectedSheet = '';
+        }
+
+        switch (view) {
+            case 'quiz':
+                this.elements.quizModeContainer.classList.remove('hidden');
+                this.elements.homeBtn.classList.remove('hidden');
+                this.elements.backToGradeSelectionBtn.classList.remove('hidden');
+                this.elements.practiceModeControl.classList.remove('hidden');
+                this.elements.ttsToggleBtn.classList.remove('hidden');
+                quizMode.start();
+                break;
+            case 'learning':
+                this.elements.learningModeContainer.classList.remove('hidden');
+                this.elements.homeBtn.classList.remove('hidden');
+                this.elements.backToGradeSelectionBtn.classList.remove('hidden');
+                this.elements.refreshBtn.classList.remove('hidden');
+                this.elements.ttsToggleBtn.classList.remove('hidden');
+                learningMode.resetStartScreen();
+                break;
+            case 'mode':
+                this.elements.selectionScreen.classList.remove('hidden');
+                this.elements.backToGradeSelectionBtn.classList.remove('hidden');
+                quizMode.reset();
+                learningMode.reset();
+                break;
+            case 'grade':
+            default:
+                this.elements.gradeSelectionScreen.classList.remove('hidden');
+                this.setBackgroundImage();
+                quizMode.reset();
+                learningMode.reset();
+                break;
+        }
     },
     async forceRefreshData() {
         const sheet = this.state.selectedSheet;
@@ -216,6 +279,18 @@ const app = {
         const imageUrl = this.config.backgroundImages[randomIndex];
         document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
     },
+    toggleVoiceSet() {
+        const btn = this.elements.ttsToggleBtn;
+        btn.classList.toggle('is-flipped');
+        setTimeout(() => {
+            this.state.currentVoiceSet = (this.state.currentVoiceSet === 'UK') ? 'US' : 'UK';
+            this.elements.ttsToggleText.textContent = this.state.currentVoiceSet;
+            btn.classList.toggle('bg-blue-500', this.state.currentVoiceSet === 'UK');
+            btn.classList.toggle('hover:bg-blue-600', this.state.currentVoiceSet === 'UK');
+            btn.classList.toggle('bg-red-500', this.state.currentVoiceSet === 'US');
+            btn.classList.toggle('hover:bg-red-600', this.state.currentVoiceSet === 'US');
+        }, 250);
+    },
     searchWordInLearningMode(word) {
         if (!word || !learningMode.state.isWordListReady) return;
         
@@ -224,6 +299,108 @@ const app = {
         ui.hideWordContextMenu();
     },
 };
+
+// ================================================================
+// Audio Cache Module (Using IndexedDB)
+// ================================================================
+const audioCache = {
+    db: null,
+    dbName: 'ttsAudioCacheDB',
+    storeName: 'audioStore',
+    init() {
+        return new Promise((resolve, reject) => {
+            if (!('indexedDB' in window)) {
+                console.warn('IndexedDB not supported, TTS caching disabled.');
+                return resolve();
+            }
+            const request = indexedDB.open(this.dbName, 1);
+            request.onupgradeneeded = event => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    db.createObjectStore(this.storeName);
+                }
+            };
+            request.onsuccess = event => {
+                this.db = event.target.result;
+                resolve();
+            };
+            request.onerror = event => {
+                console.error("IndexedDB error:", event.target.error);
+                reject(event.target.error);
+            };
+        });
+    },
+    getAudio(key) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) { return resolve(null); }
+            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.get(key);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
+    },
+    saveAudio(key, audioData) {
+        if (!this.db) return;
+        try {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            store.put(audioData, key);
+        } catch (e) {
+            console.error("IndexedDB save error:", e);
+        }
+    }
+};
+
+// ================================================================
+// Translation Cache Module (Using IndexedDB)
+// ================================================================
+const translationDBCache = {
+    db: null,
+    dbName: 'translationCacheDB',
+    storeName: 'translationStore',
+    init() {
+        return new Promise((resolve, reject) => {
+            if (!('indexedDB' in window)) {
+                console.warn('IndexedDB not supported, translation caching disabled.');
+                return resolve();
+            }
+            const request = indexedDB.open(this.dbName, 1);
+            request.onupgradeneeded = event => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    db.createObjectStore(this.storeName);
+                }
+            };
+            request.onsuccess = event => {
+                this.db = event.target.result;
+                resolve();
+            };
+            request.onerror = event => reject(event.target.error);
+        });
+    },
+    get(key) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) { return resolve(null); }
+            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.get(key);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
+    },
+    save(key, data) {
+        if (!this.db) return;
+        try {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            store.put(data, key);
+        } catch (e) {
+            console.error("IndexedDB save error:", e);
+        }
+    }
+};
+
 
 // ================================================================
 // API & UI & Utility Modules
@@ -243,15 +420,13 @@ const api = {
         return data;
     },
     async translateText(text) {
-        if (app.state.translationCache[text]) return app.state.translationCache[text];
         try {
-            const url = new URL(app.config.SCRIPT_URL);
-            url.searchParams.append('action', 'translateText');
-            url.searchParams.append('text', text);
-            const response = await fetch(url);
-            const data = await response.json();
+            const cachedTranslation = await translationDBCache.get(text);
+            if (cachedTranslation) return cachedTranslation;
+    
+            const data = await this.fetchFromGoogleSheet('translateText', { text });
             if (data.success) {
-                app.state.translationCache[text] = data.translatedText;
+                translationDBCache.save(text, data.translatedText);
                 return data.translatedText;
             }
             return '번역 실패';
@@ -260,15 +435,57 @@ const api = {
             return '번역 오류';
         }
     },
-    speak(text) {
-        if (!text || !text.trim() || !('speechSynthesis' in window)) return;
+    async speak(text, contentType = 'word') {
+        const voiceSets = {
+            'UK': { 'word': { languageCode: 'en-GB', name: 'en-GB-Wavenet-D', ssmlGender: 'MALE' }, 'sample': { languageCode: 'en-GB', name: 'en-GB-Journey-D', ssmlGender: 'MALE' } },
+            'US': { 'word': { languageCode: 'en-US', name: 'en-US-Wavenet-F', ssmlGender: 'FEMALE' }, 'sample': { languageCode: 'en-US', name: 'en-US-Journey-F', ssmlGender: 'FEMALE' } }
+        };
+
+        if (!text || !text.trim() || app.state.isSpeaking) return;
+        if (!app.state.audioContext) app.state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (app.state.audioContext.state === 'suspended') app.state.audioContext.resume();
+        
+        app.state.isSpeaking = true;
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
-        const utterance = new SpeechSynthesisUtterance(processedText);
-        const voices = window.speechSynthesis.getVoices();
-        utterance.voice = voices.find(voice => voice.lang === 'en-US') || voices.find(voice => voice.lang.startsWith('en-'));
-        utterance.lang = 'en-US';
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utterance);
+        const voiceConfig = voiceSets[app.state.currentVoiceSet][contentType];
+        const cacheKey = `${processedText}|${voiceConfig.languageCode}|${voiceConfig.name}`;
+
+        const playAudio = async (audioArrayBuffer) => {
+            const audioBuffer = await app.state.audioContext.decodeAudioData(audioArrayBuffer);
+            const source = app.state.audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(app.state.audioContext.destination);
+            source.start(0);
+            source.onended = () => { app.state.isSpeaking = false; };
+        };
+
+        try {
+            const cachedAudio = await audioCache.getAudio(cacheKey);
+            if (cachedAudio) {
+                await playAudio(cachedAudio.slice(0));
+                return;
+            }
+
+            const TTS_URL = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${app.config.TTS_API_KEY}`;
+            const response = await fetch(TTS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ input: { text: processedText }, voice: voiceConfig, audioConfig: { audioEncoding: 'MP3' } })
+            });
+            if (!response.ok) throw new Error(`TTS API Error: ${(await response.json()).error.message}`);
+            
+            const data = await response.json();
+            const byteCharacters = atob(data.audioContent);
+            const byteArray = new Uint8Array(byteCharacters.length).map((_, i) => byteCharacters.charCodeAt(i));
+            const audioArrayBuffer = byteArray.buffer;
+            
+            audioCache.saveAudio(cacheKey, audioArrayBuffer.slice(0));
+            await playAudio(audioArrayBuffer);
+
+        } catch (error) {
+            console.error('TTS 재생 또는 캐싱에 실패했습니다:', error);
+            app.state.isSpeaking = false;
+        }
     },
     async copyToClipboard(text) {
         if (navigator.clipboard) {
@@ -307,7 +524,7 @@ const ui = {
                     
                     span.onclick = (e) => { 
                         clearTimeout(app.state.longPressTimer);
-                        api.speak(englishPhrase); 
+                        api.speak(englishPhrase, 'word'); 
                         api.copyToClipboard(englishPhrase); 
                     };
                     span.oncontextmenu = (e) => {
@@ -365,7 +582,7 @@ const ui = {
             const p = document.createElement('p');
             p.className = 'p-2 rounded transition-colors cursor-pointer hover:bg-gray-200 sample-sentence';
 
-            p.onclick = () => api.speak(p.textContent);
+            p.onclick = () => api.speak(p.textContent, 'sample');
             p.addEventListener('mouseover', (e) => {
                 if (e.target.classList.contains('interactive-word')) {
                     this.handleSentenceMouseOut();
@@ -386,7 +603,7 @@ const ui = {
                         span.onclick = (e) => { 
                             e.stopPropagation(); 
                             clearTimeout(app.state.longPressTimer); 
-                            api.speak(part); 
+                            api.speak(part, 'word'); 
                             api.copyToClipboard(part); 
                         };
                         
@@ -442,7 +659,8 @@ const ui = {
         menu.classList.remove('hidden');
 
         const encodedWord = encodeURIComponent(word);
-
+        
+        app.elements.searchAppContextBtn.onclick = () => app.searchWordInLearningMode(word);
         app.elements.searchDaumContextBtn.onclick = () => { window.open(`https://dic.daum.net/search.do?q=${encodedWord}`, 'daum_dictionary_window'); this.hideWordContextMenu(); };
         app.elements.searchNaverContextBtn.onclick = () => { window.open(`https://en.dict.naver.com/#/search?query=${encodedWord}`, 'naver_dictionary_window'); this.hideWordContextMenu(); };
         app.elements.searchLongmanContextBtn.onclick = () => { window.open(`https://www.ldoceonline.com/dictionary/${encodedWord}`, 'longman_dictionary_window'); this.hideWordContextMenu(); };
@@ -526,7 +744,7 @@ const quizMode = {
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip('sample'));
         this.elements.explanationBtn.addEventListener('click', () => this.handleFlip('explanation'));
         this.elements.word.addEventListener('click', (e) => {
-            api.speak(this.elements.word.textContent);
+            api.speak(this.elements.word.textContent, 'word');
         });
         document.addEventListener('keydown', (e) => {
             const isQuizModeActive = !this.elements.contentContainer.classList.contains('hidden') && !this.elements.choices.classList.contains('disabled');
@@ -744,7 +962,7 @@ const learningMode = {
         this.elements.wordDisplay.addEventListener('click', (e) => {
             const word = this.state.wordList[this.state.currentIndex]?.word;
             if (word) { 
-                api.speak(word); 
+                api.speak(word, 'word'); 
                 api.copyToClipboard(word); 
             }
         });
@@ -953,7 +1171,7 @@ const learningMode = {
             if (this.elements.cardBack.classList.contains('is-slid-up')) {
                 // 뒷면이 보일 때는 특별한 동작 없음
             } else {
-                api.speak(this.elements.wordDisplay.textContent);
+                api.speak(this.elements.wordDisplay.textContent, 'word');
             }
         }
     },
@@ -989,4 +1207,3 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-
