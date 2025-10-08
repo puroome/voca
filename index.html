@@ -21,7 +21,7 @@
                 <p class="author-text text-center text-sm font-semibold">Made by JEONG KAPSU</p>
             </div>
             
-            <button id="refresh-btn" class="hidden absolute top-4 right-16 bg-green-600 hover:bg-green-700 text-white font-bold p-3 rounded-full shadow-lg pointer-events-auto" title="어휘 자료 새로고침">
+            <button id="refresh-btn" class="hidden absolute top-4 right-4 bg-green-600 hover:bg-green-700 text-white font-bold p-3 rounded-full shadow-lg pointer-events-auto" title="어휘 자료 새로고침">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
             </button>
             <button id="home-btn" class="hidden absolute top-4 right-4 bg-gray-700 hover:bg-gray-800 text-white font-bold p-3 rounded-full shadow-lg pointer-events-auto" title="모드 선택으로 돌아가기">
@@ -60,16 +60,23 @@
             </a>
             <h1 id="selection-title" class="text-3xl font-bold text-gray-800 mb-2"></h1>
             <p class="text-gray-600 mb-8">원하는 학습 방식을 선택하세요.</p>
+            
             <div class="inline-block">
                 <div class="flex flex-col sm:flex-row justify-center items-center sm:gap-x-12 gap-y-4">
                     <div class="flex flex-col items-center">
                         <div id="select-learning-btn" class="relative cursor-pointer overflow-hidden rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:-rotate-2 w-44 h-44" title="학습 모드">
                             <img src="https://i.imgur.com/wLzv3kG.jpeg" alt="학습 모드 이미지" class="w-full h-full object-cover">
+                            <div class="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                                <h3 class="text-white text-center font-bold text-lg">학습 모드</h3>
+                            </div>
                         </div>
                     </div>
                     <div class="flex flex-col items-center">
                         <div id="select-quiz-btn" class="relative cursor-pointer overflow-hidden rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:rotate-2 w-44 h-44" title="퀴즈 모드">
                             <img src="https://i.imgur.com/9oREKDY.jpeg" alt="퀴즈 모드 이미지" class="w-full h-full object-cover">
+                             <div class="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                                <h3 class="text-white text-center font-bold text-lg">퀴즈 모드</h3>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -85,41 +92,51 @@
                 </div>
             </div>
         </div>
-
+        
         <div id="dashboard-container" class="hidden content-panel p-6 sm:p-8 rounded-2xl shadow-lg">
             <h1 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-6 text-center">학습 통계</h1>
             <div id="dashboard-content" class="space-y-6"></div>
         </div>
-        
+
         <div id="quiz-mode-container" class="hidden content-panel w-full p-4 sm:p-6 rounded-2xl shadow-lg">
             <div id="quiz-selection-screen" class="text-center p-10">
                 <h1 class="text-2xl font-bold text-gray-800 mb-6">퀴즈 유형</h1>                
                 <p class="text-gray-600 mb-8">원하는 퀴즈 유형을 선택하세요.</p>
+                
                 <div class="flex flex-col sm:flex-row justify-center items-center sm:gap-x-12 gap-y-4">
                     <div id="start-meaning-quiz-btn" class="relative cursor-pointer overflow-hidden rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:-rotate-2 w-44 h-44" title="뜻 맞히기">
                         <img src="https://i.imgur.com/Q9ouAc0.png" alt="뜻 맞히기 이미지" class="w-full h-full object-cover">
+                        <div class="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                            <h3 class="text-white text-center font-bold text-lg">뜻 맞히기</h3>
+                        </div>
                     </div>
                     <div id="start-blank-quiz-btn" class="relative cursor-pointer overflow-hidden rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:rotate-2 w-44 h-44" title="빈칸 채우기">
                         <img src="https://i.imgur.com/JJ1s8GV.png" alt="빈칸 채우기 이미지" class="w-full h-full object-cover">
+                         <div class="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                            <h3 class="text-white text-center font-bold text-lg">빈칸 채우기</h3>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div id="quiz-loader" class="hidden text-center p-10">
-                <div class="loader mx-auto"></div>
-                <p id="quiz-loader-text" class="mt-4 text-gray-600">퀴즈 데이터를 불러오는 중...</p>
-            </div>
-            <div id="quiz-content-container" class="hidden">
-                 <div id="quiz-question-display" class="bg-green-100 p-4 rounded-lg mb-4 flex min-h-[100px] items-center justify-center">
-                 </div>
-                 <div id="quiz-choices" class="space-y-4 mt-8"></div>
-                 <div id="quiz-button-container" class="hidden mt-8 flex items-center space-x-4">
-                 </div>
-            </div>
-            <div id="quiz-finished-screen" class="hidden text-center p-10">
-               <h2 class="text-3xl font-bold text-green-500 mb-4">축하합니다!</h2>
-               <p id="quiz-finished-message" class="text-gray-700 text-lg"></p>
-            </div>
-       </div>
+             <div id="quiz-loader" class="hidden text-center p-10">
+                   <div class="loader mx-auto"></div>
+                   <p id="quiz-loader-text" class="mt-4 text-gray-600">퀴즈 데이터를 불러오는 중...</p>
+             </div>
+             <div id="quiz-content-container" class="hidden">
+                   <div class="relative">
+                        <div id="quiz-card-front" class="w-full">
+                            <div id="quiz-question-display" class="bg-green-100 p-4 rounded-lg mb-4 min-h-[100px] flex items-center justify-center">
+                                <!-- Content injected by script -->
+                            </div>
+                            <ul id="quiz-choices" class="space-y-4 mt-8"></ul>
+                        </div>
+                   </div>
+             </div>
+             <div id="quiz-finished-screen" class="hidden text-center p-10">
+                <h2 class="text-3xl font-bold text-green-500 mb-4">축하합니다!</h2>
+                <p id="quiz-finished-message" class="text-gray-700 text-lg"></p>
+             </div>
+        </div>
 
         <div id="learning-mode-container" class="hidden">
             <div id="learning-start-screen" class="content-panel p-8 rounded-2xl shadow-lg text-center">
@@ -130,7 +147,7 @@
                     <button id="learning-start-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors mt-4">학습 시작</button>
                 </div>
                 <div id="learning-suggestions-container" class="hidden mt-4 text-left">
-                    <p class="text-gray-700 mb-4 text-center">입력하신 단어를 찾을 수 없습니다.<br>혹시 이 단어를 찾으시나요?</p>
+                    <p id="learning-suggestions-title" class="text-gray-700 mb-4 text-center">입력하신 단어를 찾을 수 없습니다.<br>혹시 이 단어를 찾으시나요?</p>
                     <div id="learning-suggestions-list" class="space-y-2"></div>
                     <button id="learning-back-to-start-btn" class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors mt-4">다시 입력</button>
                 </div>
@@ -205,3 +222,4 @@
     <script src="script.js"></script>
 </body>
 </html>
+
