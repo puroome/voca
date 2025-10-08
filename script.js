@@ -476,55 +476,70 @@ const ui = {
 };
 
 const utils = {
-    levenshteinDistance(a = '', b = '') {
-        const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
-        for (let i = 0; i <= a.length; i += 1) track[0][i] = i;
-        for (let j = 0; j <= b.length; j += 1) track[j][0] = j;
-        for (let j = 1; j <= b.length; j += 1) for (let i = 1; i <= a.length; i += 1) {
-            const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
-            track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator);
-        }
-        return track[b.length][a.length];
+    STORAGE_KEY: 'vocabProgress',
+
+    _getAllProgress() {
+        const data = localStorage.getItem(this.STORAGE_KEY);
+        const parsed = data ? JSON.parse(data) : {};
+        return parsed[app.state.selectedSheet] || {};
     },
-    _getLocalStorage(key) {
-        const data = localStorage.getItem(key);
-        if (data) {
-            const parsed = JSON.parse(data);
-            return parsed[app.state.selectedSheet] || [];
-        }
-        return [];
+
+    _saveAllProgress(progressData) {
+        const data = localStorage.getItem(this.STORAGE_KEY);
+        let allSheetsProgress = data ? JSON.parse(data) : {};
+        allSheetsProgress[app.state.selectedSheet] = progressData;
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(allSheetsProgress));
     },
-    _saveLocalStorage(key, word) {
-        if (!word) return;
-        const data = localStorage.getItem(key);
-        let parsed = data ? JSON.parse(data) : {};
-        const sheet = app.state.selectedSheet;
-        if (!parsed[sheet]) parsed[sheet] = [];
-        if (!parsed[sheet].includes(word)) {
-            parsed[sheet].push(word);
-            localStorage.setItem(key, JSON.stringify(parsed));
+
+    getWordStatus(word) {
+        const progress = this._getAllProgress()[word];
+        if (!progress) {
+            return 'unseen'; // 미학습
         }
-    },
-    _removeFromLocalStorage(key, word) {
-        if (!word) return;
-        const data = localStorage.getItem(key);
-        if (!data) return;
-        let parsed = JSON.parse(data);
-        const sheet = app.state.selectedSheet;
-        if (parsed[sheet]) {
-            const index = parsed[sheet].indexOf(word);
-            if (index > -1) {
-                parsed[sheet].splice(index, 1);
-                localStorage.setItem(key, JSON.stringify(parsed));
-            }
+
+        const meaningStatus = progress['MULTIPLE_CHOICE_MEANING'] || 'unseen';
+        const blankStatus = progress['FILL_IN_THE_BLANK'] || 'unseen';
+
+        if (meaningStatus === 'incorrect' || blankStatus === 'incorrect') {
+            return 'review'; // 복습 필요
         }
+
+        if (meaningStatus === 'correct' && blankStatus === 'correct') {
+            return 'learned'; // 학습 완료
+        }
+
+        if (meaningStatus === 'correct' || blankStatus === 'correct') {
+            return 'learning'; // 학습 중
+        }
+        
+        return 'unseen'; // 미학습
     },
-    getLearnedWords: () => utils._getLocalStorage('vocabLearnedWords'),
-    saveLearnedWord: word => utils._saveLocalStorage('vocabLearnedWords', word),
-    getIncorrectWords: () => utils._getLocalStorage('vocabIncorrectWords'),
-    saveIncorrectWord: word => utils._saveLocalStorage('vocabIncorrectWords', word),
-    removeIncorrectWord: word => utils._removeFromLocalStorage('vocabIncorrectWords', word),
+
+    updateWordStatus(word, quizType, result) { // result is 'correct' or 'incorrect'
+        if (!word || !quizType) return;
+        const allProgress = this._getAllProgress();
+        if (!allProgress[word]) {
+            allProgress[word] = {};
+        }
+        allProgress[word][quizType] = result;
+        this._saveAllProgress(allProgress);
+    },
+
+    getFullyLearnedWords() {
+        const allWords = learningMode.state.wordList;
+        return allWords
+            .filter(wordObj => this.getWordStatus(wordObj.word) === 'learned')
+            .map(wordObj => wordObj.word);
+    },
+    
+    getIncorrectWords() {
+        const allWords = learningMode.state.wordList;
+        return allWords
+            .filter(wordObj => this.getWordStatus(wordObj.word) === 'review')
+            .map(wordObj => wordObj.word);
+    }
 };
+
 
 const dashboard = {
     elements: {
@@ -540,14 +555,30 @@ const dashboard = {
         this.render();
     },
     render() {
-        const totalWords = learningMode.state.wordList.length;
-        const learnedWords = utils.getLearnedWords();
-        const incorrectWords = utils.getIncorrectWords();
+        const allWords = learningMode.state.wordList;
+        const totalWords = allWords.length;
+        if (totalWords === 0) {
+            this.elements.content.innerHTML = `<p class="text-center text-gray-600">학습할 단어가 없습니다.</p>`;
+            return;
+        }
+
+        const counts = {
+            learned: 0,
+            learning: 0,
+            review: 0,
+            unseen: 0
+        };
+
+        allWords.forEach(wordObj => {
+            const status = utils.getWordStatus(wordObj.word);
+            counts[status]++;
+        });
 
         const stats = [
-            { name: '학습 완료 (Learned)', count: learnedWords.length, color: 'bg-green-500' },
-            { name: '복습 필요 (Review)', count: incorrectWords.length, color: 'bg-orange-500' },
-            { name: '미학습 (Unlearned)', count: totalWords - learnedWords.length, color: 'bg-gray-400' }
+            { name: '학습 완료', count: counts.learned, color: 'bg-green-500' },
+            { name: '학습 중', count: counts.learning, color: 'bg-blue-500' },
+            { name: '복습 필요', count: counts.review, color: 'bg-orange-500' },
+            { name: '미학습', count: counts.unseen, color: 'bg-gray-400' }
         ];
 
         let contentHTML = `
@@ -624,6 +655,9 @@ const quizMode = {
         this.state.currentQuizType = quizType;
         this.elements.quizSelectionScreen.classList.add('hidden');
         this.reset(false);
+        if (!learningMode.state.isWordListReady) {
+            await learningMode.loadWordList();
+        }
         await this.fetchQuizBatch();
         this.displayNextQuiz();
     },
@@ -647,9 +681,9 @@ const quizMode = {
         if (this.state.isFetching || this.state.isFinished) return;
         this.state.isFetching = true;
         try {
-            const learnedWords = this.state.isPracticeMode ? this.state.practiceLearnedWords : utils.getLearnedWords();
+            const wordsToExclude = this.state.isPracticeMode ? this.state.practiceLearnedWords : utils.getFullyLearnedWords();
             const data = await api.fetchFromGoogleSheet('getQuizBatch', {
-                learnedWords: learnedWords.join(','),
+                learnedWords: wordsToExclude.join(','),
                 quizType: this.state.currentQuizType
             });
             if (data.finished) {
@@ -724,18 +758,17 @@ const quizMode = {
         this.elements.choices.classList.add('disabled');
         const isCorrect = selectedChoice === this.state.currentQuiz.answer;
         const word = this.state.currentQuiz.question.word_info.word;
+        const quizType = this.state.currentQuiz.type;
 
         selectedLi.classList.add(isCorrect ? 'correct' : 'incorrect');
 
-        if (isCorrect) {
-            if (this.state.isPracticeMode) {
-                this.state.practiceLearnedWords.push(word);
-            } else {
-                utils.saveLearnedWord(word);
-                utils.removeIncorrectWord(word);
-            }
+        if (this.state.isPracticeMode) {
+             if(isCorrect) this.state.practiceLearnedWords.push(word);
         } else {
-            utils.saveIncorrectWord(word);
+            utils.updateWordStatus(word, quizType, isCorrect ? 'correct' : 'incorrect');
+        }
+
+        if (!isCorrect) {
             const correctAnswerEl = Array.from(this.elements.choices.children).find(li => li.querySelector('span:last-child').textContent === this.state.currentQuiz.answer);
             correctAnswerEl?.classList.add('correct');
         }
@@ -758,7 +791,7 @@ const quizMode = {
 const learningMode = {
     state: {
         wordList: [], isWordListReady: false, currentIndex: 0,
-        touchstartX: 0, touchstartY: 0, isMistakeMode: false,
+        touchstartX: 0, touchstartY: 0, currentDisplayList: [],
     },
     elements: {},
     init() {
@@ -802,16 +835,16 @@ const learningMode = {
         this.elements.prevBtn.addEventListener('click', () => this.navigate(-1));
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip());
         this.elements.wordDisplay.addEventListener('click', () => {
-            const word = this.state.wordList[this.state.currentIndex]?.word;
+            const word = this.state.currentDisplayList[this.state.currentIndex]?.word;
             if (word) { api.speak(word); api.copyToClipboard(word); }
         });
         this.elements.wordDisplay.oncontextmenu = e => {
             e.preventDefault();
-            const wordData = this.state.wordList[this.state.currentIndex];
+            const wordData = this.state.currentDisplayList[this.state.currentIndex];
             if(wordData) ui.showWordContextMenu(e, wordData.word);
         };
         let wordDisplayTouchMove = false;
-        this.elements.wordDisplay.addEventListener('touchstart', e => { wordDisplayTouchMove = false; clearTimeout(app.state.longPressTimer); app.state.longPressTimer = setTimeout(() => { const wordData = this.state.wordList[this.state.currentIndex]; if (!wordDisplayTouchMove && wordData) ui.showWordContextMenu(e, wordData.word); }, 700); }, { passive: true });
+        this.elements.wordDisplay.addEventListener('touchstart', e => { wordDisplayTouchMove = false; clearTimeout(app.state.longPressTimer); app.state.longPressTimer = setTimeout(() => { const wordData = this.state.currentDisplayList[this.state.currentIndex]; if (!wordDisplayTouchMove && wordData) ui.showWordContextMenu(e, wordData.word); }, 700); }, { passive: true });
         this.elements.wordDisplay.addEventListener('touchmove', () => { wordDisplayTouchMove = true; clearTimeout(app.state.longPressTimer); });
         this.elements.wordDisplay.addEventListener('touchend', () => clearTimeout(app.state.longPressTimer));
         document.addEventListener('mousedown', this.handleMiddleClick.bind(this));
@@ -847,7 +880,6 @@ const learningMode = {
         }
     },
     async start() {
-        this.state.isMistakeMode = false;
         if (!this.state.isWordListReady) { await this.loadWordList(); if (!this.state.isWordListReady) return; }
         this.elements.startScreen.classList.add('hidden');
         let startIndex = 0;
@@ -866,7 +898,6 @@ const learningMode = {
         this.launchApp(this.state.wordList);
     },
     async startMistakeReview() {
-        this.state.isMistakeMode = true;
         if (!this.state.isWordListReady) { await this.loadWordList(); if (!this.state.isWordListReady) return; }
         const incorrectWords = utils.getIncorrectWords();
         if (incorrectWords.length === 0) {
@@ -883,7 +914,7 @@ const learningMode = {
         this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">오류 발생</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
     },
     launchApp(wordList) {
-        this.currentDisplayList = wordList;
+        this.state.currentDisplayList = wordList;
         app.elements.refreshBtn.classList.add('hidden');
         this.elements.startScreen.classList.add('hidden');
         this.elements.loader.classList.add('hidden');
@@ -895,7 +926,7 @@ const learningMode = {
         this.elements.appContainer.classList.add('hidden');
         this.elements.loader.classList.add('hidden');
         this.elements.fixedButtons.classList.add('hidden');
-        this.state.wordList = []; this.state.isWordListReady = false; this.state.isMistakeMode = false;
+        this.state.wordList = []; this.state.isWordListReady = false; this.state.currentDisplayList = [];
     },
     resetStartScreen() {
         this.reset();
@@ -920,7 +951,7 @@ const learningMode = {
     },
     displayWord(index) {
         this.elements.cardBack.classList.remove('is-slid-up');
-        const wordData = this.currentDisplayList[index];
+        const wordData = this.state.currentDisplayList[index];
         if (!wordData) return;
         this.elements.wordDisplay.textContent = wordData.word;
         ui.adjustFontSize(this.elements.wordDisplay);
@@ -932,7 +963,7 @@ const learningMode = {
     },
     navigate(direction) {
         const isBackVisible = this.elements.cardBack.classList.contains('is-slid-up');
-        const len = this.currentDisplayList.length;
+        const len = this.state.currentDisplayList.length;
         if (len === 0) return;
         const navigateAction = () => { this.state.currentIndex = (this.state.currentIndex + direction + len) % len; this.displayWord(this.state.currentIndex); };
         if (isBackVisible) { this.handleFlip(); setTimeout(navigateAction, 300); } 
@@ -940,7 +971,7 @@ const learningMode = {
     },
     handleFlip() {
         const isBackVisible = this.elements.cardBack.classList.contains('is-slid-up');
-        const wordData = this.currentDisplayList[this.state.currentIndex];
+        const wordData = this.state.currentDisplayList[this.state.currentIndex];
         const hasSample = wordData && wordData.sample && wordData.sample.trim() !== '';
         if (!isBackVisible) {
             if (!hasSample) { app.showNoSampleMessage(); return; }
