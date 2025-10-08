@@ -587,10 +587,10 @@ const dashboard = {
         });
 
         const stats = [
-            { name: '학습 완료 : 두 퀴즈에서 모두 정답 맞춤', count: counts.learned, color: 'bg-green-500' },
-            { name: '학습 중 : 퀴즈 1종에서 정답 맞춤', count: counts.learning, color: 'bg-blue-500' },
-            { name: '복습 필요 : 1회 이상 오답(PASS 포함) ', count: counts.review, color: 'bg-orange-500' },
-            { name: '미학습 : 아직 퀴즈를 풀지 않음', count: counts.unseen, color: 'bg-gray-400' }
+            { name: '학습 완료', description: '퀴즈 2종에서 모두 정답', count: counts.learned, color: 'bg-green-500' },
+            { name: '학습 중', description: '퀴즈 1종에서 정답', count: counts.learning, color: 'bg-blue-500' },
+            { name: '복습 필요', description: '최소 퀴즈 1종에서 오답(PASS 포함)', count: counts.review, color: 'bg-orange-500' },
+            { name: '미학습', description: '퀴즈 2종 모두 미응시', count: counts.unseen, color: 'bg-gray-400' }
         ];
 
         let contentHTML = `
@@ -1044,5 +1044,6 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
 
 
