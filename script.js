@@ -643,11 +643,18 @@ const quizMode = {
             const isQuizModeActive = !this.elements.contentContainer.classList.contains('hidden') && !this.elements.choices.classList.contains('disabled');
             if (!isQuizModeActive) return;
 
-            const choiceCount = this.elements.choices.children.length;
-            const choiceIndex = parseInt(e.key);
-            if (choiceIndex >= 1 && choiceIndex <= choiceCount) {
-                e.preventDefault();
-                this.elements.choices.children[choiceIndex - 1].click();
+            const choiceCount = Array.from(this.elements.choices.children).filter(el => !el.textContent.includes('PASS')).length;
+            
+            if (e.key.toLowerCase() === 'p') {
+                 e.preventDefault();
+                 const passButton = Array.from(this.elements.choices.children).find(el => el.textContent.includes('PASS'));
+                 if(passButton) passButton.click();
+            } else {
+                const choiceIndex = parseInt(e.key);
+                if (choiceIndex >= 1 && choiceIndex <= choiceCount) {
+                    e.preventDefault();
+                    this.elements.choices.children[choiceIndex - 1].click();
+                }
             }
         });
     },
@@ -752,6 +759,13 @@ const quizMode = {
             li.onclick = () => this.checkAnswer(li, choice);
             this.elements.choices.appendChild(li);
         });
+        
+        const passLi = document.createElement('li');
+        passLi.className = 'choice-item border-2 border-red-500 bg-red-500 hover:bg-red-600 text-white p-4 rounded-lg cursor-pointer flex items-center justify-center transition-all font-bold text-lg';
+        passLi.innerHTML = `<span>PASS</span>`;
+        passLi.onclick = () => this.checkAnswer(passLi, 'USER_PASSED');
+        this.elements.choices.appendChild(passLi);
+
         this.elements.choices.classList.remove('disabled');
     },
     checkAnswer(selectedLi, selectedChoice) {
@@ -769,7 +783,10 @@ const quizMode = {
         }
 
         if (!isCorrect) {
-            const correctAnswerEl = Array.from(this.elements.choices.children).find(li => li.querySelector('span:last-child').textContent === this.state.currentQuiz.answer);
+            const correctAnswerEl = Array.from(this.elements.choices.children).find(li => {
+                const choiceSpan = li.querySelector('span:last-child');
+                return choiceSpan && choiceSpan.textContent === this.state.currentQuiz.answer;
+            });
             correctAnswerEl?.classList.add('correct');
         }
         setTimeout(() => this.displayNextQuiz(), 1200);
@@ -1010,3 +1027,4 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
