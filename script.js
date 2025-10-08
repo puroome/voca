@@ -607,7 +607,7 @@ const dashboard = {
             contentHTML += `
                 <div class="w-full">
                     <div class="flex justify-between items-center mb-1">
-                        <span class="text-base font-semibold text-gray-700">${stat.name}</span>
+                        <span class="text-base font-semibold text-gray-700" title="${stat.description}">${stat.name}</span>
                         <span class="text-sm font-medium text-gray-500">${stat.count}개 (${percentage}%)</span>
                     </div>
                     <div class="w-full bg-gray-200 rounded-full h-4">
@@ -1044,6 +1044,3 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-
-
-
