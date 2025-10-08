@@ -188,7 +188,6 @@ const app = {
                 this.elements.learningModeContainer.classList.remove('hidden');
                 this.elements.homeBtn.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                this.elements.refreshBtn.classList.remove('hidden');
                 learningMode.resetStartScreen();
                 break;
             case 'dashboard':
@@ -206,6 +205,7 @@ const app = {
             case 'mode':
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
+                this.elements.refreshBtn.classList.remove('hidden');
                 quizMode.reset();
                 learningMode.reset();
                 break;
@@ -222,12 +222,24 @@ const app = {
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
 
-        learningMode.elements.startBtn.textContent = '새로고침 중...';
-        learningMode.elements.startBtn.disabled = true;
-        learningMode.elements.startWordInput.disabled = true;
-        this.elements.homeBtn.disabled = true;
-        this.elements.refreshBtn.disabled = true;
-        this.elements.backToGradeSelectionBtn.disabled = true;
+        // Disable interactive elements on the screen
+        const elementsToDisable = [
+            this.elements.homeBtn,
+            this.elements.refreshBtn,
+            this.elements.backToGradeSelectionBtn,
+            document.getElementById('select-learning-btn'),
+            document.getElementById('select-quiz-btn'),
+            document.getElementById('select-dashboard-btn'),
+            document.getElementById('select-mistakes-btn'),
+        ].filter(el => el);
+
+        elementsToDisable.forEach(el => {
+            el.classList.add('pointer-events-none', 'opacity-50');
+        });
+        
+        // Add a spinner to the refresh button
+        const refreshIconHTML = this.elements.refreshBtn.innerHTML;
+        this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
         localStorage.removeItem(`wordListCache_${sheet}`);
         
@@ -245,12 +257,12 @@ const app = {
             console.error("Error during data refresh:", err);
             alert("데이터 새로고침에 실패했습니다.");
         } finally {
-            learningMode.elements.startBtn.textContent = '학습 시작';
-            learningMode.elements.startBtn.disabled = false;
-            learningMode.elements.startWordInput.disabled = false;
-            this.elements.homeBtn.disabled = false;
-            this.elements.refreshBtn.disabled = false;
-            this.elements.backToGradeSelectionBtn.disabled = false;
+            // Re-enable elements
+            elementsToDisable.forEach(el => {
+                el.classList.remove('pointer-events-none', 'opacity-50');
+            });
+            // Restore refresh button icon
+            this.elements.refreshBtn.innerHTML = refreshIconHTML;
         }
     },
     showRefreshSuccessMessage() {
@@ -645,7 +657,7 @@ const quizMode = {
 
             const choiceCount = Array.from(this.elements.choices.children).filter(el => !el.textContent.includes('PASS')).length;
             
-            if (e.key.toLowerCase() === 'p') {
+            if (e.key.toLowerCase() === 'p' || e.key === '0') {
                  e.preventDefault();
                  const passButton = Array.from(this.elements.choices.children).find(el => el.textContent.includes('PASS'));
                  if(passButton) passButton.click();
@@ -771,15 +783,20 @@ const quizMode = {
     checkAnswer(selectedLi, selectedChoice) {
         this.elements.choices.classList.add('disabled');
         const isCorrect = selectedChoice === this.state.currentQuiz.answer;
+        const isPass = selectedChoice === 'USER_PASSED';
         const word = this.state.currentQuiz.question.word_info.word;
         const quizType = this.state.currentQuiz.type;
 
-        selectedLi.classList.add(isCorrect ? 'correct' : 'incorrect');
+        if (isPass) {
+            selectedLi.classList.add('incorrect');
+        } else {
+            selectedLi.classList.add(isCorrect ? 'correct' : 'incorrect');
+        }
 
         if (this.state.isPracticeMode) {
              if(isCorrect) this.state.practiceLearnedWords.push(word);
         } else {
-            utils.updateWordStatus(word, quizType, isCorrect ? 'correct' : 'incorrect');
+            utils.updateWordStatus(word, quizType, (isCorrect && !isPass) ? 'correct' : 'incorrect');
         }
 
         if (!isCorrect) {
@@ -906,7 +923,7 @@ const learningMode = {
             if (exactMatchIndex !== -1) {
                 startIndex = exactMatchIndex;
             } else {
-                const suggestions = this.state.wordList.map((item, index) => ({ word: item.word, index, distance: utils.levenshteinDistance(startWord, item.word.toLowerCase()) })).sort((a, b) => a.distance - b.distance).slice(0, 5);
+                const suggestions = this.state.wordList.map((item, index) => ({ word: item.word, index, distance: levenshteinDistance(startWord, item.word.toLowerCase()) })).sort((a, b) => a.distance - b.distance).slice(0, 5);
                 this.displaySuggestions(suggestions);
                 return;
             }
@@ -1027,5 +1044,4 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-
 
