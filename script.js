@@ -1033,7 +1033,7 @@ const learningMode = {
             }
             suggestions.forEach(({ word, index }) => {
                 const btn = document.createElement('button');
-                btn.className = 'w-full text-left bg-gray-100 hover:bg-gray-200 font-semibold py-3 px-4 rounded-lg transition-colors';
+                btn.className = 'w-full text-left bg-gray-100 hover:bg-gray-200 py-3 px-4 rounded-lg transition-colors';
                 btn.textContent = word;
                 btn.onclick = () => { this.state.currentIndex = index; this.launchApp(this.state.wordList); };
                 listElement.appendChild(btn);
@@ -1107,3 +1107,4 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
