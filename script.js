@@ -973,7 +973,7 @@ const learningMode = {
             .filter(s => s.distance < s.word.length / 2 + 1);
     
         if (levenshteinSuggestions.length > 0 || explanationMatches.length > 0) {
-            const title = `'<strong>${startWord}</strong>'에 대한 검색 결과가 없습니다.<br>아래 목록에서 확인해보세요.`;
+            const title = `<strong>${startWord}</strong>(이)가 없으니, 아래에서 확인해보세요.`;
             this.displaySuggestions(levenshteinSuggestions, explanationMatches, title);
         } else {
             const title = `'<strong>${startWord}</strong>'에 대한 검색 결과가 없습니다.`;
@@ -1105,4 +1105,5 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
 
