@@ -930,16 +930,17 @@ const learningMode = {
         }
     },
     async start() {
-        if (!this.state.isWordListReady) { 
-            await this.loadWordList(); 
-            if (!this.state.isWordListReady) return; 
+        if (!this.state.isWordListReady) {
+            await this.loadWordList();
+            if (!this.state.isWordListReady) return;
         }
-        
+    
         const startWord = this.elements.startWordInput.value.trim().toLowerCase();
-        
+    
         if (!startWord) {
             this.elements.startScreen.classList.add('hidden');
-            this.state.currentIndex = 0;
+            const lastIndex = parseInt(localStorage.getItem(`lastLearningIndex_${app.state.selectedSheet}`), 10);
+            this.state.currentIndex = (lastIndex && lastIndex >= 0 && lastIndex < this.state.wordList.length) ? lastIndex : 0;
             this.launchApp(this.state.wordList);
             return;
         }
@@ -1045,6 +1046,7 @@ const learningMode = {
         this.elements.suggestionsContainer.classList.remove('hidden');
     },
     displayWord(index) {
+        localStorage.setItem(`lastLearningIndex_${app.state.selectedSheet}`, index);
         this.elements.cardBack.classList.remove('is-slid-up');
         const wordData = this.state.currentDisplayList[index];
         if (!wordData) return;
@@ -1105,6 +1107,3 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-
-
-
