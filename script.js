@@ -930,23 +930,28 @@ const learningMode = {
         }
     },
     async start() {
-        if (!this.state.isWordListReady) { await this.loadWordList(); if (!this.state.isWordListReady) return; }
-        this.elements.startScreen.classList.add('hidden');
+        if (!this.state.isWordListReady) { 
+            await this.loadWordList(); 
+            if (!this.state.isWordListReady) return; 
+        }
         
         const startWord = this.elements.startWordInput.value.trim().toLowerCase();
+        
         if (!startWord) {
+            this.elements.startScreen.classList.add('hidden');
             this.state.currentIndex = 0;
             this.launchApp(this.state.wordList);
             return;
         }
-
+    
         const exactMatchIndex = this.state.wordList.findIndex(item => item.word.toLowerCase() === startWord);
         if (exactMatchIndex !== -1) {
+            this.elements.startScreen.classList.add('hidden');
             this.state.currentIndex = exactMatchIndex;
             this.launchApp(this.state.wordList);
             return;
         }
-
+    
         const searchRegex = new RegExp(`\\b${startWord}\\b`, 'i');
         const explanationMatches = this.state.wordList
             .map((item, index) => ({ word: item.word, index }))
@@ -956,7 +961,7 @@ const learningMode = {
                 const cleanedExplanation = explanation.replace(/\[.*?\]/g, '');
                 return searchRegex.test(cleanedExplanation);
             });
-
+    
         const levenshteinSuggestions = this.state.wordList
             .map((item, index) => ({
                 word: item.word,
@@ -966,7 +971,7 @@ const learningMode = {
             .sort((a, b) => a.distance - b.distance)
             .slice(0, 5)
             .filter(s => s.distance < s.word.length / 2 + 1);
-
+    
         if (levenshteinSuggestions.length > 0 || explanationMatches.length > 0) {
             const title = `입력하신 단어를 찾을 수 없습니다.<br>아래 목록에서 확인해보세요.`;
             this.displaySuggestions(levenshteinSuggestions, explanationMatches, title);
@@ -1100,3 +1105,4 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
