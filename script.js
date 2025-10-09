@@ -822,6 +822,20 @@ const quizMode = {
     },
 };
 
+// Levenshtein 거리를 계산하는 함수 (A어플에서 가져옴)
+function levenshteinDistance(a = '', b = '') {
+    const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+    for (let i = 0; i <= a.length; i += 1) track[0][i] = i;
+    for (let j = 0; j <= b.length; j += 1) track[j][0] = j;
+    for (let j = 1; j <= b.length; j += 1) {
+        for (let i = 1; i <= a.length; i += 1) {
+            const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
+            track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator);
+        }
+    }
+    return track[b.length][a.length];
+}
+
 const learningMode = {
     state: {
         wordList: [], isWordListReady: false, currentIndex: 0,
@@ -835,7 +849,9 @@ const learningMode = {
             startWordInput: document.getElementById('learning-start-word-input'),
             startBtn: document.getElementById('learning-start-btn'),
             suggestionsContainer: document.getElementById('learning-suggestions-container'),
-            suggestionsList: document.getElementById('learning-suggestions-list'),
+            suggestionsTitle: document.getElementById('learning-suggestions-title'),
+            suggestionsVocabList: document.getElementById('learning-suggestions-vocab-list'),
+            suggestionsExplanationList: document.getElementById('learning-suggestions-explanation-list'),
             backToStartBtn: document.getElementById('learning-back-to-start-btn'),
             loader: document.getElementById('learning-loader'),
             loaderText: document.getElementById('learning-loader-text'),
@@ -916,20 +932,48 @@ const learningMode = {
     async start() {
         if (!this.state.isWordListReady) { await this.loadWordList(); if (!this.state.isWordListReady) return; }
         this.elements.startScreen.classList.add('hidden');
-        let startIndex = 0;
+        
         const startWord = this.elements.startWordInput.value.trim().toLowerCase();
-        if (startWord) {
-            const exactMatchIndex = this.state.wordList.findIndex(item => item.word.toLowerCase() === startWord);
-            if (exactMatchIndex !== -1) {
-                startIndex = exactMatchIndex;
-            } else {
-                const suggestions = this.state.wordList.map((item, index) => ({ word: item.word, index, distance: levenshteinDistance(startWord, item.word.toLowerCase()) })).sort((a, b) => a.distance - b.distance).slice(0, 5);
-                this.displaySuggestions(suggestions);
-                return;
-            }
+        if (!startWord) {
+            this.state.currentIndex = 0;
+            this.launchApp(this.state.wordList);
+            return;
         }
-        this.state.currentIndex = startIndex;
-        this.launchApp(this.state.wordList);
+
+        const exactMatchIndex = this.state.wordList.findIndex(item => item.word.toLowerCase() === startWord);
+        if (exactMatchIndex !== -1) {
+            this.state.currentIndex = exactMatchIndex;
+            this.launchApp(this.state.wordList);
+            return;
+        }
+
+        const searchRegex = new RegExp(`\\b${startWord}\\b`, 'i');
+        const explanationMatches = this.state.wordList
+            .map((item, index) => ({ word: item.word, index }))
+            .filter((item, index) => {
+                const explanation = this.state.wordList[index].explanation;
+                if (!explanation) return false;
+                const cleanedExplanation = explanation.replace(/\[.*?\]/g, '');
+                return searchRegex.test(cleanedExplanation);
+            });
+
+        const levenshteinSuggestions = this.state.wordList
+            .map((item, index) => ({
+                word: item.word,
+                index,
+                distance: levenshteinDistance(startWord, item.word.toLowerCase())
+            }))
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, 5)
+            .filter(s => s.distance < s.word.length / 2 + 1);
+
+        if (levenshteinSuggestions.length > 0 || explanationMatches.length > 0) {
+            const title = `입력하신 단어를 찾을 수 없습니다.<br>아래 목록에서 확인해보세요.`;
+            this.displaySuggestions(levenshteinSuggestions, explanationMatches, title);
+        } else {
+            const title = `'<strong>${startWord}</strong>'에 대한 검색 결과가 없습니다.`;
+            this.displaySuggestions([], [], title);
+        }
     },
     async startMistakeReview() {
         if (!this.state.isWordListReady) { await this.loadWordList(); if (!this.state.isWordListReady) return; }
@@ -971,16 +1015,28 @@ const learningMode = {
         this.elements.startWordInput.focus();
         this.loadWordList();
     },
-    displaySuggestions(suggestions) {
+    displaySuggestions(vocabSuggestions, explanationSuggestions, title) {
         this.elements.startInputContainer.classList.add('hidden');
-        this.elements.suggestionsList.innerHTML = '';
-        suggestions.forEach(({ word, index }) => {
-            const btn = document.createElement('button');
-            btn.className = 'w-full text-left bg-gray-100 hover:bg-gray-200 font-semibold py-3 px-4 rounded-lg transition-colors';
-            btn.textContent = word;
-            btn.onclick = () => { this.state.currentIndex = index; this.launchApp(this.state.wordList); };
-            this.elements.suggestionsList.appendChild(btn);
-        });
+        this.elements.suggestionsTitle.innerHTML = title;
+        
+        const populateList = (listElement, suggestions) => {
+            listElement.innerHTML = '';
+            if (suggestions.length === 0) {
+                listElement.innerHTML = '<p class="text-gray-400 text-sm p-3">결과 없음</p>';
+                return;
+            }
+            suggestions.forEach(({ word, index }) => {
+                const btn = document.createElement('button');
+                btn.className = 'w-full text-left bg-gray-100 hover:bg-gray-200 font-semibold py-3 px-4 rounded-lg transition-colors';
+                btn.textContent = word;
+                btn.onclick = () => { this.state.currentIndex = index; this.launchApp(this.state.wordList); };
+                listElement.appendChild(btn);
+            });
+        };
+
+        populateList(this.elements.suggestionsVocabList, vocabSuggestions);
+        populateList(this.elements.suggestionsExplanationList, explanationSuggestions);
+        
         this.elements.suggestionsContainer.classList.remove('hidden');
     },
     displayWord(index) {
