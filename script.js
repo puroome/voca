@@ -637,6 +637,7 @@ const quizMode = {
             quizSelectionScreen: document.getElementById('quiz-selection-screen'),
             startMeaningQuizBtn: document.getElementById('start-meaning-quiz-btn'),
             startBlankQuizBtn: document.getElementById('start-blank-quiz-btn'),
+            startDefinitionQuizBtn: document.getElementById('start-definition-quiz-btn'),
             loader: document.getElementById('quiz-loader'),
             loaderText: document.getElementById('quiz-loader-text'),
             contentContainer: document.getElementById('quiz-content-container'),
@@ -650,6 +651,7 @@ const quizMode = {
     bindEvents() {
         this.elements.startMeaningQuizBtn.addEventListener('click', () => this.start('MULTIPLE_CHOICE_MEANING'));
         this.elements.startBlankQuizBtn.addEventListener('click', () => this.start('FILL_IN_THE_BLANK'));
+        this.elements.startDefinitionQuizBtn.addEventListener('click', () => this.start('MULTIPLE_CHOICE_DEFINITION'));
         
         document.addEventListener('keydown', (e) => {
             const isQuizModeActive = !this.elements.contentContainer.classList.contains('hidden') && !this.elements.choices.classList.contains('disabled');
@@ -712,7 +714,7 @@ const quizMode = {
                 }
                 return;
             }
-            this.state.quizBatch.push(...data.quizzes);
+            if(data.quizzes) this.state.quizBatch.push(...data.quizzes);
         } catch (error) {
             console.error("퀴즈 묶음 가져오기 실패:", error);
             this.showError(error.message);
@@ -747,13 +749,51 @@ const quizMode = {
         const questionDisplay = this.elements.questionDisplay;
         questionDisplay.innerHTML = '';
 
+        questionDisplay.classList.remove('justify-center', 'items-center');
+
         if (type === 'FILL_IN_THE_BLANK') {
             const p = document.createElement('p');
-            p.className = 'text-xl sm:text-2xl text-left text-gray-800 leading-relaxed';
-            let processedText = question.sentence_with_blank.replace(/\*([^*]+)\*/g, '<strong>$1</strong>');
-            p.innerHTML = processedText.replace(/＿＿＿＿/g, '<span class="font-bold text-blue-600">＿＿＿＿</span>').replace(/\n/g, '<br>');
+            p.className = 'text-xl sm:text-2xl text-left text-gray-800 leading-relaxed quiz-sentence-indent';
+
+            const processTextInto = (targetElement, text) => {
+                const parts = text.split(/([,\s\.'])/g).filter(part => part);
+                parts.forEach(part => {
+                    if (/[a-zA-Z]/.test(part)) {
+                        const span = document.createElement('span');
+                        span.textContent = part;
+                        span.className = 'hover:bg-yellow-200 rounded-sm transition-colors interactive-word';
+                        span.onclick = e => { e.stopPropagation(); clearTimeout(app.state.longPressTimer); api.speak(part); api.copyToClipboard(part); };
+                        span.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); ui.showWordContextMenu(e, part); };
+                        let touchMove = false;
+                        span.addEventListener('touchstart', e => { e.stopPropagation(); touchMove = false; clearTimeout(app.state.longPressTimer); app.state.longPressTimer = setTimeout(() => { if (!touchMove) ui.showWordContextMenu(e, part); }, 700); }, { passive: true });
+                        span.addEventListener('touchmove', e => { e.stopPropagation(); touchMove = true; clearTimeout(app.state.longPressTimer); });
+                        span.addEventListener('touchend', e => { e.stopPropagation(); clearTimeout(app.state.longPressTimer); });
+                        targetElement.appendChild(span);
+                    } else {
+                        targetElement.appendChild(document.createTextNode(part));
+                    }
+                });
+            };
+            
+            const sentenceParts = question.sentence_with_blank.split(/(\*.*?\*|＿＿＿＿)/g);
+            sentenceParts.forEach(part => {
+                if (part === '＿＿＿＿') {
+                    const blankSpan = document.createElement('span');
+                    blankSpan.className = 'font-bold text-blue-600';
+                    blankSpan.textContent = '＿＿＿＿';
+                    p.appendChild(blankSpan);
+                } else if (part && part.startsWith('*') && part.endsWith('*')) {
+                    const strong = document.createElement('strong');
+                    processTextInto(strong, part.slice(1, -1));
+                    p.appendChild(strong);
+                } else if (part) {
+                    processTextInto(p, part);
+                }
+            });
             questionDisplay.appendChild(p);
-        } else {
+
+        } else if (type === 'MULTIPLE_CHOICE_MEANING') {
+            questionDisplay.classList.add('justify-center', 'items-center');
             const h1 = document.createElement('h1');
             h1.className = 'text-3xl sm:text-4xl font-bold text-center text-gray-800 cursor-pointer';
             h1.title = "클릭하여 발음 듣기";
@@ -761,6 +801,13 @@ const quizMode = {
             h1.onclick = () => api.speak(question.word);
             questionDisplay.appendChild(h1);
             ui.adjustFontSize(h1);
+        } else if (type === 'MULTIPLE_CHOICE_DEFINITION') {
+             ui.displaySentences([question.definition], questionDisplay);
+            const sentenceElement = questionDisplay.querySelector('.sample-sentence');
+            if(sentenceElement){
+                sentenceElement.classList.add('text-lg', 'sm:text-xl', 'text-left', 'text-gray-800', 'leading-relaxed');
+                sentenceElement.classList.remove('p-2', 'hover:bg-gray-200');
+            }
         }
         
         this.elements.choices.innerHTML = '';
@@ -1107,7 +1154,3 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-
-
-
-
