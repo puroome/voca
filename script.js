@@ -726,7 +726,15 @@ const quizMode = {
         this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">퀴즈를 가져올 수 없습니다.</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
     },
     displayNextQuiz() {
+        // 이전에 맞춘 단어가 현재 대기열에 있으면 제거
+        this.state.quizBatch = this.state.quizBatch.filter(quiz => {
+            const word = quiz.question.word_info.word;
+            const status = utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
+            return !status.includes(word);
+        });
+
         if (!this.state.isFetching && this.state.quizBatch.length <= 3) this.fetchQuizBatch();
+        
         if (this.state.quizBatch.length === 0) {
             if (this.state.isFetching) {
                 this.elements.loaderText.textContent = "다음 퀴즈를 준비 중입니다...";
@@ -761,7 +769,7 @@ const quizMode = {
         } else if (type === 'FILL_IN_THE_BLANK') {
             questionDisplay.classList.remove('justify-center', 'items-center');
             const p = document.createElement('p');
-            p.className = 'text-xl sm:text-2xl text-left text-gray-800 leading-relaxed quiz-sentence-indent';
+            p.className = 'text-xl sm:text-2xl text-left text-gray-800 leading-relaxed';
 
             const processTextInto = (targetElement, text) => {
                 const parts = text.split(/([,\s\.'])/g).filter(part => part);
@@ -787,6 +795,7 @@ const quizMode = {
             sentenceParts.forEach(part => {
                 if (part === '＿＿＿＿') {
                     const blankSpan = document.createElement('span');
+                    blankSpan.style.whiteSpace = 'nowrap';
                     blankSpan.textContent = '＿＿＿＿';
                     p.appendChild(blankSpan);
                 } else if (part && part.startsWith('*') && part.endsWith('*')) {
