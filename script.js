@@ -504,27 +504,28 @@ const utils = {
     },
 
     getWordStatus(word) {
-        const progress = this._getAllProgress()[word];
-        if (!progress) {
-            return 'unseen'; // 미학습
-        }
-
-        const meaningStatus = progress['MULTIPLE_CHOICE_MEANING'] || 'unseen';
-        const blankStatus = progress['FILL_IN_THE_BLANK'] || 'unseen';
-
-        if (meaningStatus === 'incorrect' || blankStatus === 'incorrect') {
-            return 'review'; // 복습 필요
-        }
-
-        if (meaningStatus === 'correct' && blankStatus === 'correct') {
-            return 'learned'; // 학습 완료
-        }
-
-        if (meaningStatus === 'correct' || blankStatus === 'correct') {
-            return 'learning'; // 학습 중
-        }
+        const progress = this._getAllProgress()[word] || {};
+        const quizTypes = ['MULTIPLE_CHOICE_MEANING', 'FILL_IN_THE_BLANK', 'MULTIPLE_CHOICE_DEFINITION'];
         
-        return 'unseen'; // 미학습
+        let hasIncorrect = false;
+        let correctCount = 0;
+
+        for (const type of quizTypes) {
+            if (progress[type]) {
+                if (progress[type] === 'incorrect') {
+                    hasIncorrect = true;
+                    break;
+                }
+                if (progress[type] === 'correct') {
+                    correctCount++;
+                }
+            }
+        }
+
+        if (hasIncorrect) return 'review';
+        if (correctCount === quizTypes.length) return 'learned';
+        if (correctCount > 0) return 'learning';
+        return 'unseen';
     },
 
     updateWordStatus(word, quizType, result) { // result is 'correct' or 'incorrect'
@@ -537,11 +538,15 @@ const utils = {
         this._saveAllProgress(allProgress);
     },
 
-    getFullyLearnedWords() {
-        const allWords = learningMode.state.wordList;
-        return allWords
-            .filter(wordObj => this.getWordStatus(wordObj.word) === 'learned')
-            .map(wordObj => wordObj.word);
+    getCorrectWordsForQuizType(quizType) {
+        const allProgress = this._getAllProgress();
+        const correctWords = [];
+        for (const word in allProgress) {
+            if (allProgress[word][quizType] === 'correct') {
+                correctWords.push(word);
+            }
+        }
+        return correctWords;
     },
     
     getIncorrectWords() {
@@ -574,23 +579,17 @@ const dashboard = {
             return;
         }
 
-        const counts = {
-            learned: 0,
-            learning: 0,
-            review: 0,
-            unseen: 0
-        };
-
+        const counts = { learned: 0, learning: 0, review: 0, unseen: 0 };
         allWords.forEach(wordObj => {
             const status = utils.getWordStatus(wordObj.word);
             counts[status]++;
         });
 
         const stats = [
-            { name: '학습 완료', description: '퀴즈 2종에서 모두 정답', count: counts.learned, color: 'bg-green-500' },
-            { name: '학습 중', description: '퀴즈 1종에서 정답', count: counts.learning, color: 'bg-blue-500' },
-            { name: '복습 필요', description: '최소 퀴즈 1종에서 오답(PASS 포함)', count: counts.review, color: 'bg-orange-500' },
-            { name: '미학습', description: '퀴즈 2종 모두 미응시', count: counts.unseen, color: 'bg-gray-400' }
+            { name: '미학습', description: '아직 어떤 퀴즈도 풀지 않음', count: counts.unseen, color: 'bg-gray-400' },
+            { name: '학습 중', description: '최소 1종류의 퀴즈를 풀어서 맞힘, 아직 틀리지 않음', count: counts.learning, color: 'bg-blue-500' },
+            { name: '복습 필요', description: '최소 1종류의 퀴즈에서 틀림', count: counts.review, color: 'bg-orange-500' },
+            { name: '학습 완료', description: '모든 종류의 퀴즈에서 정답을 맞힘', count: counts.learned, color: 'bg-green-500' }
         ];
 
         let contentHTML = `
@@ -702,7 +701,10 @@ const quizMode = {
         if (this.state.isFetching || this.state.isFinished) return;
         this.state.isFetching = true;
         try {
-            const wordsToExclude = this.state.isPracticeMode ? this.state.practiceLearnedWords : utils.getFullyLearnedWords();
+            const wordsToExclude = this.state.isPracticeMode 
+                ? this.state.practiceLearnedWords 
+                : utils.getCorrectWordsForQuizType(this.state.currentQuizType);
+
             const data = await api.fetchFromGoogleSheet('getQuizBatch', {
                 learnedWords: wordsToExclude.join(','),
                 quizType: this.state.currentQuizType
@@ -1154,3 +1156,4 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
