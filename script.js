@@ -504,31 +504,26 @@ const utils = {
     },
 
     getWordStatus(word) {
-        const progress = this._getAllProgress()[word] || {};
-        const quizTypes = ['MULTIPLE_CHOICE_MEANING', 'FILL_IN_THE_BLANK', 'MULTIPLE_CHOICE_DEFINITION'];
-        
-        let hasIncorrect = false;
-        let correctCount = 0;
+        const progress = this._getAllProgress()[word];
+        if (!progress) return 'unseen';
 
-        for (const type of quizTypes) {
-            if (progress[type]) {
-                if (progress[type] === 'incorrect') {
-                    hasIncorrect = true;
-                    break;
-                }
-                if (progress[type] === 'correct') {
-                    correctCount++;
-                }
-            }
+        const meaningStatus = progress['MULTIPLE_CHOICE_MEANING'] || 'unseen';
+        const blankStatus = progress['FILL_IN_THE_BLANK'] || 'unseen';
+        const definitionStatus = progress['MULTIPLE_CHOICE_DEFINITION'] || 'unseen';
+
+        if (meaningStatus === 'incorrect' || blankStatus === 'incorrect' || definitionStatus === 'incorrect') {
+            return 'review';
         }
-
-        if (hasIncorrect) return 'review';
-        if (correctCount === quizTypes.length) return 'learned';
-        if (correctCount > 0) return 'learning';
+        if (meaningStatus === 'correct' && blankStatus === 'correct' && definitionStatus === 'correct') {
+            return 'learned';
+        }
+        if (meaningStatus === 'correct' || blankStatus === 'correct' || definitionStatus === 'correct') {
+            return 'learning';
+        }
         return 'unseen';
     },
 
-    updateWordStatus(word, quizType, result) { // result is 'correct' or 'incorrect'
+    updateWordStatus(word, quizType, result) {
         if (!word || !quizType) return;
         const allProgress = this._getAllProgress();
         if (!allProgress[word]) {
@@ -538,15 +533,16 @@ const utils = {
         this._saveAllProgress(allProgress);
     },
 
-    getCorrectWordsForQuizType(quizType) {
+    getCorrectlyAnsweredWords(quizType) {
+        if (!quizType) return [];
         const allProgress = this._getAllProgress();
-        const correctWords = [];
+        const correctlyAnswered = [];
         for (const word in allProgress) {
-            if (allProgress[word][quizType] === 'correct') {
-                correctWords.push(word);
+            if (allProgress[word] && allProgress[word][quizType] === 'correct') {
+                correctlyAnswered.push(word);
             }
         }
-        return correctWords;
+        return correctlyAnswered;
     },
     
     getIncorrectWords() {
@@ -579,10 +575,11 @@ const dashboard = {
             return;
         }
 
-        const counts = { learned: 0, learning: 0, review: 0, unseen: 0 };
+        const counts = {
+            learned: 0, learning: 0, review: 0, unseen: 0
+        };
         allWords.forEach(wordObj => {
-            const status = utils.getWordStatus(wordObj.word);
-            counts[status]++;
+            counts[utils.getWordStatus(wordObj.word)]++;
         });
 
         const stats = [
@@ -701,9 +698,9 @@ const quizMode = {
         if (this.state.isFetching || this.state.isFinished) return;
         this.state.isFetching = true;
         try {
-            const wordsToExclude = this.state.isPracticeMode 
-                ? this.state.practiceLearnedWords 
-                : utils.getCorrectWordsForQuizType(this.state.currentQuizType);
+            const wordsToExclude = this.state.isPracticeMode ? 
+                this.state.practiceLearnedWords : 
+                utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
 
             const data = await api.fetchFromGoogleSheet('getQuizBatch', {
                 learnedWords: wordsToExclude.join(','),
@@ -716,7 +713,7 @@ const quizMode = {
                 }
                 return;
             }
-            if(data.quizzes) this.state.quizBatch.push(...data.quizzes);
+            this.state.quizBatch.push(...data.quizzes);
         } catch (error) {
             console.error("퀴즈 묶음 가져오기 실패:", error);
             this.showError(error.message);
@@ -739,6 +736,8 @@ const quizMode = {
                 }, 100);
             } else if (this.state.isFinished) {
                 this.showFinishedScreen("모든 단어 학습을 완료했습니다!");
+            } else if (!this.state.isFetching) {
+                this.showFinishedScreen("풀 수 있는 퀴즈가 더 이상 없습니다!");
             }
             return;
         }
@@ -751,9 +750,16 @@ const quizMode = {
         const questionDisplay = this.elements.questionDisplay;
         questionDisplay.innerHTML = '';
 
-        questionDisplay.classList.remove('justify-center', 'items-center');
-
-        if (type === 'FILL_IN_THE_BLANK') {
+        if (type === 'MULTIPLE_CHOICE_DEFINITION') {
+            questionDisplay.classList.remove('justify-center', 'items-center');
+            ui.displaySentences([question.definition], questionDisplay);
+            const sentenceElement = questionDisplay.querySelector('.sample-sentence');
+            if(sentenceElement){
+                sentenceElement.classList.add('text-lg', 'sm:text-xl', 'text-left', 'text-gray-800', 'leading-relaxed');
+                sentenceElement.classList.remove('p-2', 'hover:bg-gray-200');
+            }
+        } else if (type === 'FILL_IN_THE_BLANK') {
+            questionDisplay.classList.remove('justify-center', 'items-center');
             const p = document.createElement('p');
             p.className = 'text-xl sm:text-2xl text-left text-gray-800 leading-relaxed quiz-sentence-indent';
 
@@ -776,12 +782,11 @@ const quizMode = {
                     }
                 });
             };
-            
+
             const sentenceParts = question.sentence_with_blank.split(/(\*.*?\*|＿＿＿＿)/g);
             sentenceParts.forEach(part => {
                 if (part === '＿＿＿＿') {
                     const blankSpan = document.createElement('span');
-                    blankSpan.className = 'font-bold text-blue-600';
                     blankSpan.textContent = '＿＿＿＿';
                     p.appendChild(blankSpan);
                 } else if (part && part.startsWith('*') && part.endsWith('*')) {
@@ -793,8 +798,7 @@ const quizMode = {
                 }
             });
             questionDisplay.appendChild(p);
-
-        } else if (type === 'MULTIPLE_CHOICE_MEANING') {
+        } else {
             questionDisplay.classList.add('justify-center', 'items-center');
             const h1 = document.createElement('h1');
             h1.className = 'text-3xl sm:text-4xl font-bold text-center text-gray-800 cursor-pointer';
@@ -803,13 +807,6 @@ const quizMode = {
             h1.onclick = () => api.speak(question.word);
             questionDisplay.appendChild(h1);
             ui.adjustFontSize(h1);
-        } else if (type === 'MULTIPLE_CHOICE_DEFINITION') {
-             ui.displaySentences([question.definition], questionDisplay);
-            const sentenceElement = questionDisplay.querySelector('.sample-sentence');
-            if(sentenceElement){
-                sentenceElement.classList.add('text-lg', 'sm:text-xl', 'text-left', 'text-gray-800', 'leading-relaxed');
-                sentenceElement.classList.remove('p-2', 'hover:bg-gray-200');
-            }
         }
         
         this.elements.choices.innerHTML = '';
@@ -848,7 +845,7 @@ const quizMode = {
             utils.updateWordStatus(word, quizType, (isCorrect && !isPass) ? 'correct' : 'incorrect');
         }
 
-        if (!isCorrect) {
+        if (!isCorrect && !isPass) {
             const correctAnswerEl = Array.from(this.elements.choices.children).find(li => {
                 const choiceSpan = li.querySelector('span:last-child');
                 return choiceSpan && choiceSpan.textContent === this.state.currentQuiz.answer;
