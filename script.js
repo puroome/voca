@@ -726,13 +726,6 @@ const quizMode = {
         this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">퀴즈를 가져올 수 없습니다.</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
     },
     displayNextQuiz() {
-        // 이전에 맞춘 단어가 현재 대기열에 있으면 제거
-        this.state.quizBatch = this.state.quizBatch.filter(quiz => {
-            const word = quiz.question.word_info.word;
-            const status = utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
-            return !status.includes(word);
-        });
-
         if (!this.state.isFetching && this.state.quizBatch.length <= 3) this.fetchQuizBatch();
         
         if (this.state.quizBatch.length === 0) {
