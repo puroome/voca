@@ -144,3 +144,9 @@ body::before {
 #learning-card-front {
     min-height: 45vh; /* 화면 높이의 45%를 최소 높이로 지정 */
 }
+
+/* 빈칸 채우기 퀴즈 문장 줄바꿈 시 들여쓰기 */
+.quiz-sentence-indent {
+    padding-left: 1.5em; 
+    text-indent: -1.5em;
+}
