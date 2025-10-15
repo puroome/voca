@@ -326,6 +326,18 @@ const translationDBCache = {
     }
 };
 
+// ================================================================
+// TTS Voice Loading (iOS compatibility)
+// ================================================================
+let voices = [];
+function populateVoiceList() {
+    voices = window.speechSynthesis.getVoices();
+}
+populateVoiceList();
+if (speechSynthesis.onvoiceschanged !== undefined) {
+    speechSynthesis.onvoiceschanged = populateVoiceList;
+}
+
 const api = {
     async fetchFromGoogleSheet(action, params = {}) {
         const url = new URL(app.config.SCRIPT_URL);
@@ -355,12 +367,29 @@ const api = {
     },
     speak(text) {
         if (!text || !text.trim() || !('speechSynthesis' in window)) return;
+        
+        window.speechSynthesis.cancel(); // Cancel any previous speech
+
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
         const utterance = new SpeechSynthesisUtterance(processedText);
-        const voices = window.speechSynthesis.getVoices();
-        utterance.voice = voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en-'));
+
+        // Find a high-quality voice
+        let selectedVoice = voices.find(v => v.name === 'Samantha' && v.lang === 'en-US'); // Preferred iOS voice
+        if (!selectedVoice) {
+            selectedVoice = voices.find(v => v.lang === 'en-US' && v.localService);
+        }
+        if (!selectedVoice) {
+            selectedVoice = voices.find(v => v.lang === 'en-US');
+        }
+        if (!selectedVoice) {
+            selectedVoice = voices.find(v => v.lang.startsWith('en-'));
+        }
+
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+        }
+        
         utterance.lang = 'en-US';
-        window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utterance);
     },
     async copyToClipboard(text) {
@@ -478,9 +507,9 @@ const ui = {
         Object.assign(menu.style, { top: `${y}px`, left: `${x}px` });
         menu.classList.remove('hidden');
         const encodedWord = encodeURIComponent(word);
-        app.elements.searchDaumContextBtn.onclick = () => { window.open(`https://dic.daum.net/search.do?q=${encodedWord}`); this.hideWordContextMenu(); };
-        app.elements.searchNaverContextBtn.onclick = () => { window.open(`https://en.dict.naver.com/#/search?query=${encodedWord}`); this.hideWordContextMenu(); };
-        app.elements.searchLongmanContextBtn.onclick = () => { window.open(`https://www.ldoceonline.com/dictionary/${encodedWord}`); this.hideWordContextMenu(); };
+        app.elements.searchDaumContextBtn.onclick = () => { window.open(`https://dic.daum.net/search.do?q=${encodedWord}`, 'daum-dictionary'); this.hideWordContextMenu(); };
+        app.elements.searchNaverContextBtn.onclick = () => { window.open(`https://en.dict.naver.com/#/search?query=${encodedWord}`, 'naver-dictionary'); this.hideWordContextMenu(); };
+        app.elements.searchLongmanContextBtn.onclick = () => { window.open(`https://www.ldoceonline.com/dictionary/${encodedWord}`, 'longman-dictionary'); this.hideWordContextMenu(); };
     },
     hideWordContextMenu() {
         if (app.elements.wordContextMenu) app.elements.wordContextMenu.classList.add('hidden');
@@ -1155,4 +1184,3 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-
