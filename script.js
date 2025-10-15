@@ -333,7 +333,7 @@ let voices = [];
 function populateVoiceList() {
     voices = window.speechSynthesis.getVoices();
 }
-populateVoiceList();
+// The initial call is removed to prevent a race condition on iOS.
 if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = populateVoiceList;
 }
@@ -368,6 +368,13 @@ const api = {
     speak(text) {
         if (!text || !text.trim() || !('speechSynthesis' in window)) return;
         
+        // Just-in-time voice loading: If the global `voices` array is empty,
+        // try to populate it again. This is a crucial fallback for iOS and
+        // for browsers where `onvoiceschanged` may not fire if voices are ready instantly.
+        if (voices.length === 0) {
+            populateVoiceList();
+        }
+
         window.speechSynthesis.cancel(); // Cancel any previous speech
 
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
@@ -1184,3 +1191,4 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
