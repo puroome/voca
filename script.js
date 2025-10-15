@@ -2,9 +2,6 @@
 // App Main Controller
 // ================================================================
 
-const ELEVENLABS_API_KEY = 'sk_1e29eef7bd778d1229c976ca5d1623f51a0d386cd9145c29';
-const VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // 기본 목소리 'Rachel'. 다른 목소리로 변경 가능합니다.
-
 const app = {
     config: {
         SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec",
@@ -226,7 +223,6 @@ const app = {
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
 
-        // Disable interactive elements on the screen
         const elementsToDisable = [
             this.elements.homeBtn,
             this.elements.refreshBtn,
@@ -237,11 +233,8 @@ const app = {
             document.getElementById('select-mistakes-btn'),
         ].filter(el => el);
 
-        elementsToDisable.forEach(el => {
-            el.classList.add('pointer-events-none', 'opacity-50');
-        });
+        elementsToDisable.forEach(el => el.classList.add('pointer-events-none', 'opacity-50'));
         
-        // Add a spinner to the refresh button
         const refreshIconHTML = this.elements.refreshBtn.innerHTML;
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
@@ -261,11 +254,7 @@ const app = {
             console.error("Error during data refresh:", err);
             alert("데이터 새로고침에 실패했습니다.");
         } finally {
-            // Re-enable elements
-            elementsToDisable.forEach(el => {
-                el.classList.remove('pointer-events-none', 'opacity-50');
-            });
-            // Restore refresh button icon
+            elementsToDisable.forEach(el => el.classList.remove('pointer-events-none', 'opacity-50'));
             this.elements.refreshBtn.innerHTML = refreshIconHTML;
         }
     },
@@ -337,7 +326,6 @@ let voices = [];
 function populateVoiceList() {
     voices = window.speechSynthesis.getVoices();
 }
-// The initial call is removed to prevent a race condition on iOS.
 if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = populateVoiceList;
 }
@@ -370,64 +358,38 @@ const api = {
         }
     },
 
-    // 기존 브라우저 TTS 함수는 만약을 위해 speak_browser로 이름을 변경하여 백업합니다.
-    speak_browser(text) {
+    speak(text) {
         if (!text || !text.trim() || !('speechSynthesis' in window)) return;
-        if (voices.length === 0) { populateVoiceList(); }
-        window.speechSynthesis.cancel();
+
+        window.speechSynthesis.cancel(); // Always cancel previous speech first.
+
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
         const utterance = new SpeechSynthesisUtterance(processedText);
-        let selectedVoice = voices.find(v => v.name === 'Samantha' && v.lang === 'en-US');
-        if (!selectedVoice) selectedVoice = voices.find(v => v.lang === 'en-US' && v.localService);
-        if (!selectedVoice) selectedVoice = voices.find(v => v.lang === 'en-US');
-        if (!selectedVoice) selectedVoice = voices.find(v => v.lang.startsWith('en-'));
-        if (selectedVoice) utterance.voice = selectedVoice;
-        utterance.lang = 'en-US';
+        
+        // This is the key fix for iOS/Safari: get voices just-in-time.
+        const allVoices = window.speechSynthesis.getVoices();
+
+        // Find a high-quality voice
+        let selectedVoice = allVoices.find(v => v.name === 'Samantha' && v.lang === 'en-US'); // Preferred iOS voice
+        if (!selectedVoice) {
+            selectedVoice = allVoices.find(v => v.lang === 'en-US' && v.localService);
+        }
+        if (!selectedVoice) {
+            selectedVoice = allVoices.find(v => v.lang === 'en-US');
+        }
+        if (!selectedVoice) {
+            selectedVoice = allVoices.find(v => v.lang.startsWith('en-'));
+        }
+
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+        } else {
+            // If no specific voice is found, ensure the language is set 
+            // so the browser can pick a default for that language.
+            utterance.lang = 'en-US';
+        }
+
         window.speechSynthesis.speak(utterance);
-    },
-
-    // ElevenLabs API를 직접 호출하는 새로운 speak 함수
-    async speak(text) {
-        if (!text || !text.trim() || !ELEVENLABS_API_KEY) {
-            // API 키가 없으면 바로 브라우저 TTS를 실행합니다.
-            return this.speak_browser(text);
-        }
-
-        const url = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
-        const options = {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'xi-api-key': ELEVENLABS_API_KEY,
-            },
-            body: JSON.stringify({
-                text: text,
-                model_id: 'eleven_multilingual_v2',
-                voice_settings: {
-                    stability: 0.5,
-                    similarity_boost: 0.75,
-                },
-            }),
-        };
-
-        try {
-            const response = await fetch(url, options);
-            if (!response.ok) {
-                // API 요청이 실패하면 에러를 발생시킵니다.
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            // 응답으로 받은 오디오 데이터를 Blob 형태로 변환합니다.
-            const audioBlob = await response.blob();
-            // Blob 데이터를 재생할 수 있는 임시 URL을 생성합니다.
-            const audioUrl = URL.createObjectURL(audioBlob);
-            const audio = new Audio(audioUrl);
-            audio.play();
-
-        } catch (error) {
-            console.error('ElevenLabs API 호출 실패, 브라우저 내장 TTS로 대체합니다:', error);
-            // ElevenLabs 호출에 실패하면, 백업해둔 브라우저 내장 TTS를 실행합니다.
-            this.speak_browser(text);
-        }
     },
 
     async copyToClipboard(text) {
@@ -1222,3 +1184,5 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+" in the Canvas document.
+
