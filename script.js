@@ -1,7 +1,6 @@
 // ================================================================
 // App Main Controller
 // ================================================================
-
 const app = {
     config: {
         SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec",
@@ -223,6 +222,7 @@ const app = {
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
 
+        // Disable interactive elements on the screen
         const elementsToDisable = [
             this.elements.homeBtn,
             this.elements.refreshBtn,
@@ -233,8 +233,11 @@ const app = {
             document.getElementById('select-mistakes-btn'),
         ].filter(el => el);
 
-        elementsToDisable.forEach(el => el.classList.add('pointer-events-none', 'opacity-50'));
+        elementsToDisable.forEach(el => {
+            el.classList.add('pointer-events-none', 'opacity-50');
+        });
         
+        // Add a spinner to the refresh button
         const refreshIconHTML = this.elements.refreshBtn.innerHTML;
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
@@ -254,7 +257,11 @@ const app = {
             console.error("Error during data refresh:", err);
             alert("데이터 새로고침에 실패했습니다.");
         } finally {
-            elementsToDisable.forEach(el => el.classList.remove('pointer-events-none', 'opacity-50'));
+            // Re-enable elements
+            elementsToDisable.forEach(el => {
+                el.classList.remove('pointer-events-none', 'opacity-50');
+            });
+            // Restore refresh button icon
             this.elements.refreshBtn.innerHTML = refreshIconHTML;
         }
     },
@@ -319,17 +326,6 @@ const translationDBCache = {
     }
 };
 
-// ================================================================
-// TTS Voice Loading (iOS compatibility)
-// ================================================================
-let voices = [];
-function populateVoiceList() {
-    voices = window.speechSynthesis.getVoices();
-}
-if (speechSynthesis.onvoiceschanged !== undefined) {
-    speechSynthesis.onvoiceschanged = populateVoiceList;
-}
-
 const api = {
     async fetchFromGoogleSheet(action, params = {}) {
         const url = new URL(app.config.SCRIPT_URL);
@@ -357,41 +353,16 @@ const api = {
             return '번역 오류';
         }
     },
-
     speak(text) {
         if (!text || !text.trim() || !('speechSynthesis' in window)) return;
-
-        window.speechSynthesis.cancel(); // Always cancel previous speech first.
-
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
         const utterance = new SpeechSynthesisUtterance(processedText);
-        
-        // This is the key fix for iOS/Safari: get voices just-in-time.
-        const allVoices = window.speechSynthesis.getVoices();
-
-        // Find a high-quality voice
-        let selectedVoice = allVoices.find(v => v.name === 'Samantha' && v.lang === 'en-US'); // Preferred iOS voice
-        if (!selectedVoice) {
-            selectedVoice = allVoices.find(v => v.lang === 'en-US' && v.localService);
-        }
-        if (!selectedVoice) {
-            selectedVoice = allVoices.find(v => v.lang === 'en-US');
-        }
-        if (!selectedVoice) {
-            selectedVoice = allVoices.find(v => v.lang.startsWith('en-'));
-        }
-
-        if (selectedVoice) {
-            utterance.voice = selectedVoice;
-        } else {
-            // If no specific voice is found, ensure the language is set 
-            // so the browser can pick a default for that language.
-            utterance.lang = 'en-US';
-        }
-
+        const voices = window.speechSynthesis.getVoices();
+        utterance.voice = voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en-'));
+        utterance.lang = 'en-US';
+        window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utterance);
     },
-
     async copyToClipboard(text) {
         if (navigator.clipboard) {
             try { await navigator.clipboard.writeText(text); } 
@@ -507,9 +478,9 @@ const ui = {
         Object.assign(menu.style, { top: `${y}px`, left: `${x}px` });
         menu.classList.remove('hidden');
         const encodedWord = encodeURIComponent(word);
-        app.elements.searchDaumContextBtn.onclick = () => { window.open(`https://dic.daum.net/search.do?q=${encodedWord}`, 'daum-dictionary'); this.hideWordContextMenu(); };
-        app.elements.searchNaverContextBtn.onclick = () => { window.open(`https://en.dict.naver.com/#/search?query=${encodedWord}`, 'naver-dictionary'); this.hideWordContextMenu(); };
-        app.elements.searchLongmanContextBtn.onclick = () => { window.open(`https://www.ldoceonline.com/dictionary/${encodedWord}`, 'longman-dictionary'); this.hideWordContextMenu(); };
+        app.elements.searchDaumContextBtn.onclick = () => { window.open(`https://dic.daum.net/search.do?q=${encodedWord}`); this.hideWordContextMenu(); };
+        app.elements.searchNaverContextBtn.onclick = () => { window.open(`https://en.dict.naver.com/#/search?query=${encodedWord}`); this.hideWordContextMenu(); };
+        app.elements.searchLongmanContextBtn.onclick = () => { window.open(`https://www.ldoceonline.com/dictionary/${encodedWord}`); this.hideWordContextMenu(); };
     },
     hideWordContextMenu() {
         if (app.elements.wordContextMenu) app.elements.wordContextMenu.classList.add('hidden');
@@ -1184,5 +1155,4 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-" in the Canvas document.
 
