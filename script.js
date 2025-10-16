@@ -345,76 +345,10 @@ const translationDBCache = {
     }
 };
 
-// ================================================================
-// TTS Helper (for iOS compatibility) - UPDATED
-// ================================================================
-const ttsHelper = (() => {
-    let voicesPromise = null;
-
-    const loadVoices = () => {
-        return new Promise((resolve) => {
-            const checkVoices = () => {
-                const voices = window.speechSynthesis.getVoices();
-                // iOS high-quality voices are 'localService'. This is a more reliable check.
-                const hasHighQualityVoice = voices.some(v => v.lang === 'en-US' && v.localService);
-                if (hasHighQualityVoice) {
-                    resolve(voices);
-                    return true;
-                }
-                return false;
-            };
-
-            if (checkVoices()) return;
-
-            let attempts = 0;
-            const maxAttempts = 30; // 3 seconds timeout
-            let intervalId = null;
-
-            const cleanup = () => {
-                clearInterval(intervalId);
-                window.speechSynthesis.onvoiceschanged = null;
-            };
-
-            const tryResolve = () => {
-                if (checkVoices()) {
-                    cleanup();
-                    return true;
-                }
-                if (++attempts > maxAttempts) {
-                    console.warn('High-quality TTS voice did not load in time. Using available voices.');
-                    cleanup();
-                    resolve(window.speechSynthesis.getVoices()); // Fallback
-                    return true;
-                }
-                return false;
-            };
-
-            window.speechSynthesis.onvoiceschanged = tryResolve;
-            intervalId = setInterval(tryResolve, 100);
-        });
-    };
-    
-    const init = () => {
-        if (!voicesPromise) {
-            voicesPromise = loadVoices();
-        }
-    };
-
-    // Proactively start loading voices on the first user interaction.
-    // This is a common pattern to "unlock" audio features on iOS.
-    document.addEventListener('click', init, { once: true, passive: true });
-    document.addEventListener('touchstart', init, { once: true, passive: true });
-
-    return {
-        getVoices: () => {
-            init(); // Ensure it's called, even if no interaction happened yet.
-            return voicesPromise;
-        }
-    };
-})();
-
-
 const api = {
+    googleTtsApiKey: 'AIzaSyAJmQBGY4H9DVMlhMtvAAVMi_4N7__DfKA',
+    audioCache: {}, // 성능 및 비용 절약을 위한 오디오 캐시
+
     async fetchFromGoogleSheet(action, params = {}) {
         const url = new URL(app.config.SCRIPT_URL);
         url.searchParams.append('action', action);
@@ -442,40 +376,57 @@ const api = {
         }
     },
     async speak(text) {
-        if (!text || !text.trim() || !('speechSynthesis' in window)) return;
+        if (!text || !text.trim()) return;
 
-        // Cancel any previous speech
-        window.speechSynthesis.cancel();
-
-        // Get the list of voices, waiting if necessary. This is the core of the fix.
-        const voices = await ttsHelper.getVoices();
-        
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
-        const utterance = new SpeechSynthesisUtterance(processedText);
 
-        // Find a high-quality voice
-        let selectedVoice = null;
-        if (voices.length > 0) {
-            selectedVoice = voices.find(v => v.name === 'Samantha' && v.lang === 'en-US'); // Preferred iOS voice
-            if (!selectedVoice) {
-                selectedVoice = voices.find(v => v.lang === 'en-US' && v.localService);
-            }
-            if (!selectedVoice) {
-                selectedVoice = voices.find(v => v.lang === 'en-US');
-            }
-            if (!selectedVoice) {
-                selectedVoice = voices.find(v => v.lang.startsWith('en-'));
-            }
-        } else {
-            console.warn("No TTS voices available. The browser will use its default.");
+        // 1. 캐시 확인: 이미 재생한 단어는 API 호출 없이 즉시 재생
+        if (this.audioCache[processedText]) {
+            this.audioCache[processedText].currentTime = 0;
+            this.audioCache[processedText].play();
+            return;
         }
 
-        if (selectedVoice) {
-            utterance.voice = selectedVoice;
+        // 2. Google TTS API 호출
+        const ttsUrl = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${this.googleTtsApiKey}`;
+        const requestBody = {
+            input: {
+                text: processedText
+            },
+            voice: {
+                languageCode: 'en-US',
+                name: 'en-US-Standard-C' // 요청하신 Standard 등급의 미국 여성 목소리
+            },
+            audioConfig: {
+                audioEncoding: 'MP3'
+            }
+        };
+
+        try {
+            const response = await fetch(ttsUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('Google TTS API Error:', errorData.error.message);
+                return;
+            }
+
+            const data = await response.json();
+            if (data.audioContent) {
+                // 3. 오디오 재생 및 캐싱
+                const audioSrc = `data:audio/mp3;base64,${data.audioContent}`;
+                const audio = new Audio(audioSrc);
+                
+                this.audioCache[processedText] = audio; // 생성된 오디오 객체를 캐시에 저장
+                audio.play();
+            }
+        } catch (error) {
+            console.error('Error fetching TTS audio:', error);
         }
-        
-        utterance.lang = 'en-US';
-        window.speechSynthesis.speak(utterance);
     },
     async copyToClipboard(text) {
         if (navigator.clipboard) {
