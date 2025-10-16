@@ -21,7 +21,6 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        /* 활성화된 버튼 스타일 */
         .active-grade-btn {
             background-color: #3B82F6; /* bg-blue-600 */
             color: white;
@@ -33,7 +32,6 @@
 
     <div id="app" class="container mx-auto p-4 md:p-8">
         
-        <!-- 로그인 화면 -->
         <div id="login-screen" class="text-center">
             <h1 class="text-3xl font-bold mb-6 text-gray-800">관리자 대시보드</h1>
             <p id="auth-message" class="mb-4 text-gray-600">관리자 계정으로 로그인해주세요.</p>
@@ -42,7 +40,6 @@
             </button>
         </div>
 
-        <!-- 메인 대시보드 (로그인 후 표시) -->
         <div id="dashboard" class="hidden">
             <div class="flex justify-between items-center mb-6 pb-4 border-b">
                 <div>
@@ -54,32 +51,28 @@
                 </button>
             </div>
             
-            <!-- 학년 선택 -->
             <div class="mb-6 bg-white p-4 rounded-lg shadow">
-                <h2 class="text-lg font-bold mb-3 text-gray-700">학년 선택</h2>
-                <div id="grade-selection" class="flex space-x-2">
+                <h2 class="text-lg font-bold mb-3 text-gray-700">구분</h2>
+                <div id="grade-selection" class="flex flex-wrap gap-2">
                     <button data-grade="1y" class="grade-btn flex-1 py-2 px-4 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition">1학년</button>
                     <button data-grade="2y" class="grade-btn flex-1 py-2 px-4 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition">2학년</button>
                     <button data-grade="3y" class="grade-btn flex-1 py-2 px-4 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition">3학년</button>
+                    <button data-grade="unassigned" class="grade-btn flex-1 py-2 px-4 bg-white border border-yellow-500 text-yellow-600 rounded-lg hover:bg-yellow-50 transition">미배정</button>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <!-- 학생 목록 -->
                 <div class="md:col-span-1 bg-white p-6 rounded-lg shadow-lg">
                     <h2 id="student-list-title" class="text-xl font-bold mb-4 text-gray-700">학생 목록</h2>
                     <div id="student-list-prompt" class="text-center text-gray-500 py-10">
-                        <p>먼저 학년을 선택해주세요.</p>
+                        <p>먼저 위에서 구분을 선택해주세요.</p>
                     </div>
                     <div id="student-list-loader" class="hidden flex justify-center items-center h-40">
                         <div class="loader"></div>
                     </div>
-                    <ul id="student-list" class="space-y-2">
-                        <!-- 학생 목록이 여기에 동적으로 추가됩니다 -->
-                    </ul>
+                    <ul id="student-list" class="space-y-2"></ul>
                 </div>
 
-                <!-- 학생 상세 통계 -->
                 <div id="student-details-container" class="md:col-span-2 bg-white p-6 rounded-lg shadow-lg">
                     <div id="details-prompt" class="text-center text-gray-500 h-full flex items-center justify-center">
                         <p>왼쪽 목록에서 학생을 선택하여 학습 현황을 확인하세요.</p>
@@ -89,20 +82,14 @@
                     </div>
                     <div id="student-details" class="hidden">
                         <h2 id="student-name-title" class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2"></h2>
-                        <div id="stats-container" class="space-y-6">
-                            <!-- 통계 테이블이 여기에 동적으로 추가됩니다 -->
-                        </div>
+                        <div id="stats-container" class="space-y-6"></div>
                     </div>
                 </div>
             </div>
         </div>
-
     </div>
 
     <script>
-        // ================================================================
-        // Firebase Configuration (학생용 앱과 동일)
-        // ================================================================
         const firebaseConfig = {
             apiKey: "AIzaSyBE_Gxd1haPazVK61F9sjCwK0X4Gw5rERM",
             authDomain: "wordapp-91c0a.firebaseapp.com",
@@ -116,17 +103,14 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
 
-        // ================================================================
-        // 관리자 페이지 컨트롤러
-        // ================================================================
         const adminApp = {
             ADMIN_EMAIL: 'puroome@gmail.com',
             SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec',
             state: {
                 wordLists: {},
-                allUsers: {}, // 전체 사용자 정보 캐시 (id, displayName, email)
-                studentNameMap: {}, // 시트에서 가져온 이름 매핑
-                gradeStudentMap: {}, // 시트에서 가져온 학년 배정
+                allUsers: {},
+                studentNameMap: {},
+                gradeStudentMap: {},
                 selectedGrade: null,
             },
             elements: {
@@ -148,44 +132,28 @@
                 statsContainer: document.getElementById('stats-container'),
             },
 
-            init() {
-                this.bindAuthEvents();
-            },
+            init() { this.bindAuthEvents(); },
 
             bindAuthEvents() {
-                this.elements.loginBtn.addEventListener('click', () => {
-                    const provider = new firebase.auth.GoogleAuthProvider();
-                    auth.signInWithPopup(provider);
-                });
-
-                this.elements.logoutBtn.addEventListener('click', () => {
-                    this.state.selectedGrade = null;
-                    auth.signOut();
-                });
+                this.elements.loginBtn.addEventListener('click', () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()));
+                this.elements.logoutBtn.addEventListener('click', () => { this.state.selectedGrade = null; auth.signOut(); });
 
                 this.elements.gradeSelection.addEventListener('click', (e) => {
                     if (e.target.classList.contains('grade-btn')) {
                         const grade = e.target.dataset.grade;
                         this.state.selectedGrade = grade;
-
                         document.querySelectorAll('.grade-btn').forEach(btn => btn.classList.remove('active-grade-btn'));
                         e.target.classList.add('active-grade-btn');
-
-                        this.elements.studentListTitle.textContent = `${grade.replace('y','')}학년 학생 목록`;
+                        this.elements.studentListTitle.textContent = grade === 'unassigned' ? '미배정 학생 목록' : `${grade.replace('y','')}학년 학생 목록`;
                         this.displayStudentsForGrade(grade);
                     }
                 });
 
                 auth.onAuthStateChanged(user => {
                     if (user) {
-                        if (user.email === this.ADMIN_EMAIL) {
-                            this.showDashboard(user);
-                        } else {
-                            this.showAccessDenied();
-                        }
-                    } else {
-                        this.showLoginScreen();
-                    }
+                        if (user.email === this.ADMIN_EMAIL) this.showDashboard(user);
+                        else this.showAccessDenied();
+                    } else this.showLoginScreen();
                 });
             },
             
@@ -193,12 +161,7 @@
                 this.elements.loginScreen.classList.add('hidden');
                 this.elements.dashboard.classList.remove('hidden');
                 this.elements.adminInfo.textContent = `관리자: ${user.displayName} (${user.email})`;
-                
-                await Promise.all([
-                    this.loadAdminConfig(),
-                    this.cacheAllUsers()
-                ]);
-
+                await Promise.all([this.loadAdminConfig(), this.cacheAllUsers()]);
                 this.resetViews();
             },
             
@@ -211,9 +174,7 @@
                     if (data.success) {
                         this.state.studentNameMap = data.studentNameMap;
                         this.state.gradeStudentMap = data.gradeStudentMap;
-                    } else {
-                        throw new Error(data.message);
-                    }
+                    } else { throw new Error(data.message); }
                 } catch(e) {
                     console.error("관리자 설정(학생 명단) 로딩 실패:", e);
                     alert(`학생 명단을 Google Sheets에서 불러오는 데 실패했습니다: ${e.message}`);
@@ -247,15 +208,8 @@
             async cacheAllUsers() {
                 try {
                     const snapshot = await db.collection('users').get();
-                    snapshot.docs.forEach(doc => {
-                        this.state.allUsers[doc.data().email] = {
-                            id: doc.id,
-                            ...doc.data()
-                        };
-                    });
-                } catch(e) {
-                    console.error("전체 사용자 정보 캐시 실패:", e);
-                }
+                    snapshot.docs.forEach(doc => { this.state.allUsers[doc.data().email] = { id: doc.id, ...doc.data() }; });
+                } catch(e) { console.error("전체 사용자 정보 캐시 실패:", e); }
             },
             
             displayStudentsForGrade(grade) {
@@ -264,42 +218,49 @@
                 this.elements.detailsPrompt.classList.remove('hidden');
                 this.elements.studentDetails.classList.add('hidden');
 
-                const studentEmails = this.state.gradeStudentMap[grade] || [];
-                if (studentEmails.length === 0) {
-                    this.elements.studentList.innerHTML = '<li class="text-gray-500 p-3">해당 학년에 등록된 학생이 없습니다.</li>';
+                let studentsToDisplay = [];
+                if (grade === 'unassigned') {
+                    const assignedEmails = Object.keys(this.state.studentNameMap);
+                    studentsToDisplay = Object.values(this.state.allUsers).filter(user => !assignedEmails.includes(user.email) && user.email !== this.ADMIN_EMAIL);
+                } else {
+                    const studentEmails = this.state.gradeStudentMap[grade] || [];
+                    studentsToDisplay = studentEmails.map(email => this.state.allUsers[email]).filter(Boolean); // 시트에 있지만 DB에 없는 경우 제외
+                }
+
+                if (studentsToDisplay.length === 0) {
+                    this.elements.studentList.innerHTML = '<li class="text-gray-500 p-3">해당하는 학생이 없습니다.</li>';
                     return;
                 }
                 
-                studentEmails.forEach(email => {
-                    const studentData = this.state.allUsers[email];
-                    if (studentData) {
-                        const displayName = this.state.studentNameMap[email] || studentData.displayName;
-
-                        const li = document.createElement('li');
-                        const a = document.createElement('a');
-                        a.href = '#';
-                        a.className = 'block p-3 rounded-lg hover:bg-gray-100 transition-colors';
-                        a.innerHTML = `
-                            <p class="font-semibold text-gray-800">${displayName}</p>
-                            <p class="text-sm text-gray-500">${email}</p>
-                        `;
-                        a.onclick = (e) => {
-                            e.preventDefault();
-                            document.querySelectorAll('#student-list a').forEach(el => el.classList.remove('bg-blue-100'));
-                            a.classList.add('bg-blue-100');
+                studentsToDisplay.forEach(studentData => {
+                    const displayName = this.state.studentNameMap[studentData.email] || studentData.displayName;
+                    const li = document.createElement('li');
+                    const a = document.createElement('a');
+                    a.href = '#';
+                    a.className = 'block p-3 rounded-lg hover:bg-gray-100 transition-colors';
+                    a.innerHTML = `<p class="font-semibold text-gray-800">${displayName}</p><p class="text-sm text-gray-500">${studentData.email}</p>`;
+                    a.onclick = (e) => {
+                        e.preventDefault();
+                        document.querySelectorAll('#student-list a').forEach(el => el.classList.remove('bg-blue-100'));
+                        a.classList.add('bg-blue-100');
+                        if (grade === 'unassigned') {
+                            this.loadAllDetailsForStudent(studentData, displayName);
+                        } else {
                             this.loadStudentDetails(studentData, displayName, grade);
-                        };
-                        li.appendChild(a);
-                        this.elements.studentList.appendChild(li);
-                    }
+                        }
+                    };
+                    li.appendChild(a);
+                    this.elements.studentList.appendChild(li);
                 });
             },
 
-            async loadStudentDetails(student, displayName, grade) {
-                this.elements.detailsPrompt.classList.add('hidden');
-                this.elements.studentDetails.classList.add('hidden');
-                this.elements.studentDetailsLoader.classList.remove('hidden');
-                this.elements.studentNameTitle.textContent = `${displayName}(${grade.replace('y','')}학년) 학습 현황`;
+            async loadStudentDetails(student, displayName, grade, clearContainer = true) {
+                if (clearContainer) {
+                    this.elements.detailsPrompt.classList.add('hidden');
+                    this.elements.studentDetails.classList.add('hidden');
+                    this.elements.studentDetailsLoader.classList.remove('hidden');
+                    this.elements.studentNameTitle.textContent = `${displayName}(${grade.replace('y','')}학년) 학습 현황`;
+                }
                 
                 try {
                     if (!this.state.wordLists[grade]) {
@@ -311,60 +272,61 @@
                         this.state.wordLists[grade] = data.words;
                     }
                     const totalWords = this.state.wordLists[grade];
-
                     const progressRef = db.collection('users').doc(student.id).collection('progress').doc(grade);
                     const progressSnap = await progressRef.get();
                     const progressData = progressSnap.exists ? progressSnap.data() : {};
-                    
                     const stats = this.calculateStats(totalWords, progressData);
-                    this.renderStats(stats);
-
+                    this.renderStats(stats, grade, clearContainer);
                 } catch (error) {
                     console.error("학생 통계 로딩 실패:", error);
                     this.elements.statsContainer.innerHTML = '<p class="text-red-500">통계 정보를 불러오는 데 실패했습니다.</p>';
                 } finally {
-                    this.elements.studentDetailsLoader.classList.add('hidden');
-                    this.elements.studentDetails.classList.remove('hidden');
+                    if (clearContainer) {
+                        this.elements.studentDetailsLoader.classList.add('hidden');
+                        this.elements.studentDetails.classList.remove('hidden');
+                    }
                 }
+            },
+
+            async loadAllDetailsForStudent(student, displayName) {
+                this.elements.detailsPrompt.classList.add('hidden');
+                this.elements.studentDetails.classList.add('hidden');
+                this.elements.studentDetailsLoader.classList.remove('hidden');
+                this.elements.statsContainer.innerHTML = '';
+                this.elements.studentNameTitle.textContent = `${displayName} 학생 (미배정) 전체 현황`;
+                
+                for (const grade of ['1y', '2y', '3y']) {
+                    await this.loadStudentDetails(student, displayName, grade, false);
+                }
+                
+                this.elements.studentDetailsLoader.classList.add('hidden');
+                this.elements.studentDetails.classList.remove('hidden');
             },
             
             calculateStats(totalWords, progressData) {
                 const counts = { learned: 0, learning: 0, review: 0, unseen: 0 };
-                
-                if (!totalWords || totalWords.length === 0) {
-                     return { ...counts, total: 0 };
-                }
-
+                if (!totalWords || totalWords.length === 0) return { ...counts, total: 0 };
                 totalWords.forEach(wordObj => {
-                    const word = wordObj.word;
-                    const progress = progressData[word];
+                    const progress = progressData[wordObj.word];
                     let status = 'unseen';
-
                     if (progress) {
-                        const statuses = ['MULTIPLE_CHOICE_MEANING', 'FILL_IN_THE_BLANK', 'MULTIPLE_CHOICE_DEFINITION']
-                            .map(type => progress[type] || 'unseen');
-                        
-                        if (statuses.includes('incorrect')) {
-                            status = 'review';
-                        } else if (statuses.every(s => s === 'correct')) {
-                            status = 'learned';
-                        } else if (statuses.some(s => s === 'correct')) {
-                            status = 'learning';
-                        }
+                        const statuses = ['MULTIPLE_CHOICE_MEANING', 'FILL_IN_THE_BLANK', 'MULTIPLE_CHOICE_DEFINITION'].map(type => progress[type] || 'unseen');
+                        if (statuses.includes('incorrect')) status = 'review';
+                        else if (statuses.every(s => s === 'correct')) status = 'learned';
+                        else if (statuses.some(s => s === 'correct')) status = 'learning';
                     }
                     counts[status]++;
                 });
-                
                 return { ...counts, total: totalWords.length };
             },
 
-            renderStats(stats) {
-                this.elements.statsContainer.innerHTML = '';
+            renderStats(stats, grade, clearContainer) {
+                if (clearContainer) this.elements.statsContainer.innerHTML = '';
+                if (stats.total === 0) return;
+
                 const statCard = document.createElement('div');
+                statCard.className = 'mt-6 first:mt-0';
                 
-                // ================================================================
-                // ===== [수정됨] 시작: 통계 순서 변경 및 막대그래프 UI 추가 =======
-                // ================================================================
                 const statItems = [
                     { name: '미학습', count: stats.unseen, color: 'text-gray-600', barColor: 'bg-gray-400' },
                     { name: '학습 중', count: stats.learning, color: 'text-blue-600', barColor: 'bg-blue-500' },
@@ -384,15 +346,14 @@
                             <div class="w-full bg-gray-200 rounded-full h-2.5">
                                 <div class="${item.barColor} h-2.5 rounded-full" style="width: ${percentage}%"></div>
                             </div>
-                        </div>
-                     `;
+                        </div>`;
                 });
                 
-                statCard.innerHTML = `<div class="space-y-4">${itemsHtml}</div>`;
-                // ================================================================
-                // ===== [수정됨] 끝 ==============================================
-                // ================================================================
-
+                const titleHtml = clearContainer ? '' : `<h3 class="text-xl font-bold text-gray-700 border-t pt-4">${grade.replace('y','')}학년</h3>`;
+                statCard.innerHTML = `
+                    ${titleHtml}
+                    <div class="space-y-4 mt-4">${itemsHtml}</div>
+                `;
                 this.elements.statsContainer.appendChild(statCard);
             }
         };
