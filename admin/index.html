@@ -224,7 +224,7 @@
                     studentsToDisplay = Object.values(this.state.allUsers).filter(user => !assignedEmails.includes(user.email) && user.email !== this.ADMIN_EMAIL);
                 } else {
                     const studentEmails = this.state.gradeStudentMap[grade] || [];
-                    studentsToDisplay = studentEmails.map(email => this.state.allUsers[email]).filter(Boolean); // 시트에 있지만 DB에 없는 경우 제외
+                    studentsToDisplay = studentEmails.map(email => this.state.allUsers[email]).filter(Boolean);
                 }
 
                 if (studentsToDisplay.length === 0) {
@@ -243,11 +243,13 @@
                         e.preventDefault();
                         document.querySelectorAll('#student-list a').forEach(el => el.classList.remove('bg-blue-100'));
                         a.classList.add('bg-blue-100');
-                        if (grade === 'unassigned') {
-                            this.loadAllDetailsForStudent(studentData, displayName);
-                        } else {
-                            this.loadStudentDetails(studentData, displayName, grade);
-                        }
+                        // ================================================================
+                        // ===== [수정됨] 시작: 항상 모든 학년 통계를 불러오도록 변경 ========
+                        // ================================================================
+                        this.loadAllDetailsForStudent(studentData, displayName);
+                        // ================================================================
+                        // ===== [수정됨] 끝 ==============================================
+                        // ================================================================
                     };
                     li.appendChild(a);
                     this.elements.studentList.appendChild(li);
@@ -288,12 +290,24 @@
                 }
             },
 
+            // ================================================================
+            // ===== [수정됨] 시작: 학생의 배정 학년을 찾아 제목에 표시 ========
+            // ================================================================
             async loadAllDetailsForStudent(student, displayName) {
                 this.elements.detailsPrompt.classList.add('hidden');
                 this.elements.studentDetails.classList.add('hidden');
                 this.elements.studentDetailsLoader.classList.remove('hidden');
                 this.elements.statsContainer.innerHTML = '';
-                this.elements.studentNameTitle.textContent = `${displayName} 학생 (미배정) 전체 현황`;
+
+                let assignedGrade = 'unassigned';
+                for (const gradeKey of ['1y', '2y', '3y']) {
+                    if (this.state.gradeStudentMap[gradeKey]?.includes(student.email)) {
+                        assignedGrade = gradeKey;
+                        break;
+                    }
+                }
+                const gradeText = assignedGrade === 'unassigned' ? '(미배정)' : `(${assignedGrade.replace('y', '')}학년)`;
+                this.elements.studentNameTitle.textContent = `${displayName} ${gradeText} 학 현황`;
                 
                 for (const grade of ['1y', '2y', '3y']) {
                     await this.loadStudentDetails(student, displayName, grade, false);
@@ -302,6 +316,9 @@
                 this.elements.studentDetailsLoader.classList.add('hidden');
                 this.elements.studentDetails.classList.remove('hidden');
             },
+            // ================================================================
+            // ===== [수정됨] 끝 ==============================================
+            // ================================================================
             
             calculateStats(totalWords, progressData) {
                 const counts = { learned: 0, learning: 0, review: 0, unseen: 0 };
@@ -349,7 +366,7 @@
                         </div>`;
                 });
                 
-                const titleHtml = clearContainer ? '' : `<h3 class="text-xl font-bold text-gray-700 border-t pt-4">${grade.replace('y','')}학년</h3>`;
+                const titleHtml = clearContainer ? '' : `<h3 class="text-xl font-bold text-gray-700 border-t pt-4 mt-6">${grade.replace('y','')}학년</h3>`;
                 statCard.innerHTML = `
                     ${titleHtml}
                     <div class="space-y-4 mt-4">${itemsHtml}</div>
