@@ -346,7 +346,7 @@ const translationDBCache = {
 };
 
 // ================================================================
-// TTS Helper (for iOS compatibility)
+// TTS Helper (for iOS compatibility) - UPDATED
 // ================================================================
 const ttsHelper = (() => {
     let voicesPromise = null;
@@ -355,7 +355,9 @@ const ttsHelper = (() => {
         return new Promise((resolve) => {
             const checkVoices = () => {
                 const voices = window.speechSynthesis.getVoices();
-                if (voices.length > 0) {
+                // iOS high-quality voices are 'localService'. This is a more reliable check.
+                const hasHighQualityVoice = voices.some(v => v.lang === 'en-US' && v.localService);
+                if (hasHighQualityVoice) {
                     resolve(voices);
                     return true;
                 }
@@ -364,27 +366,48 @@ const ttsHelper = (() => {
 
             if (checkVoices()) return;
 
-            window.speechSynthesis.onvoiceschanged = () => checkVoices();
-
             let attempts = 0;
-            const interval = setInterval(() => {
-                attempts++;
-                if (checkVoices() || attempts > 30) { // Try for 3 seconds
-                    clearInterval(interval);
-                    if (!checkVoices()) {
-                        console.warn('TTS voices did not load in time.');
-                        resolve([]); // Resolve with empty array on failure
-                    }
+            const maxAttempts = 30; // 3 seconds timeout
+            let intervalId = null;
+
+            const cleanup = () => {
+                clearInterval(intervalId);
+                window.speechSynthesis.onvoiceschanged = null;
+            };
+
+            const tryResolve = () => {
+                if (checkVoices()) {
+                    cleanup();
+                    return true;
                 }
-            }, 100);
+                if (++attempts > maxAttempts) {
+                    console.warn('High-quality TTS voice did not load in time. Using available voices.');
+                    cleanup();
+                    resolve(window.speechSynthesis.getVoices()); // Fallback
+                    return true;
+                }
+                return false;
+            };
+
+            window.speechSynthesis.onvoiceschanged = tryResolve;
+            intervalId = setInterval(tryResolve, 100);
         });
     };
+    
+    const init = () => {
+        if (!voicesPromise) {
+            voicesPromise = loadVoices();
+        }
+    };
+
+    // Proactively start loading voices on the first user interaction.
+    // This is a common pattern to "unlock" audio features on iOS.
+    document.addEventListener('click', init, { once: true, passive: true });
+    document.addEventListener('touchstart', init, { once: true, passive: true });
 
     return {
         getVoices: () => {
-            if (!voicesPromise) {
-                voicesPromise = loadVoices();
-            }
+            init(); // Ensure it's called, even if no interaction happened yet.
             return voicesPromise;
         }
     };
