@@ -208,9 +208,12 @@ const app = {
         this.elements.logoutBtn.classList.remove('hidden');
 
         if (grade) {
-            const needsProgressLoad = this.state.selectedSheet !== grade;
+            // If the grade is different, reset the word list readiness flag
+            if (this.state.selectedSheet !== grade) {
+                learningMode.state.isWordListReady = false; 
+            }
             this.state.selectedSheet = grade;
-            if (needsProgressLoad) await utils.loadUserProgress();
+            await utils.loadUserProgress(); // Always load progress for the selected grade
 
             this.elements.sheetLink.href = this.config.sheetLinks[grade];
             this.elements.sheetLink.classList.remove('hidden');
@@ -633,7 +636,7 @@ const utils = {
             if (docSnap.exists) {
                 app.state.currentProgress = docSnap.data();
                 if (!app.state.currentProgress.wordData) {
-                    app.state.currentProgress.wordData = {}; // Ensure wordData exists
+                    app.state.currentProgress.wordData = {}; // Ensure wordData exists for backward compatibility
                 }
             } else {
                 app.state.currentProgress = { wordData: {} }; // No existing progress
@@ -660,7 +663,6 @@ const utils = {
     async updateWordStatus(word, quizType, result) {
         if (!word || !quizType || !app.state.user) return;
         
-        // Update local state first for immediate UI feedback
         if (!app.state.currentProgress.wordData[word]) {
             app.state.currentProgress.wordData[word] = {};
         }
@@ -669,16 +671,21 @@ const utils = {
         const docRef = this._getProgressRef();
         if (!docRef) return;
 
-        // Update specific word data field in Firestore
         const updatePath = `wordData.${word}.${quizType}`;
-        await docRef.set({ [updatePath]: result }, { merge: true });
+        // No need to await here for faster UI response. The summary update will catch up.
+        docRef.set({ [updatePath]: result }, { merge: true });
 
-        // Asynchronously update summary stats
+        // Asynchronously update summary stats without blocking UI
         this.updateSummaryStats(); 
     },
 
     async updateSummaryStats() {
-        if (!learningMode.state.isWordListReady || !app.state.user) return;
+        if (!app.state.user) return;
+
+        // Ensure word list is loaded before calculating summary
+        if (!learningMode.state.isWordListReady) {
+            await learningMode.loadWordList();
+        }
 
         const counts = { learned: 0, learning: 0, review: 0, unseen: 0 };
         learningMode.state.wordList.forEach(wordObj => {
@@ -693,7 +700,7 @@ const utils = {
             lastUpdated: new Date().toISOString()
         };
         
-        await docRef.set({ summary }, { merge: true });
+        docRef.set({ summary }, { merge: true });
     },
 
     async updateUsageStats(seconds) {
@@ -703,7 +710,7 @@ const utils = {
         const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
         const usagePath = `usage.${today}`;
         
-        await docRef.set({ [usagePath]: increment(seconds) }, { merge: true });
+        docRef.set({ [usagePath]: increment(seconds) }, { merge: true });
     },
 
     getCorrectlyAnsweredWords(quizType) {
@@ -714,6 +721,7 @@ const utils = {
     },
     
     getIncorrectWords() {
+        if (!learningMode.state.isWordListReady) return [];
         const allWords = learningMode.state.wordList;
         return allWords
             .filter(wordObj => this.getWordStatus(wordObj.word) === 'review')
@@ -728,17 +736,21 @@ const dashboard = {
     },
     init() {},
     async show() {
+        this.elements.content.innerHTML = `<div class="text-center p-10"><div class="loader mx-auto"></div><p class="mt-4 text-gray-600">통계 정보를 불러오는 중...</p></div>`;
+        
+        // This is the fix: Ensure both word list and user progress are loaded before rendering.
+        // User progress is already loaded in _renderView. We just need to ensure the word list is ready.
         if (!learningMode.state.isWordListReady) {
-            this.elements.content.innerHTML = `<div class="text-center p-10"><div class="loader mx-auto"></div><p class="mt-4 text-gray-600">단어 목록을 동기화하는 중...</p></div>`;
             await learningMode.loadWordList();
         }
+        
         this.render();
     },
     render() {
         const allWords = learningMode.state.wordList;
         const totalWords = allWords.length;
         if (totalWords === 0) {
-            this.elements.content.innerHTML = `<p class="text-center text-gray-600">학습할 단어가 없습니다.</p>`;
+            this.elements.content.innerHTML = `<p class="text-center text-gray-600">단어 목록을 불러올 수 없거나, 학습할 단어가 없습니다.</p>`;
             return;
         }
 
@@ -1116,16 +1128,25 @@ const learningMode = {
     },
     async loadWordList() {
         const sheet = app.state.selectedSheet;
+        // This function now only proceeds if the list isn't ready.
+        if (this.state.isWordListReady) return;
+
         try {
             const cachedData = localStorage.getItem(`wordListCache_${sheet}`);
             if (cachedData) {
                 const { timestamp, words } = JSON.parse(cachedData);
-                if (Date.now() - timestamp < 86400000) { this.state.wordList = words; this.state.isWordListReady = true; return; }
+                if (Date.now() - timestamp < 86400000) { 
+                    this.state.wordList = words; 
+                    this.state.isWordListReady = true; 
+                    return; 
+                }
             }
         } catch (e) { console.error("Cache loading failed:", e); localStorage.removeItem(`wordListCache_${sheet}`); }
+        
         this.elements.loaderText.textContent = "단어 목록을 동기화하는 중...";
         this.elements.loader.classList.remove('hidden');
         this.elements.startScreen.classList.add('hidden');
+        
         try {
             const data = await api.fetchFromGoogleSheet('getWords');
             if(data.error) throw new Error(data.message);
@@ -1138,7 +1159,9 @@ const learningMode = {
             this.showError(error.message);
         } finally {
             this.elements.loader.classList.add('hidden');
-            this.elements.startScreen.classList.remove('hidden');
+            if(document.getElementById('learning-start-screen').style.display !== 'none') {
+                this.elements.startScreen.classList.remove('hidden');
+            }
         }
     },
     async start() {
@@ -1218,10 +1241,12 @@ const learningMode = {
         this.displayWord(this.state.currentIndex);
     },
     reset() {
+        this.state.isWordListReady = false; 
+        this.state.wordList = []; 
+        this.state.currentDisplayList = [];
         this.elements.appContainer.classList.add('hidden');
         this.elements.loader.classList.add('hidden');
         this.elements.fixedButtons.classList.add('hidden');
-        this.state.wordList = []; this.state.isWordListReady = false; this.state.currentDisplayList = [];
     },
     resetStartScreen() {
         this.reset();
