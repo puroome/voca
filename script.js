@@ -9,9 +9,8 @@ const app = {
             '2y': 'https://docs.google.com/spreadsheets/d/1Xydj0im3Cqq9JhjN8IezZ-7DBp1-DV703cCIb3ORdc8/edit?usp=sharing',
             '3y': 'https://docs.google.com/spreadsheets/d/1Z_n9IshFSC5cBBW6IkZNfQsLb2BBrp9QeOlsGsCkn2Y/edit?usp=sharing'
         },
-        // --- [수정됨] 기존 이미지 배열을 삭제하고 Cloudinary 정보로 대체 ---
-        cloudinaryCloudName: "dx07dymqs",
-        cloudinaryTag: "bgimage"
+        // Cloudinary에서 동적으로 이미지를 불러오므로 기존 배열은 비워둡니다.
+        backgroundImages: []
     },
     state: {
         selectedSheet: '',
@@ -45,8 +44,8 @@ const app = {
         searchLongmanContextBtn: document.getElementById('search-longman-context-btn'),
     },
     async init() {
-        // --- [수정됨] 기존 배경 설정 함수 호출을 새로운 함수로 변경 ---
-        this.setRandomBackgroundImage();
+        // 앱 초기화 시 Cloudinary에서 배경 이미지를 먼저 불러옵니다.
+        await this.fetchAndSetBackgroundImages();
         
         try {
             await translationDBCache.init();
@@ -197,8 +196,7 @@ const app = {
             case 'grade':
             default:
                 this.elements.gradeSelectionScreen.classList.remove('hidden');
-                // --- [수정됨] 뷰 전환 시에도 새로운 배경 설정 함수 호출 ---
-                this.setRandomBackgroundImage();
+                this.setBackgroundImage();
                 quizMode.reset();
                 learningMode.reset();
                 break;
@@ -274,37 +272,51 @@ const app = {
             setTimeout(() => msgEl.classList.add('hidden'), 500);
         }, 1500);
     },
-    // --- [삭제됨] 기존 preloadImages 함수 ---
-    // --- [삭제됨] 기존 setBackgroundImage 함수 ---
-
-    // --- [추가됨] Cloudinary에서 이미지를 가져와 배경으로 설정하는 새로운 함수 ---
-    async setRandomBackgroundImage() {
-        const cloudName = this.config.cloudinaryCloudName;
-        const tag = this.config.cloudinaryTag;
-        
-        // Cloudinary에서 태그된 이미지 목록을 JSON 형태로 요청하는 주소
-        const url = `https://res.cloudinary.com/${cloudName}/image/list/${tag}.json`;
+    preloadImages() {
+        this.config.backgroundImages.forEach(src => {
+            const img = new Image();
+            img.src = src;
+        });
+    },
+    setBackgroundImage() {
+        if (this.config.backgroundImages.length === 0) return;
+        const randomIndex = Math.floor(Math.random() * this.config.backgroundImages.length);
+        const imageUrl = this.config.backgroundImages[randomIndex];
+        document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
+    },
+    // ================================================================
+    // NEW: Cloudinary 이미지 로딩 함수
+    // ================================================================
+    async fetchAndSetBackgroundImages() {
+        const cloudName = 'dx07dymqs';
+        const tagName = 'bgimage';
+        const url = `https://res.cloudinary.com/${cloudName}/image/list/${tagName}.json`;
 
         try {
             const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Cloudinary API Error: ${response.statusText}`);
+            }
             const data = await response.json();
             
-            if (data.resources && data.resources.length > 0) {
-                // 1. 이미지 목록에서 랜덤으로 하나를 선택
-                const randomIndex = Math.floor(Math.random() * data.resources.length);
-                const randomImage = data.resources[randomIndex];
-                
-                // 2. 선택된 이미지의 정보를 이용해 최적화된 전체 주소(URL) 생성
-                const imageUrl = `https://res.cloudinary.com/${cloudName}/image/upload/q_auto,f_auto/v1/${randomImage.public_id}.${randomImage.format}`;
-                
-                // 3. CSS 변수를 통해 앱의 배경으로 설정
-                document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
-            }
+            // 이미지 URL 목록을 생성하여 config에 저장
+            this.config.backgroundImages = data.resources.map(img => 
+                `https://res.cloudinary.com/${cloudName}/image/upload/v${img.version}/${img.public_id}.${img.format}`
+            );
+
         } catch (error) {
-            console.error("배경 이미지를 불러오는 데 실패했습니다:", error);
-            // 실패할 경우를 대비해 기본 배경색을 지정할 수 있습니다.
-            document.documentElement.style.setProperty('--bg-image', 'none');
-            document.body.style.backgroundColor = "#2c3e50";
+            console.error("Cloudinary에서 배경 이미지를 불러오는 데 실패했습니다:", error);
+            // 실패 시 사용할 기본 이미지 목록 (Fallback)
+            this.config.backgroundImages = [
+                'https://i.imgur.com/EvyV4x7.jpeg',
+                'https://i.imgur.com/xsnT8kO.jpeg',
+                'https://i.imgur.com/6gZtYDb.jpeg'
+            ];
+        } finally {
+            // 이미지를 성공적으로 불러왔거나, 실패하여 기본 이미지를 사용하게 된 후
+            // 이미지를 미리 로딩하고 배경을 설정합니다.
+            this.preloadImages();
+            this.setBackgroundImage();
         }
     },
 };
