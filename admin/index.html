@@ -307,7 +307,7 @@
                     }
                 }
                 const gradeText = assignedGrade === 'unassigned' ? '(미배정)' : `(${assignedGrade.replace('y', '')}학년)`;
-                this.elements.studentNameTitle.textContent = `${displayName}${gradeText} 학습 현황`;
+                this.elements.studentNameTitle.textContent = `${displayName} ${gradeText} 학습 현황`;
                 
                 for (const grade of ['1y', '2y', '3y']) {
                     await this.loadStudentDetails(student, displayName, grade, false);
