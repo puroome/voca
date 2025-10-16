@@ -14,6 +14,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
+const { increment } = firebase.firestore.FieldValue;
 
 
 // ================================================================
@@ -30,8 +31,8 @@ const app = {
         backgroundImages: []
     },
     state: {
-        user: null, // 로그인한 사용자 정보
-        currentProgress: {}, // 현재 학년의 학습 진행 상황
+        user: null,
+        currentProgress: { wordData: {} }, // Initialize with wordData object
         selectedSheet: '',
         translateDebounceTimeout: null,
         longPressTimer: null,
@@ -86,6 +87,7 @@ const app = {
                 this.elements.loginScreen.classList.add('hidden');
                 this.elements.mainContainer.classList.remove('hidden');
                 document.body.classList.remove('items-center');
+                activityDetector.start(); // Start tracking activity on login
 
                 const hash = window.location.hash.substring(1);
                 const [view, grade] = hash.split('-');
@@ -107,6 +109,7 @@ const app = {
                 this.elements.loginScreen.classList.remove('hidden');
                 this.elements.mainContainer.classList.add('hidden');
                 document.body.classList.add('items-center');
+                activityDetector.stop(); // Stop tracking on logout
                 this._renderView(null); 
             }
         });
@@ -215,7 +218,7 @@ const app = {
             this.elements.selectionTitle.textContent = `${gradeText} 어휘`;
         } else {
             this.state.selectedSheet = '';
-            this.state.currentProgress = {};
+            this.state.currentProgress = { wordData: {} };
         }
 
         switch (view) {
@@ -359,22 +362,51 @@ const app = {
     },
 };
 
+const activityDetector = {
+    lastActivityTime: Date.now(),
+    intervalId: null,
+    TRACKING_INTERVAL: 15000, // 15 seconds
+
+    init() {
+        ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(event => {
+            document.addEventListener(event, () => this.record(), { passive: true });
+        });
+    },
+    record() {
+        this.lastActivityTime = Date.now();
+    },
+    start() {
+        if (this.intervalId) return; // Already running
+        this.lastActivityTime = Date.now();
+        this.intervalId = setInterval(() => {
+            if (Date.now() - this.lastActivityTime < this.TRACKING_INTERVAL + 2000) { // Add a 2-second buffer
+                utils.updateUsageStats(this.TRACKING_INTERVAL / 1000); // Send seconds
+            }
+        }, this.TRACKING_INTERVAL);
+    },
+    stop() {
+        clearInterval(this.intervalId);
+        this.intervalId = null;
+    }
+};
+activityDetector.init();
+
 const translationDBCache = {
     db: null, dbName: 'translationCacheDB_B', storeName: 'translationStore',
     init() {
         return new Promise((resolve, reject) => {
-            if (!('indexedDB' in window)) { console.warn('IndexedDB not supported, translation caching disabled.'); return resolve(); }
+            if (!('indexedDB' in window)) { console.warn('IndexedDB not supported.'); return resolve(); }
             const request = indexedDB.open(this.dbName, 1);
-            request.onupgradeneeded = event => { const db = event.target.result; if (!db.objectStoreNames.contains(this.storeName)) db.createObjectStore(this.storeName); };
-            request.onsuccess = event => { this.db = event.target.result; resolve(); };
-            request.onerror = event => reject(event.target.error);
+            request.onupgradeneeded = e => e.target.result.createObjectStore(this.storeName);
+            request.onsuccess = e => { this.db = e.target.result; resolve(); };
+            request.onerror = e => reject(e.target.error);
         });
     },
     get: key => new Promise((resolve, reject) => {
         if (!translationDBCache.db) return resolve(null);
-        const request = translationDBCache.db.transaction([translationDBCache.storeName], 'readonly').objectStore(translationDBCache.storeName).get(key);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = event => reject(event.target.error);
+        const req = translationDBCache.db.transaction([translationDBCache.storeName]).objectStore(translationDBCache.storeName).get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = e => reject(e.target.error);
     }),
     save: (key, data) => {
         if (!translationDBCache.db) return;
@@ -386,7 +418,6 @@ const translationDBCache = {
 const api = {
     googleTtsApiKey: 'AIzaSyAJmQBGY4H9DVMlhMtvAAVMi_4N7__DfKA',
     audioCache: {},
-
     async fetchFromGoogleSheet(action, params = {}) {
         const url = new URL(app.config.SCRIPT_URL);
         url.searchParams.append('action', action);
@@ -415,49 +446,41 @@ const api = {
     },
     async speak(text) {
         if (!text || !text.trim()) return;
-
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
         const isAndroid = /android/i.test(navigator.userAgent);
-
         if (isAndroid && 'speechSynthesis' in window) {
             try {
-                // Cancel any ongoing speech to prevent overlap
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(processedText);
                 utterance.lang = 'en-US';
                 window.speechSynthesis.speak(utterance);
                 return;
             } catch (error) {
-                console.warn("Android 내장 TTS 실행 실패, Google TTS로 대체:", error);
+                console.warn("Android TTS failed, falling back to Google TTS:", error);
             }
         }
-        
         if (this.audioCache[processedText]) {
             this.audioCache[processedText].currentTime = 0;
             this.audioCache[processedText].play();
             return;
         }
-
         const ttsUrl = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${this.googleTtsApiKey}`;
         const requestBody = {
             input: { text: processedText },
             voice: { languageCode: 'en-US', name: 'en-US-Standard-C' },
             audioConfig: { audioEncoding: 'MP3' }
         };
-
         try {
             const response = await fetch(ttsUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
             });
-
             if (!response.ok) {
                 const errorData = await response.json();
                 console.error('Google TTS API Error:', errorData.error.message);
                 return;
             }
-
             const data = await response.json();
             if (data.audioContent) {
                 const audioSrc = `data:audio/mp3;base64,${data.audioContent}`;
@@ -602,30 +625,27 @@ const utils = {
     async loadUserProgress() {
         const docRef = this._getProgressRef();
         if (!docRef) {
-            app.state.currentProgress = {};
+            app.state.currentProgress = { wordData: {} };
             return;
         }
         try {
             const docSnap = await docRef.get();
-            app.state.currentProgress = docSnap.exists ? docSnap.data() : {};
+            if (docSnap.exists) {
+                app.state.currentProgress = docSnap.data();
+                if (!app.state.currentProgress.wordData) {
+                    app.state.currentProgress.wordData = {}; // Ensure wordData exists
+                }
+            } else {
+                app.state.currentProgress = { wordData: {} }; // No existing progress
+            }
         } catch (error) {
             console.error("Error loading user progress:", error);
-            app.state.currentProgress = {};
+            app.state.currentProgress = { wordData: {} };
         }
     },
 
-    async _saveCurrentProgress() {
-        const docRef = this._getProgressRef();
-        if (!docRef) return;
-        try {
-            await docRef.set(app.state.currentProgress, { merge: true });
-        } catch (error) {
-            console.error("Error saving user progress:", error);
-        }
-    },
-    
     getWordStatus(word) {
-        const progress = app.state.currentProgress[word];
+        const progress = app.state.currentProgress.wordData[word];
         if (!progress) return 'unseen';
 
         const statuses = ['MULTIPLE_CHOICE_MEANING', 'FILL_IN_THE_BLANK', 'MULTIPLE_CHOICE_DEFINITION']
@@ -637,22 +657,60 @@ const utils = {
         return 'unseen';
     },
 
-    updateWordStatus(word, quizType, result) {
-        if (!word || !quizType) return;
+    async updateWordStatus(word, quizType, result) {
+        if (!word || !quizType || !app.state.user) return;
         
-        if (!app.state.currentProgress[word]) {
-            app.state.currentProgress[word] = {};
+        // Update local state first for immediate UI feedback
+        if (!app.state.currentProgress.wordData[word]) {
+            app.state.currentProgress.wordData[word] = {};
         }
-        app.state.currentProgress[word][quizType] = result;
+        app.state.currentProgress.wordData[word][quizType] = result;
+
+        const docRef = this._getProgressRef();
+        if (!docRef) return;
+
+        // Update specific word data field in Firestore
+        const updatePath = `wordData.${word}.${quizType}`;
+        await docRef.set({ [updatePath]: result }, { merge: true });
+
+        // Asynchronously update summary stats
+        this.updateSummaryStats(); 
+    },
+
+    async updateSummaryStats() {
+        if (!learningMode.state.isWordListReady || !app.state.user) return;
+
+        const counts = { learned: 0, learning: 0, review: 0, unseen: 0 };
+        learningMode.state.wordList.forEach(wordObj => {
+            counts[this.getWordStatus(wordObj.word)]++;
+        });
+
+        const docRef = this._getProgressRef();
+        if (!docRef) return;
         
-        this._saveCurrentProgress(); 
+        const summary = {
+            ...counts,
+            lastUpdated: new Date().toISOString()
+        };
+        
+        await docRef.set({ summary }, { merge: true });
+    },
+
+    async updateUsageStats(seconds) {
+        const docRef = this._getProgressRef();
+        if (!docRef) return;
+        
+        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        const usagePath = `usage.${today}`;
+        
+        await docRef.set({ [usagePath]: increment(seconds) }, { merge: true });
     },
 
     getCorrectlyAnsweredWords(quizType) {
         if (!quizType) return [];
-        const allProgress = app.state.currentProgress;
-        return Object.keys(allProgress)
-            .filter(word => allProgress[word] && allProgress[word][quizType] === 'correct');
+        const wordData = app.state.currentProgress.wordData;
+        return Object.keys(wordData)
+            .filter(word => wordData[word] && wordData[word][quizType] === 'correct');
     },
     
     getIncorrectWords() {
@@ -691,7 +749,7 @@ const dashboard = {
 
         const stats = [
             { name: '미학습', description: '아직 어떤 퀴즈도 풀지 않음', count: counts.unseen, color: 'bg-gray-400' },
-            { name: '학습 중', description: '최소 1종류의 퀴즈를 풀어서 맞힘, 아직 틀리지 않음', count: counts.learning, color: 'bg-blue-500' },
+            { name: '학습 중', description: '최소 1종류의 퀴즈를 풀어서 맞힘', count: counts.learning, color: 'bg-blue-500' },
             { name: '복습 필요', description: '최소 1종류의 퀴즈에서 틀림', count: counts.review, color: 'bg-orange-500' },
             { name: '학습 완료', description: '모든 종류의 퀴즈에서 정답을 맞힘', count: counts.learned, color: 'bg-green-500' }
         ];
@@ -1093,9 +1151,6 @@ const learningMode = {
     
         if (!startWord) {
             this.elements.startScreen.classList.add('hidden');
-            // NOTE: The concept of a device-specific "last index" is less relevant
-            // with user accounts. Starting from 0 or a user-saved preference would be better.
-            // For now, we'll keep it simple and start from 0 for blank input.
             this.state.currentIndex = 0;
             this.launchApp(this.state.wordList);
             return;
