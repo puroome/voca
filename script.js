@@ -327,16 +327,50 @@ const translationDBCache = {
 };
 
 // ================================================================
-// TTS Voice Loading (iOS compatibility)
+// TTS Helper (for iOS compatibility)
 // ================================================================
-let voices = [];
-function populateVoiceList() {
-    voices = window.speechSynthesis.getVoices();
-}
-// The initial call is removed to prevent a race condition on iOS.
-if (speechSynthesis.onvoiceschanged !== undefined) {
-    speechSynthesis.onvoiceschanged = populateVoiceList;
-}
+const ttsHelper = (() => {
+    let voicesPromise = null;
+
+    const loadVoices = () => {
+        return new Promise((resolve) => {
+            const checkVoices = () => {
+                const voices = window.speechSynthesis.getVoices();
+                if (voices.length > 0) {
+                    resolve(voices);
+                    return true;
+                }
+                return false;
+            };
+
+            if (checkVoices()) return;
+
+            window.speechSynthesis.onvoiceschanged = () => checkVoices();
+
+            let attempts = 0;
+            const interval = setInterval(() => {
+                attempts++;
+                if (checkVoices() || attempts > 30) { // Try for 3 seconds
+                    clearInterval(interval);
+                    if (!checkVoices()) {
+                        console.warn('TTS voices did not load in time.');
+                        resolve([]); // Resolve with empty array on failure
+                    }
+                }
+            }, 100);
+        });
+    };
+
+    return {
+        getVoices: () => {
+            if (!voicesPromise) {
+                voicesPromise = loadVoices();
+            }
+            return voicesPromise;
+        }
+    };
+})();
+
 
 const api = {
     async fetchFromGoogleSheet(action, params = {}) {
@@ -365,31 +399,33 @@ const api = {
             return '번역 오류';
         }
     },
-    speak(text) {
+    async speak(text) {
         if (!text || !text.trim() || !('speechSynthesis' in window)) return;
+
+        // Cancel any previous speech
+        window.speechSynthesis.cancel();
+
+        // Get the list of voices, waiting if necessary. This is the core of the fix.
+        const voices = await ttsHelper.getVoices();
         
-        // Just-in-time voice loading: If the global `voices` array is empty,
-        // try to populate it again. This is a crucial fallback for iOS and
-        // for browsers where `onvoiceschanged` may not fire if voices are ready instantly.
-        if (voices.length === 0) {
-            populateVoiceList();
-        }
-
-        window.speechSynthesis.cancel(); // Cancel any previous speech
-
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
         const utterance = new SpeechSynthesisUtterance(processedText);
 
         // Find a high-quality voice
-        let selectedVoice = voices.find(v => v.name === 'Samantha' && v.lang === 'en-US'); // Preferred iOS voice
-        if (!selectedVoice) {
-            selectedVoice = voices.find(v => v.lang === 'en-US' && v.localService);
-        }
-        if (!selectedVoice) {
-            selectedVoice = voices.find(v => v.lang === 'en-US');
-        }
-        if (!selectedVoice) {
-            selectedVoice = voices.find(v => v.lang.startsWith('en-'));
+        let selectedVoice = null;
+        if (voices.length > 0) {
+            selectedVoice = voices.find(v => v.name === 'Samantha' && v.lang === 'en-US'); // Preferred iOS voice
+            if (!selectedVoice) {
+                selectedVoice = voices.find(v => v.lang === 'en-US' && v.localService);
+            }
+            if (!selectedVoice) {
+                selectedVoice = voices.find(v => v.lang === 'en-US');
+            }
+            if (!selectedVoice) {
+                selectedVoice = voices.find(v => v.lang.startsWith('en-'));
+            }
+        } else {
+            console.warn("No TTS voices available. The browser will use its default.");
         }
 
         if (selectedVoice) {
@@ -1191,4 +1227,3 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-
