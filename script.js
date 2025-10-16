@@ -1,7 +1,6 @@
 // ================================================================
 // App Main Controller
 // ================================================================
-
 const app = {
     config: {
         SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec",
@@ -223,6 +222,7 @@ const app = {
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
 
+        // Disable interactive elements on the screen
         const elementsToDisable = [
             this.elements.homeBtn,
             this.elements.refreshBtn,
@@ -233,8 +233,11 @@ const app = {
             document.getElementById('select-mistakes-btn'),
         ].filter(el => el);
 
-        elementsToDisable.forEach(el => el.classList.add('pointer-events-none', 'opacity-50'));
+        elementsToDisable.forEach(el => {
+            el.classList.add('pointer-events-none', 'opacity-50');
+        });
         
+        // Add a spinner to the refresh button
         const refreshIconHTML = this.elements.refreshBtn.innerHTML;
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
@@ -254,7 +257,11 @@ const app = {
             console.error("Error during data refresh:", err);
             alert("데이터 새로고침에 실패했습니다.");
         } finally {
-            elementsToDisable.forEach(el => el.classList.remove('pointer-events-none', 'opacity-50'));
+            // Re-enable elements
+            elementsToDisable.forEach(el => {
+                el.classList.remove('pointer-events-none', 'opacity-50');
+            });
+            // Restore refresh button icon
             this.elements.refreshBtn.innerHTML = refreshIconHTML;
         }
     },
@@ -326,6 +333,7 @@ let voices = [];
 function populateVoiceList() {
     voices = window.speechSynthesis.getVoices();
 }
+// The initial call is removed to prevent a race condition on iOS.
 if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = populateVoiceList;
 }
@@ -357,41 +365,40 @@ const api = {
             return '번역 오류';
         }
     },
-
     speak(text) {
         if (!text || !text.trim() || !('speechSynthesis' in window)) return;
+        
+        // Just-in-time voice loading: If the global `voices` array is empty,
+        // try to populate it again. This is a crucial fallback for iOS and
+        // for browsers where `onvoiceschanged` may not fire if voices are ready instantly.
+        if (voices.length === 0) {
+            populateVoiceList();
+        }
 
-        window.speechSynthesis.cancel(); // Always cancel previous speech first.
+        window.speechSynthesis.cancel(); // Cancel any previous speech
 
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
         const utterance = new SpeechSynthesisUtterance(processedText);
-        
-        // This is the key fix for iOS/Safari: get voices just-in-time.
-        const allVoices = window.speechSynthesis.getVoices();
 
         // Find a high-quality voice
-        let selectedVoice = allVoices.find(v => v.name === 'Samantha' && v.lang === 'en-US'); // Preferred iOS voice
+        let selectedVoice = voices.find(v => v.name === 'Samantha' && v.lang === 'en-US'); // Preferred iOS voice
         if (!selectedVoice) {
-            selectedVoice = allVoices.find(v => v.lang === 'en-US' && v.localService);
+            selectedVoice = voices.find(v => v.lang === 'en-US' && v.localService);
         }
         if (!selectedVoice) {
-            selectedVoice = allVoices.find(v => v.lang === 'en-US');
+            selectedVoice = voices.find(v => v.lang === 'en-US');
         }
         if (!selectedVoice) {
-            selectedVoice = allVoices.find(v => v.lang.startsWith('en-'));
+            selectedVoice = voices.find(v => v.lang.startsWith('en-'));
         }
 
         if (selectedVoice) {
             utterance.voice = selectedVoice;
-        } else {
-            // If no specific voice is found, ensure the language is set 
-            // so the browser can pick a default for that language.
-            utterance.lang = 'en-US';
         }
-
+        
+        utterance.lang = 'en-US';
         window.speechSynthesis.speak(utterance);
     },
-
     async copyToClipboard(text) {
         if (navigator.clipboard) {
             try { await navigator.clipboard.writeText(text); } 
@@ -1184,5 +1191,4 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-" in the Canvas document.
 
