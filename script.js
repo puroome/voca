@@ -1,4 +1,22 @@
 // ================================================================
+// Firebase Configuration
+// ================================================================
+const firebaseConfig = {
+    apiKey: "AIzaSyBE_Gxd1haPazVK61F9sjCwK0X4Gw5rERM",
+    authDomain: "wordapp-91c0a.firebaseapp.com",
+    projectId: "wordapp-91c0a",
+    storageBucket: "wordapp-91c0a.firebasestorage.app",
+    messagingSenderId: "213863780677",
+    appId: "1:213863780677:web:78d6b8755866a0c5ddee2c"
+};
+
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+
+// ================================================================
 // App Main Controller
 // ================================================================
 const app = {
@@ -9,15 +27,20 @@ const app = {
             '2y': 'https://docs.google.com/spreadsheets/d/1Xydj0im3Cqq9JhjN8IezZ-7DBp1-DV703cCIb3ORdc8/edit?usp=sharing',
             '3y': 'https://docs.google.com/spreadsheets/d/1Z_n9IshFSC5cBBW6IkZNfQsLb2BBrp9QeOlsGsCkn2Y/edit?usp=sharing'
         },
-        // Cloudinary에서 동적으로 이미지를 불러오므로 기존 배열은 비워둡니다.
         backgroundImages: []
     },
     state: {
+        user: null, // 로그인한 사용자 정보
+        currentProgress: {}, // 현재 학년의 학습 진행 상황
         selectedSheet: '',
         translateDebounceTimeout: null,
         longPressTimer: null,
     },
     elements: {
+        loginScreen: document.getElementById('login-screen'),
+        loginBtn: document.getElementById('login-btn'),
+        logoutBtn: document.getElementById('logout-btn'),
+        mainContainer: document.getElementById('main-container'),
         gradeSelectionScreen: document.getElementById('grade-selection-screen'),
         selectionScreen: document.getElementById('selection-screen'),
         selectionTitle: document.getElementById('selection-title'),
@@ -44,7 +67,6 @@ const app = {
         searchLongmanContextBtn: document.getElementById('search-longman-context-btn'),
     },
     async init() {
-        // 앱 초기화 시 Cloudinary에서 배경 이미지를 먼저 불러옵니다.
         await this.fetchAndSetBackgroundImages();
         
         try {
@@ -57,24 +79,51 @@ const app = {
         quizMode.init();
         learningMode.init();
         dashboard.init();
-
-        const hash = window.location.hash.substring(1);
-        const [view, grade] = hash.split('-');
         
-        let initialState = { view: 'grade' };
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                this.state.user = user;
+                this.elements.loginScreen.classList.add('hidden');
+                this.elements.mainContainer.classList.remove('hidden');
+                document.body.classList.remove('items-center');
 
-        if (grade && ['1y', '2y', '3y'].includes(grade)) {
-            if (['mode', 'quiz', 'learning', 'dashboard', 'mistakeReview'].includes(view)) {
-                initialState = { view: view, grade: grade };
+                const hash = window.location.hash.substring(1);
+                const [view, grade] = hash.split('-');
+                
+                let initialState = { view: 'grade' };
+
+                if (grade && ['1y', '2y', '3y'].includes(grade)) {
+                    if (['mode', 'quiz', 'learning', 'dashboard', 'mistakeReview'].includes(view)) {
+                        initialState = { view: view, grade: grade };
+                    }
+                } else if (['1y', '2y', '3y'].includes(view)) { 
+                    initialState = { view: 'mode', grade: view };
+                }
+                
+                history.replaceState(initialState, '');
+                this._renderView(initialState.view, initialState.grade);
+            } else {
+                this.state.user = null;
+                this.elements.loginScreen.classList.remove('hidden');
+                this.elements.mainContainer.classList.add('hidden');
+                document.body.classList.add('items-center');
+                this._renderView(null); 
             }
-        } else if (['1y', '2y', '3y'].includes(view)) { 
-            initialState = { view: 'mode', grade: view };
-        }
-        
-        history.replaceState(initialState, '');
-        this._renderView(initialState.view, initialState.grade);
+        });
     },
     bindGlobalEvents() {
+        this.elements.loginBtn.addEventListener('click', () => {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithPopup(provider).catch(error => {
+                console.error("Google 로그인 실패:", error);
+                alert("로그인에 실패했습니다. 다시 시도해 주세요.");
+            });
+        });
+
+        this.elements.logoutBtn.addEventListener('click', () => {
+            auth.signOut();
+        });
+
         document.querySelectorAll('.grade-select-card img.group').forEach(img => {
             img.addEventListener('click', () => {
                 const grade = img.closest('.grade-select-card').dataset.sheet;
@@ -126,7 +175,7 @@ const app = {
         if (currentState.view === view && currentState.grade === grade) return;
 
         let hash = '';
-        if (view !== 'grade') {
+        if (view !== 'grade' && view !== null) {
             hash = grade ? `#${grade}` : '';
             if (view !== 'mode') {
                 hash = `#${view}-${grade}`;
@@ -149,15 +198,24 @@ const app = {
         this.elements.refreshBtn.classList.add('hidden');
         this.elements.practiceModeControl.classList.add('hidden');
         this.elements.sheetLink.classList.add('hidden');
+        this.elements.logoutBtn.classList.add('hidden');
+
+        if (!this.state.user) return; 
+
+        this.elements.logoutBtn.classList.remove('hidden');
 
         if (grade) {
+            const needsProgressLoad = this.state.selectedSheet !== grade;
             this.state.selectedSheet = grade;
+            if (needsProgressLoad) await utils.loadUserProgress();
+
             this.elements.sheetLink.href = this.config.sheetLinks[grade];
             this.elements.sheetLink.classList.remove('hidden');
             const gradeText = grade.replace('y', '학년');
             this.elements.selectionTitle.textContent = `${gradeText} 어휘`;
         } else {
             this.state.selectedSheet = '';
+            this.state.currentProgress = {};
         }
 
         switch (view) {
@@ -190,6 +248,7 @@ const app = {
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
                 this.elements.refreshBtn.classList.remove('hidden');
+                this.elements.logoutBtn.classList.add('hidden');
                 quizMode.reset();
                 learningMode.reset();
                 break;
@@ -206,22 +265,14 @@ const app = {
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
 
-        // Disable interactive elements on the screen
         const elementsToDisable = [
-            this.elements.homeBtn,
-            this.elements.refreshBtn,
-            this.elements.backToGradeSelectionBtn,
-            document.getElementById('select-learning-btn'),
-            document.getElementById('select-quiz-btn'),
-            document.getElementById('select-dashboard-btn'),
-            document.getElementById('select-mistakes-btn'),
+            this.elements.homeBtn, this.elements.refreshBtn, this.elements.backToGradeSelectionBtn,
+            document.getElementById('select-learning-btn'), document.getElementById('select-quiz-btn'),
+            document.getElementById('select-dashboard-btn'), document.getElementById('select-mistakes-btn'),
         ].filter(el => el);
 
-        elementsToDisable.forEach(el => {
-            el.classList.add('pointer-events-none', 'opacity-50');
-        });
+        elementsToDisable.forEach(el => el.classList.add('pointer-events-none', 'opacity-50'));
         
-        // Add a spinner to the refresh button
         const refreshIconHTML = this.elements.refreshBtn.innerHTML;
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
@@ -241,11 +292,7 @@ const app = {
             console.error("Error during data refresh:", err);
             alert("데이터 새로고침에 실패했습니다.");
         } finally {
-            // Re-enable elements
-            elementsToDisable.forEach(el => {
-                el.classList.remove('pointer-events-none', 'opacity-50');
-            });
-            // Restore refresh button icon
+            elementsToDisable.forEach(el => el.classList.remove('pointer-events-none', 'opacity-50'));
             this.elements.refreshBtn.innerHTML = refreshIconHTML;
         }
     },
@@ -284,9 +331,6 @@ const app = {
         const imageUrl = this.config.backgroundImages[randomIndex];
         document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
     },
-    // ================================================================
-    // NEW: Cloudinary 이미지 로딩 함수
-    // ================================================================
     async fetchAndSetBackgroundImages() {
         const cloudName = 'dx07dymqs';
         const tagName = 'bgimage';
@@ -294,27 +338,21 @@ const app = {
 
         try {
             const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`Cloudinary API Error: ${response.statusText}`);
-            }
+            if (!response.ok) throw new Error(`Cloudinary API Error: ${response.statusText}`);
             const data = await response.json();
             
-            // 이미지 URL 목록을 생성하여 config에 저장
             this.config.backgroundImages = data.resources.map(img => 
                 `https://res.cloudinary.com/${cloudName}/image/upload/v${img.version}/${img.public_id}.${img.format}`
             );
 
         } catch (error) {
             console.error("Cloudinary에서 배경 이미지를 불러오는 데 실패했습니다:", error);
-            // 실패 시 사용할 기본 이미지 목록 (Fallback)
             this.config.backgroundImages = [
                 'https://i.imgur.com/EvyV4x7.jpeg',
                 'https://i.imgur.com/xsnT8kO.jpeg',
                 'https://i.imgur.com/6gZtYDb.jpeg'
             ];
         } finally {
-            // 이미지를 성공적으로 불러왔거나, 실패하여 기본 이미지를 사용하게 된 후
-            // 이미지를 미리 로딩하고 배경을 설정합니다.
             this.preloadImages();
             this.setBackgroundImage();
         }
@@ -347,7 +385,7 @@ const translationDBCache = {
 
 const api = {
     googleTtsApiKey: 'AIzaSyAJmQBGY4H9DVMlhMtvAAVMi_4N7__DfKA',
-    audioCache: {}, // 성능 및 비용 절약을 위한 오디오 캐시
+    audioCache: {},
 
     async fetchFromGoogleSheet(action, params = {}) {
         const url = new URL(app.config.SCRIPT_URL);
@@ -379,27 +417,32 @@ const api = {
         if (!text || !text.trim()) return;
 
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
+        const isAndroid = /android/i.test(navigator.userAgent);
 
-        // 1. 캐시 확인: 이미 재생한 단어는 API 호출 없이 즉시 재생
+        if (isAndroid && 'speechSynthesis' in window) {
+            try {
+                // Cancel any ongoing speech to prevent overlap
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(processedText);
+                utterance.lang = 'en-US';
+                window.speechSynthesis.speak(utterance);
+                return;
+            } catch (error) {
+                console.warn("Android 내장 TTS 실행 실패, Google TTS로 대체:", error);
+            }
+        }
+        
         if (this.audioCache[processedText]) {
             this.audioCache[processedText].currentTime = 0;
             this.audioCache[processedText].play();
             return;
         }
 
-        // 2. Google TTS API 호출
         const ttsUrl = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${this.googleTtsApiKey}`;
         const requestBody = {
-            input: {
-                text: processedText
-            },
-            voice: {
-                languageCode: 'en-US',
-                name: 'en-US-Standard-C' // 요청하신 Standard 등급의 미국 여성 목소리
-            },
-            audioConfig: {
-                audioEncoding: 'MP3'
-            }
+            input: { text: processedText },
+            voice: { languageCode: 'en-US', name: 'en-US-Standard-C' },
+            audioConfig: { audioEncoding: 'MP3' }
         };
 
         try {
@@ -417,11 +460,9 @@ const api = {
 
             const data = await response.json();
             if (data.audioContent) {
-                // 3. 오디오 재생 및 캐싱
                 const audioSrc = `data:audio/mp3;base64,${data.audioContent}`;
                 const audio = new Audio(audioSrc);
-                
-                this.audioCache[processedText] = audio; // 생성된 오디오 객체를 캐시에 저장
+                this.audioCache[processedText] = audio;
                 audio.play();
             }
         } catch (error) {
@@ -553,61 +594,65 @@ const ui = {
 };
 
 const utils = {
-    STORAGE_KEY: 'vocabProgress',
-
-    _getAllProgress() {
-        const data = localStorage.getItem(this.STORAGE_KEY);
-        const parsed = data ? JSON.parse(data) : {};
-        return parsed[app.state.selectedSheet] || {};
+    _getProgressRef() {
+        if (!app.state.user || !app.state.selectedSheet) return null;
+        return db.collection('users').doc(app.state.user.uid).collection('progress').doc(app.state.selectedSheet);
     },
 
-    _saveAllProgress(progressData) {
-        const data = localStorage.getItem(this.STORAGE_KEY);
-        let allSheetsProgress = data ? JSON.parse(data) : {};
-        allSheetsProgress[app.state.selectedSheet] = progressData;
-        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(allSheetsProgress));
+    async loadUserProgress() {
+        const docRef = this._getProgressRef();
+        if (!docRef) {
+            app.state.currentProgress = {};
+            return;
+        }
+        try {
+            const docSnap = await docRef.get();
+            app.state.currentProgress = docSnap.exists ? docSnap.data() : {};
+        } catch (error) {
+            console.error("Error loading user progress:", error);
+            app.state.currentProgress = {};
+        }
     },
 
+    async _saveCurrentProgress() {
+        const docRef = this._getProgressRef();
+        if (!docRef) return;
+        try {
+            await docRef.set(app.state.currentProgress, { merge: true });
+        } catch (error) {
+            console.error("Error saving user progress:", error);
+        }
+    },
+    
     getWordStatus(word) {
-        const progress = this._getAllProgress()[word];
+        const progress = app.state.currentProgress[word];
         if (!progress) return 'unseen';
 
-        const meaningStatus = progress['MULTIPLE_CHOICE_MEANING'] || 'unseen';
-        const blankStatus = progress['FILL_IN_THE_BLANK'] || 'unseen';
-        const definitionStatus = progress['MULTIPLE_CHOICE_DEFINITION'] || 'unseen';
+        const statuses = ['MULTIPLE_CHOICE_MEANING', 'FILL_IN_THE_BLANK', 'MULTIPLE_CHOICE_DEFINITION']
+            .map(type => progress[type] || 'unseen');
 
-        if (meaningStatus === 'incorrect' || blankStatus === 'incorrect' || definitionStatus === 'incorrect') {
-            return 'review';
-        }
-        if (meaningStatus === 'correct' && blankStatus === 'correct' && definitionStatus === 'correct') {
-            return 'learned';
-        }
-        if (meaningStatus === 'correct' || blankStatus === 'correct' || definitionStatus === 'correct') {
-            return 'learning';
-        }
+        if (statuses.includes('incorrect')) return 'review';
+        if (statuses.every(s => s === 'correct')) return 'learned';
+        if (statuses.some(s => s === 'correct')) return 'learning';
         return 'unseen';
     },
 
     updateWordStatus(word, quizType, result) {
         if (!word || !quizType) return;
-        const allProgress = this._getAllProgress();
-        if (!allProgress[word]) {
-            allProgress[word] = {};
+        
+        if (!app.state.currentProgress[word]) {
+            app.state.currentProgress[word] = {};
         }
-        allProgress[word][quizType] = result;
-        this._saveAllProgress(allProgress);
+        app.state.currentProgress[word][quizType] = result;
+        
+        this._saveCurrentProgress(); 
     },
 
     getCorrectlyAnsweredWords(quizType) {
         if (!quizType) return [];
-        const allProgress = this._getAllProgress();
-        const correctlyAnswered = [];
-        for (const word in allProgress) {
-            if (allProgress[word] && allProgress[word][quizType] === 'correct') {
-                correctlyAnswered.push(word);
-            }
-        }
-        return correctlyAnswered;
+        const allProgress = app.state.currentProgress;
+        return Object.keys(allProgress)
+            .filter(word => allProgress[word] && allProgress[word][quizType] === 'correct');
     },
     
     getIncorrectWords() {
@@ -617,7 +662,6 @@ const utils = {
             .map(wordObj => wordObj.word);
     }
 };
-
 
 const dashboard = {
     elements: {
@@ -640,9 +684,7 @@ const dashboard = {
             return;
         }
 
-        const counts = {
-            learned: 0, learning: 0, review: 0, unseen: 0
-        };
+        const counts = { learned: 0, learning: 0, review: 0, unseen: 0 };
         allWords.forEach(wordObj => {
             counts[utils.getWordStatus(wordObj.word)]++;
         });
@@ -935,7 +977,6 @@ const quizMode = {
     },
 };
 
-// Levenshtein 거리를 계산하는 함수 (A어플에서 가져옴)
 function levenshteinDistance(a = '', b = '') {
     const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
     for (let i = 0; i <= a.length; i += 1) track[0][i] = i;
@@ -1052,8 +1093,10 @@ const learningMode = {
     
         if (!startWord) {
             this.elements.startScreen.classList.add('hidden');
-            const lastIndex = parseInt(localStorage.getItem(`lastLearningIndex_${app.state.selectedSheet}`), 10);
-            this.state.currentIndex = (lastIndex && lastIndex >= 0 && lastIndex < this.state.wordList.length) ? lastIndex : 0;
+            // NOTE: The concept of a device-specific "last index" is less relevant
+            // with user accounts. Starting from 0 or a user-saved preference would be better.
+            // For now, we'll keep it simple and start from 0 for blank input.
+            this.state.currentIndex = 0;
             this.launchApp(this.state.wordList);
             return;
         }
@@ -1159,7 +1202,6 @@ const learningMode = {
         this.elements.suggestionsContainer.classList.remove('hidden');
     },
     displayWord(index) {
-        localStorage.setItem(`lastLearningIndex_${app.state.selectedSheet}`, index);
         this.elements.cardBack.classList.remove('is-slid-up');
         const wordData = this.state.currentDisplayList[index];
         if (!wordData) return;
@@ -1220,4 +1262,3 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-
