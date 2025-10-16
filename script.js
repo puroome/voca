@@ -83,6 +83,18 @@ const app = {
         auth.onAuthStateChanged(user => {
             if (user) {
                 this.state.user = user;
+
+                // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+                // ===== 바로 여기에 아래 코드 한 줄을 추가합니다 =====
+                
+                const userRef = db.collection('users').doc(user.uid);
+                userRef.set({
+                    displayName: user.displayName,
+                    email: user.email
+                }, { merge: true });
+
+                // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+            
                 this.elements.loginScreen.classList.add('hidden');
                 this.elements.mainContainer.classList.remove('hidden');
                 document.body.classList.remove('items-center');
@@ -1262,3 +1274,4 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
