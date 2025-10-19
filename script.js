@@ -85,17 +85,12 @@ const app = {
         auth.onAuthStateChanged(user => {
             if (user) {
                 this.state.user = user;
-
-                // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-                // ===== 바로 여기에 아래 코드 한 줄을 추가합니다 =====
                 
                 const userRef = db.collection('users').doc(user.uid);
                 userRef.set({
                     displayName: user.displayName,
                     email: user.email
                 }, { merge: true });
-
-                // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
             
                 this.elements.loginScreen.classList.add('hidden');
                 this.elements.mainContainer.classList.remove('hidden');
@@ -291,8 +286,6 @@ const app = {
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
         try {
-            // learningMode의 loadWordList를 force 옵션과 함께 호출합니다.
-            // 이 함수가 Firebase에서 직접 데이터를 가져와 로컬 캐시를 갱신합니다.
             await learningMode.loadWordList(true);
             this.showRefreshSuccessMessage();
         } catch(err) {
@@ -428,7 +421,6 @@ const api = {
 
         if (isAndroid && 'speechSynthesis' in window) {
             try {
-                // Cancel any ongoing speech to prevent overlap
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(processedText);
                 utterance.lang = 'en-US';
@@ -482,6 +474,32 @@ const api = {
             catch (err) { console.error('Clipboard copy failed:', err); }
         }
     },
+    async fetchDefinition(word) {
+        const MERRIAM_WEBSTER_API_KEY = "02d1892d-8fb1-4e2d-bc43-4ddd4a47eab3";
+        const url = `https://www.dictionaryapi.com/api/v3/references/learners/json/${encodeURIComponent(word)}?key=${MERRIAM_WEBSTER_API_KEY}`;
+        
+        try {
+            const cached = await translationDBCache.get(`definition_${word}`);
+            if (cached) return cached;
+
+            const response = await fetch(url);
+            if (!response.ok) return null;
+
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+                const firstResult = data[0];
+                if (typeof firstResult === 'object' && firstResult.shortdef && firstResult.shortdef.length > 0) {
+                    const definitionText = firstResult.shortdef.join('; ');
+                    translationDBCache.save(`definition_${word}`, definitionText);
+                    return definitionText;
+                }
+            }
+            return null;
+        } catch (e) {
+            console.error(`Merriam-Webster API 호출 실패 for "${word}": ${e.message}`);
+            return null;
+        }
+    }
 };
 
 const ui = {
@@ -811,29 +829,161 @@ const quizMode = {
     async fetchQuizBatch() {
         if (this.state.isFetching || this.state.isFinished) return;
         this.state.isFetching = true;
+
         try {
+            const BATCH_SIZE = 10;
+            const allWordsData = learningMode.state.wordList;
+            if (!allWordsData || allWordsData.length < 5) {
+                this.state.isFinished = true;
+                this.showFinishedScreen('퀴즈를 만들 단어가 부족합니다.');
+                this.state.isFetching = false;
+                return;
+            }
+
             const wordsToExclude = this.state.isPracticeMode ? 
                 this.state.practiceLearnedWords : 
                 utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
+            
+            let candidateWords = allWordsData.filter(item => !wordsToExclude.includes(item.word));
 
-            const data = await api.fetchFromGoogleSheet('getQuizBatch', {
-                learnedWords: wordsToExclude.join(','),
-                quizType: this.state.currentQuizType
-            });
-            if (data.finished) {
+            if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
+                candidateWords = candidateWords.filter(word => {
+                    if (!word.sample || word.sample.trim() === '') return false;
+                    const firstLine = word.sample.split('\n')[0];
+                    const placeholderRegex = /\*(.*?)\*/;
+                    const wordRegex = new RegExp(`\\b${word.word}\\b`, 'i');
+                    return placeholderRegex.test(firstLine) || wordRegex.test(firstLine);
+                });
+            }
+
+            if (candidateWords.length === 0) {
                 this.state.isFinished = true;
-                if (this.state.quizBatch.length === 0) {
-                    this.showFinishedScreen(data.message || "모든 단어 학습을 완료했습니다!");
-                }
+                this.showFinishedScreen('풀 수 있는 모든 퀴즈를 완료했습니다!');
+                this.state.isFetching = false;
                 return;
             }
-            this.state.quizBatch.push(...data.quizzes);
+
+            candidateWords.sort(() => 0.5 - Math.random());
+            
+            const newQuizzes = [];
+            for (const correctWordData of candidateWords) {
+                if (newQuizzes.length >= BATCH_SIZE) break;
+
+                let quiz;
+                if (this.state.currentQuizType === 'MULTIPLE_CHOICE_MEANING') {
+                    quiz = this.createMeaningQuiz(correctWordData, allWordsData);
+                } else if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
+                    quiz = this.createBlankQuiz(correctWordData, allWordsData);
+                } else if (this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION') {
+                    quiz = await this.createDefinitionQuiz(correctWordData, allWordsData);
+                }
+                
+                if (quiz) {
+                    newQuizzes.push(quiz);
+                }
+            }
+
+            this.state.quizBatch.push(...newQuizzes);
+
         } catch (error) {
-            console.error("퀴즈 묶음 가져오기 실패:", error);
+            console.error("퀴즈 묶음 생성 실패:", error);
             this.showError(error.message);
         } finally {
             this.state.isFetching = false;
         }
+    },
+    createMeaningQuiz(correctWordData, allWordsData) {
+        const wrongAnswers = new Set();
+        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.meaning !== correctWordData.meaning);
+        candidates.sort(() => 0.5 - Math.random());
+        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.meaning));
+
+        while (wrongAnswers.size < 3) {
+            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+            if (randomWord.meaning !== correctWordData.meaning) {
+                wrongAnswers.add(randomWord.meaning);
+            }
+        }
+        
+        const choices = [correctWordData.meaning, ...Array.from(wrongAnswers)];
+        choices.sort(() => 0.5 - Math.random());
+
+        return {
+            type: 'MULTIPLE_CHOICE_MEANING',
+            question: { word: correctWordData.word, word_info: correctWordData },
+            choices: choices,
+            answer: correctWordData.meaning
+        };
+    },
+
+    createBlankQuiz(correctWordData, allWordsData) {
+        if (!correctWordData.sample || correctWordData.sample.trim() === '') return null;
+        
+        const firstLineSentence = correctWordData.sample.split('\n')[0];
+        let sentenceWithBlank = "";
+
+        const placeholderRegex = /\*(.*?)\*/;
+        const match = firstLineSentence.match(placeholderRegex);
+
+        if (match) {
+            sentenceWithBlank = firstLineSentence.replace(placeholderRegex, "＿＿＿＿").trim();
+        } else {
+            const wordRegex = new RegExp(`\\b${correctWordData.word}\\b`, 'i');
+            if (firstLineSentence.match(wordRegex)) {
+                sentenceWithBlank = firstLineSentence.replace(wordRegex, "＿＿＿＿").trim();
+            } else {
+                return null;
+            }
+        }
+
+        const wrongAnswers = new Set();
+        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.word !== correctWordData.word);
+        candidates.sort(() => 0.5 - Math.random());
+        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.word));
+
+        while (wrongAnswers.size < 3) {
+            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+            if (randomWord.word !== correctWordData.word) {
+                wrongAnswers.add(randomWord.word);
+            }
+        }
+
+        const choices = [correctWordData.word, ...Array.from(wrongAnswers)];
+        choices.sort(() => 0.5 - Math.random());
+
+        return {
+            type: 'FILL_IN_THE_BLANK',
+            question: { sentence_with_blank: sentenceWithBlank, word_info: correctWordData },
+            choices: choices,
+            answer: correctWordData.word
+        };
+    },
+    
+    async createDefinitionQuiz(correctWordData, allWordsData) {
+        const definition = await api.fetchDefinition(correctWordData.word);
+        if (!definition) return null;
+
+        const wrongAnswers = new Set();
+        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.word !== correctWordData.word);
+        candidates.sort(() => 0.5 - Math.random());
+        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.word));
+
+        while (wrongAnswers.size < 3) {
+            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+            if (randomWord.word !== correctWordData.word) {
+                wrongAnswers.add(randomWord.word);
+            }
+        }
+
+        const choices = [correctWordData.word, ...Array.from(wrongAnswers)];
+        choices.sort(() => 0.5 - Math.random());
+
+        return {
+            type: 'MULTIPLE_CHOICE_DEFINITION',
+            question: { definition: definition, word_info: correctWordData },
+            choices: choices,
+            answer: correctWordData.word
+        };
     },
     showError(message) {
         this.elements.loader.querySelector('.loader').style.display = 'none';
@@ -1077,7 +1227,7 @@ const learningMode = {
                 const cachedData = localStorage.getItem(cacheKey);
                 if (cachedData) {
                     const { timestamp, words } = JSON.parse(cachedData);
-                    if (Date.now() - timestamp < 864000000) { // 캐시 유효기간 10일로 연장
+                    if (Date.now() - timestamp < 864000000) { // 10일
                         this.state.wordList = words;
                         this.state.isWordListReady = true;
                     }
@@ -1090,20 +1240,16 @@ const learningMode = {
 
         if (this.state.isWordListReady && !force) return;
 
-        // --- 데이터 로딩 UI 처리 시작 ---
         this.elements.loaderText.textContent = "단어 목록을 동기화하는 중...";
         this.elements.loader.classList.remove('hidden');
         this.elements.startScreen.classList.add('hidden');
-        // --- 데이터 로딩 UI 처리 끝 ---
 
         try {
-            // Firebase Realtime Database에서 직접 데이터를 가져옵니다.
             const dbRef = database.ref(`/vocabulary/${sheet}`);
             const snapshot = await dbRef.once('value');
             const data = snapshot.val();
             if (!data) throw new Error("Firebase에 해당 학년의 단어 데이터가 없습니다. 동기화가 필요합니다.");
             
-            // Firebase에서 받은 객체를 앱에서 사용할 배열 형태로 변환합니다.
             const wordsArray = Object.values(data);
             
             this.state.wordList = wordsArray;
@@ -1114,8 +1260,7 @@ const learningMode = {
         } catch (error) {
             console.error("Firebase에서 단어 목록 로딩 실패:", error);
             this.showError(error.message);
-            // 오류가 발생해도 다음 단계로 진행할 수 있도록 isWordListReady를 true로 설정
-            this.state.isWordListReady = true; 
+            this.state.isWordListReady = false; 
         } finally {
             this.elements.loader.classList.add('hidden');
             this.elements.startScreen.classList.remove('hidden');
@@ -1131,9 +1276,6 @@ const learningMode = {
     
         if (!startWord) {
             this.elements.startScreen.classList.add('hidden');
-            // NOTE: The concept of a device-specific "last index" is less relevant
-            // with user accounts. Starting from 0 or a user-saved preference would be better.
-            // For now, we'll keep it simple and start from 0 for blank input.
             this.state.currentIndex = 0;
             this.launchApp(this.state.wordList);
             return;
