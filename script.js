@@ -1,19 +1,24 @@
 // ================================================================
-// Firebase Configuration
+// 전역 변수 및 Firebase SDK 초기화 (모듈러 방식)
 // ================================================================
-const firebaseConfig = {
-    apiKey: "AIzaSyBE_Gxd1haPazVK61F9sjCwK0X4Gw5rERM",
-    authDomain: "wordapp-91c0a.firebaseapp.com",
-    projectId: "wordapp-91c0a",
-    storageBucket: "wordapp-91c0a.firebasestorage.app",
-    messagingSenderId: "213863780677",
-    appId: "1:213863780677:web:78d6b8755866a0c5ddee2c"
-};
+let firebaseApp, auth, db, rt_db;
+let initializeApp;
+let getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup;
+let getDatabase, ref, get;
+let getFirestore, doc, getDoc, setDoc;
 
-// Initialize Firebase
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.firestore();
+document.addEventListener('firebaseSDKLoaded', () => {
+    // index.html에서 로드된 Firebase SDK 함수들을 전역 변수에 할당
+    ({ 
+        initializeApp,
+        getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
+        getDatabase, ref, get,
+        getFirestore, doc, getDoc, setDoc,
+    } = window.firebaseSDK);
+    
+    // 앱 시작
+    app.init();
+});
 
 
 // ================================================================
@@ -21,7 +26,19 @@ const db = firebase.firestore();
 // ================================================================
 const app = {
     config: {
+        firebaseConfig: {
+            apiKey: "AIzaSyBE_Gxd1haPazVK61F9sjCwK0X4Gw5rERM",
+            authDomain: "wordapp-91c0a.firebaseapp.com",
+            projectId: "wordapp-91c0a",
+            storageBucket: "wordapp-91c0a.firebasestorage.app",
+            messagingSenderId: "213863780677",
+            appId: "1:213863780677:web:78d6b8755866a0c5ddee2c",
+            // Realtime Database URL 추가
+            databaseURL: "https://wordapp-91c0a-default-rtdb.firebaseio.com"
+        },
         SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec",
+        // A앱의 API 키 이식
+        MERRIAM_WEBSTER_API_KEY: "02d1892d-8fb1-4e2d-bc43-4ddd4a47eab3",
         sheetLinks: {
             '1y': 'https://docs.google.com/spreadsheets/d/1r7fWUV1ea9CU-s2iSOwLKexEe2_7L8oUKhK0n1DpDUM/edit?usp=sharing',
             '2y': 'https://docs.google.com/spreadsheets/d/1Xydj0im3Cqq9JhjN8IezZ-7DBp1-DV703cCIb3ORdc8/edit?usp=sharing',
@@ -31,8 +48,9 @@ const app = {
     },
     state: {
         user: null, // 로그인한 사용자 정보
-        currentProgress: {}, // 현재 학년의 학습 진행 상황
+        currentProgress: {}, // 현재 학년의 학습 진행 상황 (Firestore)
         selectedSheet: '',
+        isAppReady: false,
         translateDebounceTimeout: null,
         longPressTimer: null,
     },
@@ -66,44 +84,47 @@ const app = {
         searchNaverContextBtn: document.getElementById('search-naver-context-btn'),
         searchLongmanContextBtn: document.getElementById('search-longman-context-btn'),
     },
-    async init() {
-        await this.fetchAndSetBackgroundImages();
+    init() {
+        firebaseApp = initializeApp(this.config.firebaseConfig);
+        auth = getAuth(firebaseApp);
+        // Firestore(학습진도)와 Realtime DB(단어목록)를 모두 초기화
+        db = getFirestore(firebaseApp); 
+        rt_db = getDatabase(firebaseApp);
+
+        this.fetchAndSetBackgroundImages();
         
-        try {
-            await translationDBCache.init();
-        } catch (e) {
-            console.error("번역 캐시를 초기화할 수 없습니다.", e);
-        }
+        translationDBCache.init().catch(e => console.error("번역 캐시 초기화 실패", e));
 
         this.bindGlobalEvents();
         quizMode.init();
         learningMode.init();
         dashboard.init();
         
-        auth.onAuthStateChanged(user => {
+        onAuthStateChanged(auth, async (user) => {
             if (user) {
                 this.state.user = user;
 
-                // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-                // ===== 바로 여기에 아래 코드 한 줄을 추가합니다 =====
-                
-                const userRef = db.collection('users').doc(user.uid);
-                userRef.set({
+                // 사용자 정보를 Firestore에 저장 (기존 로직 유지)
+                const userRef = doc(db, 'users', user.uid);
+                await setDoc(userRef, {
                     displayName: user.displayName,
                     email: user.email
                 }, { merge: true });
-
-                // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
             
                 this.elements.loginScreen.classList.add('hidden');
                 this.elements.mainContainer.classList.remove('hidden');
                 document.body.classList.remove('items-center');
 
+                // 앱이 준비되지 않았다면, 백그라운드에서 영영퀴즈 사전 로딩 시작
+                if (!this.state.isAppReady) {
+                    this.state.isAppReady = true;
+                    await quizMode.preloadInitialQuizzes();
+                }
+
                 const hash = window.location.hash.substring(1);
                 const [view, grade] = hash.split('-');
                 
                 let initialState = { view: 'grade' };
-
                 if (grade && ['1y', '2y', '3y'].includes(grade)) {
                     if (['mode', 'quiz', 'learning', 'dashboard', 'mistakeReview'].includes(view)) {
                         initialState = { view: view, grade: grade };
@@ -125,16 +146,14 @@ const app = {
     },
     bindGlobalEvents() {
         this.elements.loginBtn.addEventListener('click', () => {
-            const provider = new firebase.auth.GoogleAuthProvider();
-            auth.signInWithPopup(provider).catch(error => {
+            const provider = new GoogleAuthProvider();
+            signInWithPopup(auth, provider).catch(error => {
                 console.error("Google 로그인 실패:", error);
                 alert("로그인에 실패했습니다. 다시 시도해 주세요.");
             });
         });
 
-        this.elements.logoutBtn.addEventListener('click', () => {
-            auth.signOut();
-        });
+        this.elements.logoutBtn.addEventListener('click', () => signOut(auth));
 
         document.querySelectorAll('.grade-select-card img.group').forEach(img => {
             img.addEventListener('click', () => {
@@ -183,6 +202,7 @@ const app = {
         });
     },
     navigateTo(view, grade) {
+        // (기존 코드와 동일, 변경 없음)
         const currentState = history.state || {};
         if (currentState.view === view && currentState.grade === grade) return;
 
@@ -198,6 +218,7 @@ const app = {
         this._renderView(view, grade);
     },
     async _renderView(view, grade) {
+        // (기존 코드와 동일, 변경 없음)
         this.elements.gradeSelectionScreen.classList.add('hidden');
         this.elements.selectionScreen.classList.add('hidden');
         this.elements.quizModeContainer.classList.add('hidden');
@@ -274,6 +295,7 @@ const app = {
         }
     },
     async forceRefreshData() {
+        // A앱 로직 적용: Firebase에서 데이터 강제 새로고침
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
 
@@ -287,28 +309,21 @@ const app = {
         
         const refreshIconHTML = this.elements.refreshBtn.innerHTML;
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
-
-        localStorage.removeItem(`wordListCache_${sheet}`);
         
         try {
-            const data = await api.fetchFromGoogleSheet('getWords', { force_refresh: 'true' });
-            if (data.words) {
-                const cachePayload = { timestamp: Date.now(), words: data.words };
-                localStorage.setItem(`wordListCache_${sheet}`, JSON.stringify(cachePayload));
-                if(learningMode.state.isWordListReady) {
-                    learningMode.state.wordList = data.words;
-                }
-            }
+            // learningMode의 loadWordList를 force 옵션으로 호출
+            await learningMode.loadWordList(true);
             this.showRefreshSuccessMessage();
         } catch(err) {
             console.error("Error during data refresh:", err);
-            alert("데이터 새로고침에 실패했습니다.");
+            alert("데이터 새로고침에 실패했습니다: " + err.message);
         } finally {
             elementsToDisable.forEach(el => el.classList.remove('pointer-events-none', 'opacity-50'));
             this.elements.refreshBtn.innerHTML = refreshIconHTML;
         }
     },
     showRefreshSuccessMessage() {
+        // (기존 코드와 동일, 변경 없음)
         const msgEl = this.elements.refreshSuccessMessage;
         msgEl.classList.remove('hidden', 'opacity-0');
         setTimeout(() => {
@@ -317,6 +332,7 @@ const app = {
         }, 1500);
     },
     showImeWarning() {
+        // (기존 코드와 동일, 변경 없음)
         this.elements.imeWarning.classList.remove('hidden');
         clearTimeout(this.imeWarningTimeout);
         this.imeWarningTimeout = setTimeout(() => {
@@ -324,6 +340,7 @@ const app = {
         }, 2000);
     },
     showNoSampleMessage() {
+        // (기존 코드와 동일, 변경 없음)
         const msgEl = this.elements.noSampleMessage;
         msgEl.classList.remove('hidden', 'opacity-0');
         setTimeout(() => {
@@ -332,18 +349,21 @@ const app = {
         }, 1500);
     },
     preloadImages() {
+        // (기존 코드와 동일, 변경 없음)
         this.config.backgroundImages.forEach(src => {
             const img = new Image();
             img.src = src;
         });
     },
     setBackgroundImage() {
+        // (기존 코드와 동일, 변경 없음)
         if (this.config.backgroundImages.length === 0) return;
         const randomIndex = Math.floor(Math.random() * this.config.backgroundImages.length);
         const imageUrl = this.config.backgroundImages[randomIndex];
         document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
     },
     async fetchAndSetBackgroundImages() {
+        // (기존 코드와 동일, 변경 없음)
         const cloudName = 'dx07dymqs';
         const tagName = 'bgimage';
         const url = `https://res.cloudinary.com/${cloudName}/image/list/${tagName}.json`;
@@ -372,6 +392,7 @@ const app = {
 };
 
 const translationDBCache = {
+    // (기존 코드와 동일, 변경 없음)
     db: null, dbName: 'translationCacheDB_B', storeName: 'translationStore',
     init() {
         return new Promise((resolve, reject) => {
@@ -396,25 +417,20 @@ const translationDBCache = {
 };
 
 const api = {
-    googleTtsApiKey: 'AIzaSyAJmQBGY4H9DVMlhMtvAAVMi_4N7__DfKA',
-    audioCache: {},
-
-    async fetchFromGoogleSheet(action, params = {}) {
-        const url = new URL(app.config.SCRIPT_URL);
-        url.searchParams.append('action', action);
-        url.searchParams.append('sheet', app.state.selectedSheet);
-        Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const data = await response.json();
-        if (data.error) throw new Error(data.message);
-        return data;
-    },
+    // Google Apps Script 호출 로직을 번역 기능으로 한정
     async translateText(text) {
         try {
             const cached = await translationDBCache.get(text);
             if (cached) return cached;
-            const data = await this.fetchFromGoogleSheet('translateText', { text });
+
+            const url = new URL(app.config.SCRIPT_URL);
+            url.searchParams.append('action', 'translateText');
+            url.searchParams.append('text', text);
+
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            
+            const data = await response.json();
             if (data.success) {
                 translationDBCache.save(text, data.translatedText);
                 return data.translatedText;
@@ -425,6 +441,9 @@ const api = {
             return '번역 오류';
         }
     },
+    // Google TTS API 호출 로직 (기존과 동일)
+    googleTtsApiKey: 'AIzaSyAJmQBGY4H9DVMlhMtvAAVMi_4N7__DfKA',
+    audioCache: {},
     async speak(text) {
         if (!text || !text.trim()) return;
 
@@ -433,7 +452,6 @@ const api = {
 
         if (isAndroid && 'speechSynthesis' in window) {
             try {
-                // Cancel any ongoing speech to prevent overlap
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(processedText);
                 utterance.lang = 'en-US';
@@ -487,9 +505,30 @@ const api = {
             catch (err) { console.error('Clipboard copy failed:', err); }
         }
     },
+    // 영영사전 API 호출 함수 (A앱에서 이식)
+    async fetchDefinition(word) {
+        const apiKey = app.config.MERRIAM_WEBSTER_API_KEY;
+        const url = `https://dictionaryapi.com/api/v3/references/learners/json/${encodeURIComponent(word)}?key=${apiKey}`;
+        try {
+            const response = await fetch(url);
+            if (!response.ok) return null;
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+                const firstResult = data[0];
+                if (typeof firstResult === 'object' && firstResult !== null && firstResult.shortdef && Array.isArray(firstResult.shortdef) && firstResult.shortdef.length > 0) {
+                    return firstResult.shortdef.join('; ');
+                }
+            }
+            return null;
+        } catch (e) {
+            console.error(`Merriam-Webster API 호출 실패 for "${word}": ${e.message}`);
+            return null;
+        }
+    }
 };
 
 const ui = {
+    // (기존 코드와 대부분 동일, 변경 없음)
     adjustFontSize(element) {
         element.style.fontSize = '';
         let currentFontSize = parseFloat(window.getComputedStyle(element).fontSize);
@@ -606,9 +645,10 @@ const ui = {
 };
 
 const utils = {
+    // Firestore를 사용한 학습 진도 관리 (기존 로직 유지)
     _getProgressRef() {
         if (!app.state.user || !app.state.selectedSheet) return null;
-        return db.collection('users').doc(app.state.user.uid).collection('progress').doc(app.state.selectedSheet);
+        return doc(db, 'users', app.state.user.uid, 'progress', app.state.selectedSheet);
     },
 
     async loadUserProgress() {
@@ -618,8 +658,8 @@ const utils = {
             return;
         }
         try {
-            const docSnap = await docRef.get();
-            app.state.currentProgress = docSnap.exists ? docSnap.data() : {};
+            const docSnap = await getDoc(docRef);
+            app.state.currentProgress = docSnap.exists() ? docSnap.data() : {};
         } catch (error) {
             console.error("Error loading user progress:", error);
             app.state.currentProgress = {};
@@ -630,7 +670,7 @@ const utils = {
         const docRef = this._getProgressRef();
         if (!docRef) return;
         try {
-            await docRef.set(app.state.currentProgress, { merge: true });
+            await setDoc(docRef, app.state.currentProgress, { merge: true });
         } catch (error) {
             console.error("Error saving user progress:", error);
         }
@@ -668,7 +708,7 @@ const utils = {
     },
     
     getIncorrectWords() {
-        const allWords = learningMode.state.wordList;
+        const allWords = learningMode.state.wordList[app.state.selectedSheet] || [];
         return allWords
             .filter(wordObj => this.getWordStatus(wordObj.word) === 'review')
             .map(wordObj => wordObj.word);
@@ -676,20 +716,21 @@ const utils = {
 };
 
 const dashboard = {
+    // (기존 코드와 동일, 로직 변경 없음)
     elements: {
         container: document.getElementById('dashboard-container'),
         content: document.getElementById('dashboard-content'),
     },
     init() {},
     async show() {
-        if (!learningMode.state.isWordListReady) {
+        if (!learningMode.state.isWordListReady[app.state.selectedSheet]) {
             this.elements.content.innerHTML = `<div class="text-center p-10"><div class="loader mx-auto"></div><p class="mt-4 text-gray-600">단어 목록을 동기화하는 중...</p></div>`;
             await learningMode.loadWordList();
         }
         this.render();
     },
     render() {
-        const allWords = learningMode.state.wordList;
+        const allWords = learningMode.state.wordList[app.state.selectedSheet] || [];
         const totalWords = allWords.length;
         if (totalWords === 0) {
             this.elements.content.innerHTML = `<p class="text-center text-gray-600">학습할 단어가 없습니다.</p>`;
@@ -739,12 +780,12 @@ const dashboard = {
 const quizMode = {
     state: {
         currentQuiz: {},
-        quizBatch: [],
-        isFetching: false,
-        isFinished: false,
+        currentQuizType: null,
         isPracticeMode: false,
         practiceLearnedWords: [],
-        currentQuizType: null,
+        // 영영퀴즈 사전 로딩 상태 추가
+        preloadedDefinitionQuizzes: { '1y': null, '2y': null, '3y': null },
+        isPreloading: { '1y': false, '2y': false, '3y': false },
     },
     elements: {},
     init() {
@@ -791,16 +832,14 @@ const quizMode = {
         this.state.currentQuizType = quizType;
         this.elements.quizSelectionScreen.classList.add('hidden');
         this.reset(false);
-        if (!learningMode.state.isWordListReady) {
+        // 단어 목록이 준비되었는지 확인하고, 안되었으면 로드
+        if (!learningMode.state.isWordListReady[app.state.selectedSheet]) {
             await learningMode.loadWordList();
         }
-        await this.fetchQuizBatch();
         this.displayNextQuiz();
     },
     reset(showSelection = true) {
-        this.state.quizBatch = [];
-        this.state.isFetching = false;
-        this.state.isFinished = false;
+        this.state.currentQuiz = {};
         this.state.practiceLearnedWords = [];
         this.elements.loader.querySelector('.loader').style.display = 'block';
         this.elements.loaderText.textContent = "퀴즈 데이터를 불러오는 중...";
@@ -813,59 +852,78 @@ const quizMode = {
         this.elements.contentContainer.classList.add('hidden');
         this.elements.finishedScreen.classList.add('hidden');
     },
-    async fetchQuizBatch() {
-        if (this.state.isFetching || this.state.isFinished) return;
-        this.state.isFetching = true;
-        try {
-            const wordsToExclude = this.state.isPracticeMode ? 
-                this.state.practiceLearnedWords : 
-                utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
+    async displayNextQuiz() {
+        this.showLoader(true, '다음 문제 생성 중...');
+        let nextQuiz = null;
 
-            const data = await api.fetchFromGoogleSheet('getQuizBatch', {
-                learnedWords: wordsToExclude.join(','),
-                quizType: this.state.currentQuizType
-            });
-            if (data.finished) {
-                this.state.isFinished = true;
-                if (this.state.quizBatch.length === 0) {
-                    this.showFinishedScreen(data.message || "모든 단어 학습을 완료했습니다!");
-                }
-                return;
+        // 영영퀴즈이고 미리 로드된 퀴즈가 있다면 사용
+        if (this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION') {
+            const preloaded = this.state.preloadedDefinitionQuizzes[app.state.selectedSheet];
+            if (preloaded) {
+                nextQuiz = preloaded;
+                this.state.preloadedDefinitionQuizzes[app.state.selectedSheet] = null; // 사용했으니 비움
+                this.preloadNextDefinitionQuiz(app.state.selectedSheet); // 즉시 다음 퀴즈 로드
             }
-            this.state.quizBatch.push(...data.quizzes);
-        } catch (error) {
-            console.error("퀴즈 묶음 가져오기 실패:", error);
-            this.showError(error.message);
-        } finally {
-            this.state.isFetching = false;
         }
-    },
-    showError(message) {
-        this.elements.loader.querySelector('.loader').style.display = 'none';
-        this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">퀴즈를 가져올 수 없습니다.</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
-    },
-    displayNextQuiz() {
-        if (!this.state.isFetching && this.state.quizBatch.length <= 3) this.fetchQuizBatch();
         
-        if (this.state.quizBatch.length === 0) {
-            if (this.state.isFetching) {
-                this.elements.loaderText.textContent = "다음 퀴즈를 준비 중입니다...";
-                this.showLoader(true);
-                const checker = setInterval(() => {
-                    if (this.state.quizBatch.length > 0) { clearInterval(checker); this.displayNextQuiz(); }
-                }, 100);
-            } else if (this.state.isFinished) {
-                this.showFinishedScreen("모든 단어 학습을 완료했습니다!");
-            } else if (!this.state.isFetching) {
-                this.showFinishedScreen("풀 수 있는 퀴즈가 더 이상 없습니다!");
-            }
-            return;
+        // 미리 로드된 퀴즈가 없으면 즉석에서 생성
+        if (!nextQuiz) {
+            nextQuiz = await this.generateSingleQuiz();
         }
-        this.state.currentQuiz = this.state.quizBatch.shift();
-        this.showLoader(false);
-        this.renderQuiz(this.state.currentQuiz);
+
+        if (nextQuiz) {
+            this.state.currentQuiz = nextQuiz;
+            this.showLoader(false);
+            this.renderQuiz(nextQuiz);
+        } else {
+            this.showFinishedScreen("모든 단어 학습을 완료했거나, 더 이상 만들 퀴즈가 없습니다!");
+        }
+    },
+    async generateSingleQuiz() {
+        const grade = app.state.selectedSheet;
+        const allWords = learningMode.state.wordList[grade] || [];
+        if (allWords.length < 5) return null;
+
+        const learnedWords = this.state.isPracticeMode ? 
+            this.state.practiceLearnedWords : 
+            utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
+
+        let candidates = allWords.filter(word => !learnedWords.includes(word.word));
+        
+        if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
+            candidates = candidates.filter(word => {
+                if (!word.sample || word.sample.trim() === '') return false;
+                const firstLine = word.sample.split('\n')[0];
+                const placeholderRegex = /\*(.*?)\*/;
+                const wordRegex = new RegExp(`\\b${word.word}\\b`, 'i');
+                return placeholderRegex.test(firstLine) || wordRegex.test(firstLine);
+            });
+        }
+        
+        if (candidates.length === 0) return null;
+        
+        // 랜덤으로 후보 선택
+        candidates.sort(() => 0.5 - Math.random());
+
+        for (const wordData of candidates) {
+            let quiz = null;
+            if (this.state.currentQuizType === 'MULTIPLE_CHOICE_MEANING') {
+                quiz = this.createMeaningQuiz(wordData, allWords);
+            } else if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
+                quiz = this.createBlankQuiz(wordData, allWords);
+            } else if (this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION') {
+                const definition = await api.fetchDefinition(wordData.word);
+                if (definition) {
+                    quiz = this.createDefinitionQuiz(wordData, allWords, definition);
+                }
+            }
+            if (quiz) return quiz; // 퀴즈 생성에 성공하면 즉시 반환
+        }
+        
+        return null; // 모든 후보 단어로 퀴즈 생성에 실패한 경우
     },
     renderQuiz(quizData) {
+        // (기존 코드와 대부분 동일, quizData.question.word_info.word를 quizData.question.word로 변경)
         const { type, question, choices } = quizData;
         const questionDisplay = this.elements.questionDisplay;
         questionDisplay.innerHTML = '';
@@ -882,7 +940,6 @@ const quizMode = {
             questionDisplay.classList.remove('justify-center', 'items-center');
             const p = document.createElement('p');
             p.className = 'text-xl sm:text-2xl text-left text-gray-800 leading-relaxed';
-
             const processTextInto = (targetElement, text) => {
                 const parts = text.split(/([,\s\.'])/g).filter(part => part);
                 parts.forEach(part => {
@@ -902,7 +959,6 @@ const quizMode = {
                     }
                 });
             };
-
             const sentenceParts = question.sentence_with_blank.split(/(\*.*?\*|＿＿＿＿)/g);
             sentenceParts.forEach(part => {
                 if (part === '＿＿＿＿') {
@@ -948,10 +1004,11 @@ const quizMode = {
         this.elements.choices.classList.remove('disabled');
     },
     checkAnswer(selectedLi, selectedChoice) {
+        // (기존 코드와 대부분 동일, quizData.question.word_info.word를 quizData.question.word로 변경)
         this.elements.choices.classList.add('disabled');
         const isCorrect = selectedChoice === this.state.currentQuiz.answer;
         const isPass = selectedChoice === 'USER_PASSED';
-        const word = this.state.currentQuiz.question.word_info.word;
+        const word = this.state.currentQuiz.question.word;
         const quizType = this.state.currentQuiz.type;
 
         if (isPass) {
@@ -975,8 +1032,112 @@ const quizMode = {
         }
         setTimeout(() => this.displayNextQuiz(), 1200);
     },
-    showLoader(isLoading) {
+    // --- 영영퀴즈 사전 로딩 함수들 ---
+    async preloadInitialQuizzes() {
+        console.log("초기 영영퀴즈 사전 로딩을 시작합니다...");
+        for (const grade of ['1y', '2y', '3y']) {
+            // 각 학년의 단어 목록을 먼저 로드
+            if (!learningMode.state.isWordListReady[grade]) {
+                await learningMode.loadWordList(false, grade);
+            }
+            this.preloadNextDefinitionQuiz(grade);
+        }
+    },
+    async preloadNextDefinitionQuiz(grade) {
+        if (!grade || this.state.isPreloading[grade] || this.state.preloadedDefinitionQuizzes[grade]) {
+            return;
+        }
+
+        this.state.isPreloading[grade] = true;
+        
+        try {
+            const allWords = learningMode.state.wordList[grade] || [];
+            if (allWords.length < 5) return;
+
+            const learnedWords = utils.getCorrectlyAnsweredWords('MULTIPLE_CHOICE_DEFINITION');
+            let candidates = allWords.filter(word => !learnedWords.includes(word.word));
+            
+            if (candidates.length === 0) return;
+            
+            candidates.sort(() => 0.5 - Math.random());
+
+            for (const wordData of candidates) {
+                const definition = await api.fetchDefinition(wordData.word);
+                if (definition) {
+                    const quiz = this.createDefinitionQuiz(wordData, allWords, definition);
+                    if (quiz) {
+                        this.state.preloadedDefinitionQuizzes[grade] = quiz;
+                        console.log(`[${grade}] 영영퀴즈 사전 로딩 성공: ${wordData.word}`);
+                        return; // 성공 시 함수 종료
+                    }
+                }
+            }
+        } catch(e) {
+            console.error(`[${grade}] 영영퀴즈 사전 로딩 실패:`, e);
+        } finally {
+            this.state.isPreloading[grade] = false;
+        }
+    },
+    // --- 퀴즈 생성 헬퍼 함수들 (클라이언트 사이드) ---
+    createMeaningQuiz(correctWordData, allWordsData) {
+        const wrongAnswers = new Set();
+        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.meaning !== correctWordData.meaning);
+        candidates.sort(() => 0.5 - Math.random());
+        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.meaning));
+        while (wrongAnswers.size < 3) {
+            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+            if (randomWord.meaning !== correctWordData.meaning) wrongAnswers.add(randomWord.meaning);
+        }
+        const choices = [correctWordData.meaning, ...Array.from(wrongAnswers)].sort(() => 0.5 - Math.random());
+        return { type: 'MULTIPLE_CHOICE_MEANING', question: { word: correctWordData.word }, choices, answer: correctWordData.meaning };
+    },
+    createBlankQuiz(correctWordData, allWordsData) {
+        if (!correctWordData.sample || correctWordData.sample.trim() === '') return null;
+        
+        const firstLineSentence = correctWordData.sample.split('\n')[0];
+        let sentenceWithBlank = "";
+        const placeholderRegex = /\*(.*?)\*/;
+        const match = firstLineSentence.match(placeholderRegex);
+
+        if (match) {
+            sentenceWithBlank = firstLineSentence.replace(placeholderRegex, "＿＿＿＿").trim();
+        } else {
+            const wordRegex = new RegExp(`\\b${correctWordData.word}\\b`, 'i');
+            if (firstLineSentence.match(wordRegex)) {
+                sentenceWithBlank = firstLineSentence.replace(wordRegex, "＿＿＿＿").trim();
+            } else {
+                return null; 
+            }
+        }
+        
+        const wrongAnswers = new Set();
+        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.word !== correctWordData.word);
+        candidates.sort(() => 0.5 - Math.random());
+        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.word));
+        while (wrongAnswers.size < 3) {
+            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+            if (randomWord.word !== correctWordData.word) wrongAnswers.add(randomWord.word);
+        }
+        const choices = [correctWordData.word, ...Array.from(wrongAnswers)].sort(() => 0.5 - Math.random());
+        return { type: 'FILL_IN_THE_BLANK', question: { sentence_with_blank: sentenceWithBlank, word: correctWordData.word }, choices, answer: correctWordData.word };
+    },
+    createDefinitionQuiz(correctWordData, allWordsData, definition) {
+        if (!definition) return null;
+        const wrongAnswers = new Set();
+        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.word !== correctWordData.word);
+        candidates.sort(() => 0.5 - Math.random());
+        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.word));
+        while (wrongAnswers.size < 3) {
+            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+            if (randomWord.word !== correctWordData.word) wrongAnswers.add(randomWord.word);
+        }
+        const choices = [correctWordData.word, ...Array.from(wrongAnswers)].sort(() => 0.5 - Math.random());
+        return { type: 'MULTIPLE_CHOICE_DEFINITION', question: { definition, word: correctWordData.word }, choices, answer: correctWordData.word };
+    },
+    // --- 기존 UI 함수들 ---
+    showLoader(isLoading, message = "퀴즈 데이터를 불러오는 중...") {
         this.elements.loader.classList.toggle('hidden', !isLoading);
+        this.elements.loaderText.textContent = message;
         this.elements.quizSelectionScreen.classList.add('hidden');
         this.elements.contentContainer.classList.toggle('hidden', isLoading);
         this.elements.finishedScreen.classList.add('hidden');
@@ -989,22 +1150,12 @@ const quizMode = {
     },
 };
 
-function levenshteinDistance(a = '', b = '') {
-    const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
-    for (let i = 0; i <= a.length; i += 1) track[0][i] = i;
-    for (let j = 0; j <= b.length; j += 1) track[j][0] = j;
-    for (let j = 1; j <= b.length; j += 1) {
-        for (let i = 1; i <= a.length; i += 1) {
-            const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
-            track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator);
-        }
-    }
-    return track[b.length][a.length];
-}
-
 const learningMode = {
     state: {
-        wordList: [], isWordListReady: false, currentIndex: 0,
+        // 학년별로 단어 목록과 준비 상태를 관리
+        wordList: { '1y': [], '2y': [], '3y': [] },
+        isWordListReady: { '1y': false, '2y': false, '3y': false },
+        currentIndex: 0,
         touchstartX: 0, touchstartY: 0, currentDisplayList: [],
     },
     elements: {},
@@ -1038,6 +1189,7 @@ const learningMode = {
         this.bindEvents();
     },
     bindEvents() {
+        // (기존 코드와 동일, 변경 없음)
         this.elements.startBtn.addEventListener('click', () => this.start());
         this.elements.startWordInput.addEventListener('keydown', e => { if (e.key === 'Enter') this.start(); });
         this.elements.startWordInput.addEventListener('input', e => {
@@ -1068,73 +1220,96 @@ const learningMode = {
         document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
         document.addEventListener('touchend', this.handleTouchEnd.bind(this));
     },
-    async loadWordList() {
-        const sheet = app.state.selectedSheet;
+    async loadWordList(force = false, grade = app.state.selectedSheet) {
+        if (!grade) return;
+        if (!force && this.state.isWordListReady[grade]) return; // 이미 준비되었으면 반환
+
+        // 강제 새로고침 시 로컬 캐시 삭제
+        if (force) {
+            localStorage.removeItem(`wordListCache_${grade}`);
+            this.state.isWordListReady[grade] = false;
+        }
+
+        // 로컬 캐시 확인
         try {
-            const cachedData = localStorage.getItem(`wordListCache_${sheet}`);
+            const cachedData = localStorage.getItem(`wordListCache_${grade}`);
             if (cachedData) {
                 const { timestamp, words } = JSON.parse(cachedData);
-                if (Date.now() - timestamp < 86400000) { this.state.wordList = words; this.state.isWordListReady = true; return; }
+                // 캐시 유효기간 10일
+                if (Date.now() - timestamp < 10 * 24 * 60 * 60 * 1000) {
+                    this.state.wordList[grade] = words;
+                    this.state.isWordListReady[grade] = true;
+                    return;
+                }
             }
-        } catch (e) { console.error("Cache loading failed:", e); localStorage.removeItem(`wordListCache_${sheet}`); }
-        this.elements.loaderText.textContent = "단어 목록을 동기화하는 중...";
-        this.elements.loader.classList.remove('hidden');
-        this.elements.startScreen.classList.add('hidden');
+        } catch (e) {
+            console.error("Cache loading failed:", e);
+            localStorage.removeItem(`wordListCache_${grade}`);
+        }
+
+        // Firebase에서 데이터 가져오기
         try {
-            const data = await api.fetchFromGoogleSheet('getWords');
-            if(data.error) throw new Error(data.message);
-            this.state.wordList = data.words;
-            this.state.isWordListReady = true;
-            const cachePayload = { timestamp: Date.now(), words: data.words };
-            localStorage.setItem(`wordListCache_${sheet}`, JSON.stringify(cachePayload));
+            const dbRef = ref(rt_db, `/${grade}/vocabulary`);
+            const snapshot = await get(dbRef);
+            const data = snapshot.val();
+            if (!data) throw new Error(`Firebase에 '${grade}' 단어 데이터가 없습니다.`);
+            
+            const wordsArray = Object.values(data).sort((a, b) => a.id - b.id);
+            this.state.wordList[grade] = wordsArray;
+            this.state.isWordListReady[grade] = true;
+
+            const cachePayload = { timestamp: Date.now(), words: wordsArray };
+            localStorage.setItem(`wordListCache_${grade}`, JSON.stringify(cachePayload));
         } catch (error) {
-            console.error("Word list loading failed:", error);
+            console.error(`${grade} Word list loading failed from Firebase:`, error);
             this.showError(error.message);
-        } finally {
-            this.elements.loader.classList.add('hidden');
-            this.elements.startScreen.classList.remove('hidden');
+            throw error; // 오류를 상위로 전파
         }
     },
     async start() {
-        if (!this.state.isWordListReady) {
+        // (로직 변경: 현재 선택된 학년의 데이터만 사용)
+        const grade = app.state.selectedSheet;
+        if (!this.state.isWordListReady[grade]) {
+            this.elements.loaderText.textContent = "단어 목록을 동기화하는 중...";
+            this.elements.loader.classList.remove('hidden');
+            this.elements.startScreen.classList.add('hidden');
             await this.loadWordList();
-            if (!this.state.isWordListReady) return;
+            this.elements.loader.classList.add('hidden');
+            this.elements.startScreen.classList.remove('hidden');
+            if (!this.state.isWordListReady[grade]) return;
         }
-    
+        
+        const currentWordList = this.state.wordList[grade];
         const startWord = this.elements.startWordInput.value.trim().toLowerCase();
     
         if (!startWord) {
             this.elements.startScreen.classList.add('hidden');
-            // NOTE: The concept of a device-specific "last index" is less relevant
-            // with user accounts. Starting from 0 or a user-saved preference would be better.
-            // For now, we'll keep it simple and start from 0 for blank input.
-            this.state.currentIndex = 0;
-            this.launchApp(this.state.wordList);
+            this.state.currentIndex = 0; // 시작 단어 없으면 0부터 시작
+            this.launchApp(currentWordList);
             return;
         }
     
-        const exactMatchIndex = this.state.wordList.findIndex(item => item.word.toLowerCase() === startWord);
+        const exactMatchIndex = currentWordList.findIndex(item => item.word.toLowerCase() === startWord);
         if (exactMatchIndex !== -1) {
             this.elements.startScreen.classList.add('hidden');
             this.state.currentIndex = exactMatchIndex;
-            this.launchApp(this.state.wordList);
+            this.launchApp(currentWordList);
             return;
         }
     
         const searchRegex = new RegExp(`\\b${startWord}\\b`, 'i');
-        const explanationMatches = this.state.wordList
+        const explanationMatches = currentWordList
             .map((item, index) => ({ word: item.word, index }))
             .filter((item, index) => {
-                const explanation = this.state.wordList[index].explanation;
+                const explanation = currentWordList[index].explanation;
                 if (!explanation) return false;
                 const cleanedExplanation = explanation.replace(/\[.*?\]/g, '');
                 return searchRegex.test(cleanedExplanation);
             });
     
-        const levenshteinSuggestions = this.state.wordList
+        const levenshteinSuggestions = currentWordList
             .map((item, index) => ({
-                word: item.word,
-                index,
+                word: item.word, index,
                 distance: levenshteinDistance(startWord, item.word.toLowerCase())
             }))
             .sort((a, b) => a.distance - b.distance)
@@ -1143,53 +1318,29 @@ const learningMode = {
     
         if (levenshteinSuggestions.length > 0 || explanationMatches.length > 0) {
             const title = `<strong>${startWord}</strong> 없으니, 아래에서 확인하세요.`;
-            this.displaySuggestions(levenshteinSuggestions, explanationMatches, title);
+            this.displaySuggestions(levenshteinSuggestions, explanationMatches, currentWordList);
         } else {
             const title = `<strong>${startWord}</strong>에 대한 검색 결과가 없습니다.`;
-            this.displaySuggestions([], [], title);
+            this.displaySuggestions([], [], currentWordList);
         }
     },
     async startMistakeReview() {
-        if (!this.state.isWordListReady) { await this.loadWordList(); if (!this.state.isWordListReady) return; }
+        // (로직 변경: 현재 선택된 학년의 데이터만 사용)
+        const grade = app.state.selectedSheet;
+        if (!this.state.isWordListReady[grade]) { await this.loadWordList(); if (!this.state.isWordListReady[grade]) return; }
+        
         const incorrectWords = utils.getIncorrectWords();
         if (incorrectWords.length === 0) {
             alert("오답 노트에 단어가 없습니다!");
-            app.navigateTo('mode', app.state.selectedSheet);
+            app.navigateTo('mode', grade);
             return;
         }
-        const mistakeWordList = this.state.wordList.filter(wordObj => incorrectWords.includes(wordObj.word));
+        const mistakeWordList = this.state.wordList[grade].filter(wordObj => incorrectWords.includes(wordObj.word));
         this.state.currentIndex = 0;
         this.launchApp(mistakeWordList);
     },
-    showError(message) {
-        this.elements.loader.querySelector('.loader').style.display = 'none';
-        this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">오류 발생</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
-    },
-    launchApp(wordList) {
-        this.state.currentDisplayList = wordList;
-        app.elements.refreshBtn.classList.add('hidden');
-        this.elements.startScreen.classList.add('hidden');
-        this.elements.loader.classList.add('hidden');
-        this.elements.appContainer.classList.remove('hidden');
-        this.elements.fixedButtons.classList.remove('hidden');
-        this.displayWord(this.state.currentIndex);
-    },
-    reset() {
-        this.elements.appContainer.classList.add('hidden');
-        this.elements.loader.classList.add('hidden');
-        this.elements.fixedButtons.classList.add('hidden');
-        this.state.wordList = []; this.state.isWordListReady = false; this.state.currentDisplayList = [];
-    },
-    resetStartScreen() {
-        this.reset();
-        this.elements.startScreen.classList.remove('hidden');
-        this.elements.startInputContainer.classList.remove('hidden');
-        this.elements.suggestionsContainer.classList.add('hidden');
-        this.elements.startWordInput.value = '';
-        this.elements.startWordInput.focus();
-        this.loadWordList();
-    },
-    displaySuggestions(vocabSuggestions, explanationSuggestions, title) {
+    displaySuggestions(vocabSuggestions, explanationSuggestions, sourceList) {
+        // (로직 변경: 클릭 시 올바른 리스트를 launchApp에 전달)
         this.elements.startInputContainer.classList.add('hidden');
         this.elements.suggestionsTitle.innerHTML = title;
         
@@ -1203,7 +1354,7 @@ const learningMode = {
                 const btn = document.createElement('button');
                 btn.className = 'w-full text-left bg-gray-100 hover:bg-gray-200 py-3 px-4 rounded-lg transition-colors';
                 btn.textContent = word;
-                btn.onclick = () => { this.state.currentIndex = index; this.launchApp(this.state.wordList); };
+                btn.onclick = () => { this.state.currentIndex = index; this.launchApp(sourceList); };
                 listElement.appendChild(btn);
             });
         };
@@ -1212,6 +1363,39 @@ const learningMode = {
         populateList(this.elements.suggestionsExplanationList, explanationSuggestions);
         
         this.elements.suggestionsContainer.classList.remove('hidden');
+    },
+    reset() {
+        this.elements.appContainer.classList.add('hidden');
+        this.elements.loader.classList.add('hidden');
+        this.elements.fixedButtons.classList.add('hidden');
+        // 전체 상태를 초기화하는 대신 currentDisplayList만 초기화
+        this.state.currentDisplayList = [];
+    },
+    resetStartScreen() {
+        this.reset();
+        this.elements.startScreen.classList.remove('hidden');
+        this.elements.startInputContainer.classList.remove('hidden');
+        this.elements.suggestionsContainer.classList.add('hidden');
+        this.elements.startWordInput.value = '';
+        this.elements.startWordInput.focus();
+        // 시작 화면으로 돌아올 때 현재 학년 단어 목록을 미리 로드
+        if (app.state.selectedSheet) {
+            this.loadWordList();
+        }
+    },
+    // --- 이하 함수들은 기존 B앱과 동일 (로직 변경 없음) ---
+    showError(message) {
+        this.elements.loader.querySelector('.loader').style.display = 'none';
+        this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">오류 발생</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
+    },
+    launchApp(wordList) {
+        this.state.currentDisplayList = wordList;
+        app.elements.refreshBtn.classList.add('hidden');
+        this.elements.startScreen.classList.add('hidden');
+        this.elements.loader.classList.add('hidden');
+        this.elements.appContainer.classList.remove('hidden');
+        this.elements.fixedButtons.classList.remove('hidden');
+        this.displayWord(this.state.currentIndex);
     },
     displayWord(index) {
         this.elements.cardBack.classList.remove('is-slid-up');
@@ -1271,7 +1455,15 @@ const learningMode = {
     }
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-    app.init();
-});
-
+function levenshteinDistance(a = '', b = '') {
+    const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+    for (let i = 0; i <= a.length; i += 1) track[0][i] = i;
+    for (let j = 0; j <= b.length; j += 1) track[j][0] = j;
+    for (let j = 1; j <= b.length; j += 1) {
+        for (let i = 1; i <= a.length; i += 1) {
+            const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
+            track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator);
+        }
+    }
+    return track[b.length][a.length];
+}
