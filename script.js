@@ -1123,15 +1123,18 @@ const quizMode = {
         } else {
             utils.updateWordStatus(word, quizType, (isCorrect && !isPass) ? 'correct' : 'incorrect');
         }
-
-        if (!isCorrect && !isPass) {
+        
+        // [수정 1] PASS를 포함하여 정답이 아닐 경우, 항상 정답 선택지를 초록색으로 표시합니다.
+        if (!isCorrect) { 
             const correctAnswerEl = Array.from(this.elements.choices.children).find(li => {
                 const choiceSpan = li.querySelector('span:last-child');
                 return choiceSpan && choiceSpan.textContent === this.state.currentQuiz.answer;
             });
             correctAnswerEl?.classList.add('correct');
         }
-        setTimeout(() => this.displayNextQuiz(), 1200);
+        
+        // [수정 2] 딜레이 시간을 1200ms에서 300ms로 절반 단축합니다.
+        setTimeout(() => this.displayNextQuiz(), 300); 
     },
     showLoader(isLoading) {
         this.elements.loader.classList.toggle('hidden', !isLoading);
@@ -1463,6 +1466,7 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
 
 
 
