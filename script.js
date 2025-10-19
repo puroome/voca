@@ -83,14 +83,11 @@ const app = {
         searchDaumContextBtn: document.getElementById('search-daum-context-btn'),
         searchNaverContextBtn: document.getElementById('search-naver-context-btn'),
         searchLongmanContextBtn: document.getElementById('search-longman-context-btn'),
-        // ===== [추가된 코드 시작] =====
         progressBarContainer: document.getElementById('progress-bar-container'),
-        // ===== [추가된 코드 종료] =====
     },
     init() {
         firebaseApp = initializeApp(this.config.firebaseConfig);
         auth = getAuth(firebaseApp);
-        // Firestore(학습진도)와 Realtime DB(단어목록)를 모두 초기화
         db = getFirestore(firebaseApp); 
         rt_db = getDatabase(firebaseApp);
 
@@ -107,7 +104,6 @@ const app = {
             if (user) {
                 this.state.user = user;
 
-                // 사용자 정보를 Firestore에 저장 (기존 로직 유지)
                 const userRef = doc(db, 'users', user.uid);
                 await setDoc(userRef, {
                     displayName: user.displayName,
@@ -118,7 +114,6 @@ const app = {
                 this.elements.mainContainer.classList.remove('hidden');
                 document.body.classList.remove('items-center');
 
-                // 앱이 준비되지 않았다면, 백그라운드에서 영영퀴즈 사전 로딩 시작
                 if (!this.state.isAppReady) {
                     this.state.isAppReady = true;
                     await quizMode.preloadInitialQuizzes();
@@ -204,9 +199,8 @@ const app = {
             this._renderView(state.view, state.grade);
         });
     },
-    navigateTo(view, grade, options = {}) { // [수정] 오답노트용 options 파라미터 추가
+    navigateTo(view, grade, options = {}) {
         const currentState = history.state || {};
-        // [수정] mistakeReview 모드는 동일한 모드로 다시 진입 가능하도록 예외 처리
         if (currentState.view === view && currentState.grade === grade && view !== 'mistakeReview') return;
 
         let hash = '';
@@ -217,20 +211,17 @@ const app = {
             }
         }
         
-        // [수정] history.pushState에 options 추가
         history.pushState({ view, grade, options }, '', window.location.pathname + window.location.search + hash);
         this._renderView(view, grade, options);
     },
-    async _renderView(view, grade, options = {}) { // [수정] options 파라미터 추가
+    async _renderView(view, grade, options = {}) {
         this.elements.gradeSelectionScreen.classList.add('hidden');
         this.elements.selectionScreen.classList.add('hidden');
         this.elements.quizModeContainer.classList.add('hidden');
         this.elements.learningModeContainer.classList.add('hidden');
         this.elements.dashboardContainer.classList.add('hidden');
         learningMode.elements.fixedButtons.classList.add('hidden');
-        // ===== [추가된 코드 시작] =====
         this.elements.progressBarContainer.classList.add('hidden');
-        // ===== [추가된 코드 종료] =====
         
         this.elements.homeBtn.classList.add('hidden');
         this.elements.backToGradeSelectionBtn.classList.add('hidden');
@@ -281,7 +272,6 @@ const app = {
                 this.elements.learningModeContainer.classList.remove('hidden');
                 this.elements.homeBtn.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                // [수정] navigate에서 받은 options를 startMistakeReview로 전달
                 learningMode.startMistakeReview(options.mistakeWords);
                 break;
             case 'mode':
@@ -302,7 +292,6 @@ const app = {
         }
     },
     async forceRefreshData() {
-        // A앱 로직 적용: Firebase에서 데이터 강제 새로고침
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
 
@@ -318,7 +307,6 @@ const app = {
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
         
         try {
-            // learningMode의 loadWordList를 force 옵션으로 호출
             await learningMode.loadWordList(true);
             this.showRefreshSuccessMessage();
         } catch(err) {
@@ -777,7 +765,6 @@ const quizMode = {
         currentQuizType: null,
         isPracticeMode: false,
         practiceLearnedWords: [],
-        // [추가] 퀴즈 세션 관리를 위한 상태 변수
         sessionAnsweredInSet: 0,
         sessionCorrectInSet: 0,
         sessionMistakes: [],
@@ -798,7 +785,6 @@ const quizMode = {
             choices: document.getElementById('quiz-choices'),
             finishedScreen: document.getElementById('quiz-finished-screen'),
             finishedMessage: document.getElementById('quiz-finished-message'),
-            // [추가] 결과 모달 관련 요소
             quizResultModal: document.getElementById('quiz-result-modal'),
             quizResultScore: document.getElementById('quiz-result-score'),
             quizResultMistakesBtn: document.getElementById('quiz-result-mistakes-btn'),
@@ -811,7 +797,6 @@ const quizMode = {
         this.elements.startBlankQuizBtn.addEventListener('click', () => this.start('FILL_IN_THE_BLANK'));
         this.elements.startDefinitionQuizBtn.addEventListener('click', () => this.start('MULTIPLE_CHOICE_DEFINITION'));
         
-        // [추가] 결과 모달 버튼 이벤트 바인딩
         this.elements.quizResultContinueBtn.addEventListener('click', () => this.continueAfterResult());
         this.elements.quizResultMistakesBtn.addEventListener('click', () => this.reviewSessionMistakes());
 
@@ -846,7 +831,6 @@ const quizMode = {
     reset(showSelection = true) {
         this.state.currentQuiz = {};
         this.state.practiceLearnedWords = [];
-        // [추가] 세션 상태 초기화
         this.state.sessionAnsweredInSet = 0;
         this.state.sessionCorrectInSet = 0;
         this.state.sessionMistakes = [];
@@ -861,7 +845,6 @@ const quizMode = {
         }
         this.elements.contentContainer.classList.add('hidden');
         this.elements.finishedScreen.classList.add('hidden');
-        // [추가] 모달 숨기기
         if (this.elements.quizResultModal) this.elements.quizResultModal.classList.add('hidden');
     },
     async displayNextQuiz() {
@@ -886,7 +869,6 @@ const quizMode = {
             this.showLoader(false);
             this.renderQuiz(nextQuiz);
         } else {
-            // [수정] 퀴즈가 더 없을 때, 만약 진행중인 세션이 있으면 결과를 보여주고, 아니면 끝났다고 알림
             if (this.state.sessionAnsweredInSet > 0) {
                 this.showSessionResultModal(true); // isFinal = true
             } else {
@@ -1016,7 +998,6 @@ const quizMode = {
 
         this.elements.choices.classList.remove('disabled');
     },
-    // [수정] checkAnswer 함수 로직 전체 변경
     checkAnswer(selectedLi, selectedChoice) {
         this.elements.choices.classList.add('disabled');
         const isCorrect = selectedChoice === this.state.currentQuiz.answer;
@@ -1055,14 +1036,12 @@ const quizMode = {
             }
         }, 300);
     },
-    // [추가] 결과 모달 표시 함수
     showSessionResultModal(isFinal = false) {
         this.elements.quizResultScore.textContent = `${this.state.sessionAnsweredInSet}문제 중 ${this.state.sessionCorrectInSet}개 정답!`;
         this.elements.quizResultMistakesBtn.classList.toggle('hidden', this.state.sessionMistakes.length === 0);
         this.elements.quizResultContinueBtn.textContent = isFinal ? "모드 선택으로" : "다음 퀴즈 계속";
         this.elements.quizResultModal.classList.remove('hidden');
     },
-    // [추가] 결과 모달 '계속' 버튼 함수
     continueAfterResult() {
         this.elements.quizResultModal.classList.add('hidden');
         if (this.elements.quizResultContinueBtn.textContent === "모드 선택으로") {
@@ -1074,15 +1053,13 @@ const quizMode = {
         this.state.sessionMistakes = [];
         this.displayNextQuiz();
     },
-    // [추가] 결과 모달 '미니 오답노트' 버튼 함수
     reviewSessionMistakes() {
         this.elements.quizResultModal.classList.add('hidden');
-        const mistakes = [...new Set(this.state.sessionMistakes)]; // 중복 제거
+        const mistakes = [...new Set(this.state.sessionMistakes)];
         this.state.sessionAnsweredInSet = 0;
         this.state.sessionCorrectInSet = 0;
         this.state.sessionMistakes = [];
         
-        // navigate 함수를 통해 오답 목록을 전달
         app.navigateTo('mistakeReview', app.state.selectedSheet, { mistakeWords: mistakes });
     },
     async preloadInitialQuizzes() {
@@ -1205,9 +1182,7 @@ const learningMode = {
         isWordListReady: { '1y': false, '2y': false, '3y': false },
         currentIndex: 0,
         touchstartX: 0, touchstartY: 0, currentDisplayList: [],
-        // ===== [추가된 코드 시작] =====
         isDragging: false,
-        // ===== [추가된 코드 종료] =====
     },
     elements: {},
     init() {
@@ -1236,11 +1211,9 @@ const learningMode = {
             sampleBtnImg: document.getElementById('sample-btn-img'),
             backTitle: document.getElementById('learning-back-title'),
             backContent: document.getElementById('learning-back-content'),
-            // ===== [추가된 코드 시작] =====
             progressBarTrack: document.getElementById('progress-bar-track'),
             progressBarFill: document.getElementById('progress-bar-fill'),
             progressBarHandle: document.getElementById('progress-bar-handle'),
-            // ===== [추가된 코드 종료] =====
         };
         this.bindEvents();
     },
@@ -1274,14 +1247,12 @@ const learningMode = {
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
         document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
         document.addEventListener('touchend', this.handleTouchEnd.bind(this));
-        // ===== [추가된 코드 시작] =====
         this.elements.progressBarTrack.addEventListener('mousedown', this.handleProgressBarInteraction.bind(this));
         document.addEventListener('mousemove', this.handleProgressBarInteraction.bind(this));
         document.addEventListener('mouseup', this.handleProgressBarInteraction.bind(this));
         this.elements.progressBarTrack.addEventListener('touchstart', this.handleProgressBarInteraction.bind(this), { passive: false });
         document.addEventListener('touchmove', this.handleProgressBarInteraction.bind(this));
         document.addEventListener('touchend', this.handleProgressBarInteraction.bind(this));
-        // ===== [추가된 코드 종료] =====
     },
     async loadWordList(force = false, grade = app.state.selectedSheet) {
         if (!grade) return;
@@ -1297,7 +1268,9 @@ const learningMode = {
             if (cachedData) {
                 const { timestamp, words } = JSON.parse(cachedData);
                 if (Date.now() - timestamp < 10 * 24 * 60 * 60 * 1000) {
-                    this.state.wordList[grade] = words;
+                    // ▼▼▼ [수정된 코드] 캐시 데이터도 id 순으로 정렬합니다. ▼▼▼
+                    this.state.wordList[grade] = words.sort((a, b) => a.id - b.id);
+                    // ▲▲▲ [수정된 코드] ▲▲▲
                     this.state.isWordListReady[grade] = true;
                     return;
                 }
@@ -1308,7 +1281,9 @@ const learningMode = {
         }
 
         try {
-            const dbRef = ref(rt_db, `/${grade}/vocabulary`); // [수정] Firebase 경로 수정
+            // ▼▼▼ [수정된 코드] Firebase 경로를 올바르게 수정합니다. ▼▼▼
+            const dbRef = ref(rt_db, `/${grade}/vocabulary`);
+            // ▲▲▲ [수정된 코드] ▲▲▲
             const snapshot = await get(dbRef);
             const data = snapshot.val();
             if (!data) throw new Error(`Firebase에 '${grade}' 단어 데이터가 없습니다.`);
@@ -1382,11 +1357,10 @@ const learningMode = {
             this.displaySuggestions([], [], currentWordList, title);
         }
     },
-    async startMistakeReview(mistakeWordsFromQuiz) { // [수정] 파라미터 추가
+    async startMistakeReview(mistakeWordsFromQuiz) {
         const grade = app.state.selectedSheet;
         if (!this.state.isWordListReady[grade]) { await this.loadWordList(); if (!this.state.isWordListReady[grade]) return; }
         
-        // [수정] 퀴즈 모드에서 넘어온 오답 목록이 있으면 그것을 사용, 없으면 기존처럼 전체 오답 목록을 가져옴
         const incorrectWords = mistakeWordsFromQuiz || utils.getIncorrectWords();
 
         if (incorrectWords.length === 0) {
@@ -1398,7 +1372,7 @@ const learningMode = {
         this.state.currentIndex = 0;
         this.launchApp(mistakeWordList);
     },
-    displaySuggestions(vocabSuggestions, explanationSuggestions, sourceList, title) { // [수정] title 파라미터 추가
+    displaySuggestions(vocabSuggestions, explanationSuggestions, sourceList, title) {
         this.elements.startInputContainer.classList.add('hidden');
         this.elements.suggestionsTitle.innerHTML = title;
         
@@ -1426,9 +1400,7 @@ const learningMode = {
         this.elements.appContainer.classList.add('hidden');
         this.elements.loader.classList.add('hidden');
         this.elements.fixedButtons.classList.add('hidden');
-        // ===== [추가된 코드 시작] =====
         app.elements.progressBarContainer.classList.add('hidden');
-        // ===== [추가된 코드 종료] =====
         this.state.currentDisplayList = [];
     },
     resetStartScreen() {
@@ -1453,15 +1425,11 @@ const learningMode = {
         this.elements.loader.classList.add('hidden');
         this.elements.appContainer.classList.remove('hidden');
         this.elements.fixedButtons.classList.remove('hidden');
-        // ===== [추가된 코드 시작] =====
         app.elements.progressBarContainer.classList.remove('hidden');
-        // ===== [추가된 코드 종료] =====
         this.displayWord(this.state.currentIndex);
     },
     displayWord(index) {
-        // ===== [추가된 코드 시작] =====
         this.updateProgressBar(index);
-        // ===== [추가된 코드 종료] =====
         this.elements.cardBack.classList.remove('is-slid-up');
         const wordData = this.state.currentDisplayList[index];
         if (!wordData) return;
@@ -1517,7 +1485,6 @@ const learningMode = {
         else if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 50 && !e.target.closest('#learning-app-container')) { if (deltaY < 0) this.navigate(1); }
         this.state.touchstartX = this.state.touchstartY = 0;
     },
-    // ===== [추가된 코드 시작] =====
     updateProgressBar(index) {
         const total = this.state.currentDisplayList.length;
         if (total <= 1) {
@@ -1571,7 +1538,6 @@ const learningMode = {
                 break;
         }
     },
-    // ===== [추가된 코드 종료] =====
 };
 
 function levenshteinDistance(a = '', b = '') {
@@ -1586,3 +1552,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
