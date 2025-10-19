@@ -296,11 +296,25 @@
         <button id="search-longman-context-btn" class="text-left w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap">Longman</button>
     </div>
 
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <!-- Firebase SDK (v9 Modular) - A앱과 동일하게 변경 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+        import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+        
+        // script.js에서 사용할 수 있도록 전역 변수에 할당
+        window.firebaseSDK = {
+            initializeApp,
+            getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
+            getDatabase, ref, get,
+            getFirestore, doc, getDoc, setDoc,
+        };
+
+        // 앱 초기화는 script.js에서 처리
+        document.dispatchEvent(new Event('firebaseSDKLoaded'));
+    </script>
 
     <script src="script.js"></script>
 </body>
 </html>
-
