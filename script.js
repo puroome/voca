@@ -659,6 +659,33 @@ const utils = {
         }
     },
     
+    // ===== [추가된 코드 시작] =====
+    async getLastLearnedIndex() {
+        const docRef = this._getProgressRef();
+        if (!docRef) return 0;
+        try {
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists() && docSnap.data().lastLearnedIndex !== undefined) {
+                return docSnap.data().lastLearnedIndex;
+            }
+            return 0;
+        } catch (error) {
+            console.error("Error loading last learned index:", error);
+            return 0;
+        }
+    },
+
+    async setLastLearnedIndex(index) {
+        const docRef = this._getProgressRef();
+        if (!docRef) return;
+        try {
+            await setDoc(docRef, { lastLearnedIndex: index }, { merge: true });
+        } catch (error) {
+            console.error("Error saving last learned index:", error);
+        }
+    },
+    // ===== [추가된 코드 종료] =====
+    
     getWordStatus(word) {
         const progress = app.state.currentProgress[word];
         if (!progress) return 'unseen';
@@ -1181,6 +1208,7 @@ const learningMode = {
         wordList: { '1y': [], '2y': [], '3y': [] },
         isWordListReady: { '1y': false, '2y': false, '3y': false },
         currentIndex: 0,
+        isMistakeMode: false,
         touchstartX: 0, touchstartY: 0, currentDisplayList: [],
         isDragging: false,
     },
@@ -1268,9 +1296,7 @@ const learningMode = {
             if (cachedData) {
                 const { timestamp, words } = JSON.parse(cachedData);
                 if (Date.now() - timestamp < 10 * 24 * 60 * 60 * 1000) {
-                    // ▼▼▼ [수정된 코드] 캐시 데이터도 id 순으로 정렬합니다. ▼▼▼
                     this.state.wordList[grade] = words.sort((a, b) => a.id - b.id);
-                    // ▲▲▲ [수정된 코드] ▲▲▲
                     this.state.isWordListReady[grade] = true;
                     return;
                 }
@@ -1281,9 +1307,7 @@ const learningMode = {
         }
 
         try {
-            // ▼▼▼ [수정된 코드] Firebase 경로를 올바르게 수정합니다. ▼▼▼
             const dbRef = ref(rt_db, `${grade}/vocabulary`);
-            // ▲▲▲ [수정된 코드] ▲▲▲
             const snapshot = await get(dbRef);
             const data = snapshot.val();
             if (!data) throw new Error(`Firebase에 '${grade}' 단어 데이터가 없습니다.`);
@@ -1312,12 +1336,18 @@ const learningMode = {
             if (!this.state.isWordListReady[grade]) return;
         }
         
+        this.state.isMistakeMode = false;
         const currentWordList = this.state.wordList[grade];
         const startWord = this.elements.startWordInput.value.trim().toLowerCase();
     
         if (!startWord) {
             this.elements.startScreen.classList.add('hidden');
-            this.state.currentIndex = 0; 
+            this.elements.loaderText.textContent = "마지막 학습 위치를 불러오는 중...";
+            this.elements.loader.classList.remove('hidden');
+            
+            this.state.currentIndex = await utils.getLastLearnedIndex();
+            
+            this.elements.loader.classList.add('hidden');
             this.launchApp(currentWordList);
             return;
         }
@@ -1358,6 +1388,7 @@ const learningMode = {
         }
     },
     async startMistakeReview(mistakeWordsFromQuiz) {
+        this.state.isMistakeMode = true;
         const grade = app.state.selectedSheet;
         if (!this.state.isWordListReady[grade]) { await this.loadWordList(); if (!this.state.isWordListReady[grade]) return; }
         
@@ -1429,6 +1460,9 @@ const learningMode = {
         this.displayWord(this.state.currentIndex);
     },
     displayWord(index) {
+        if (!this.state.isMistakeMode) {
+            utils.setLastLearnedIndex(index);
+        }
         this.updateProgressBar(index);
         this.elements.cardBack.classList.remove('is-slid-up');
         const wordData = this.state.currentDisplayList[index];
@@ -1552,5 +1586,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
