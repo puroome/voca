@@ -1061,7 +1061,7 @@ const quizMode = {
             } else {
                 this.displayNextQuiz();
             }
-        }, 300);
+        }, 600);
     },
     showSessionResultModal(isFinal = false) {
         this.elements.quizResultScore.textContent = `${this.state.sessionAnsweredInSet}문제 중 ${this.state.sessionCorrectInSet}개 정답!`;
@@ -1586,3 +1586,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
