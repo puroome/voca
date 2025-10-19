@@ -481,6 +481,35 @@ const api = {
             catch (err) { console.error('Clipboard copy failed:', err); }
         }
     },
+    async fetchDefinition(word) {
+        // Merriam-Webster API 키를 이곳으로 옮겨옵니다.
+        const MERRIAM_WEBSTER_API_KEY = "02d1892d-8fb1-4e2d-bc43-4ddd4a47eab3";
+        const url = `https://www.dictionaryapi.com/api/v3/references/learners/json/${encodeURIComponent(word)}?key=${MERRIAM_WEBSTER_API_KEY}`;
+        
+        try {
+            // 이전에 번역 캐시용으로 만든 IndexedDB를 영영풀이 캐시에도 활용합니다.
+            const cached = await translationDBCache.get(`definition_${word}`);
+            if (cached) return cached;
+
+            const response = await fetch(url);
+            if (!response.ok) return null;
+
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+                const firstResult = data[0];
+                if (typeof firstResult === 'object' && firstResult.shortdef && firstResult.shortdef.length > 0) {
+                    const definitionText = firstResult.shortdef.join('; ');
+                    // 캐시에 저장
+                    translationDBCache.save(`definition_${word}`, definitionText);
+                    return definitionText;
+                }
+            }
+            return null;
+        } catch (e) {
+            console.error(`Merriam-Webster API 호출 실패 for "${word}": ${e.message}`);
+            return null;
+        }
+    }
 };
 
 const ui = {
@@ -810,29 +839,164 @@ const quizMode = {
     async fetchQuizBatch() {
         if (this.state.isFetching || this.state.isFinished) return;
         this.state.isFetching = true;
+
         try {
+            const BATCH_SIZE = 10;
+            const allWordsData = learningMode.state.wordList;
+            if (allWordsData.length < 5) {
+                this.state.isFinished = true;
+                this.showFinishedScreen('퀴즈를 만들 단어가 부족합니다.');
+                return;
+            }
+
             const wordsToExclude = this.state.isPracticeMode ? 
                 this.state.practiceLearnedWords : 
                 utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
+            
+            let candidateWords = allWordsData.filter(item => !wordsToExclude.includes(item.word));
 
-            const data = await api.fetchFromGoogleSheet('getQuizBatch', {
-                learnedWords: wordsToExclude.join(','),
-                quizType: this.state.currentQuizType
-            });
-            if (data.finished) {
+            // 퀴즈 유형에 따라 후보 단어 추가 필터링
+            if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
+                candidateWords = candidateWords.filter(word => {
+                    if (!word.sample || word.sample.trim() === '') return false;
+                    const firstLine = word.sample.split('\n')[0];
+                    const placeholderRegex = /\*(.*?)\*/;
+                    const wordRegex = new RegExp(`\\b${word.word}\\b`, 'i');
+                    return placeholderRegex.test(firstLine) || wordRegex.test(firstLine);
+                });
+            }
+
+            if (candidateWords.length === 0) {
                 this.state.isFinished = true;
-                if (this.state.quizBatch.length === 0) {
-                    this.showFinishedScreen(data.message || "모든 단어 학습을 완료했습니다!");
-                }
+                this.showFinishedScreen('풀 수 있는 모든 퀴즈를 완료했습니다!');
                 return;
             }
-            this.state.quizBatch.push(...data.quizzes);
+
+            // 후보 단어를 무작위로 섞음
+            candidateWords.sort(() => 0.5 - Math.random());
+            
+            const newQuizzes = [];
+            for (const correctWordData of candidateWords) {
+                if (newQuizzes.length >= BATCH_SIZE) break;
+
+                let quiz;
+                if (this.state.currentQuizType === 'MULTIPLE_CHOICE_MEANING') {
+                    quiz = this.createMeaningQuiz(correctWordData, allWordsData);
+                } else if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
+                    quiz = this.createBlankQuiz(correctWordData, allWordsData);
+                } else if (this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION') {
+                    // 영영풀이 퀴즈는 API 호출이 필요하므로 await 사용
+                    quiz = await this.createDefinitionQuiz(correctWordData, allWordsData);
+                }
+                
+                if (quiz) {
+                    newQuizzes.push(quiz);
+                }
+            }
+
+            this.state.quizBatch.push(...newQuizzes);
+
         } catch (error) {
-            console.error("퀴즈 묶음 가져오기 실패:", error);
+            console.error("퀴즈 묶음 생성 실패:", error);
             this.showError(error.message);
         } finally {
             this.state.isFetching = false;
         }
+    },
+    createMeaningQuiz(correctWordData, allWordsData) {
+        const wrongAnswers = new Set();
+        // 1. 같은 품사, 다른 뜻을 가진 단어를 오답 후보로 우선 추가
+        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.meaning !== correctWordData.meaning);
+        candidates.sort(() => 0.5 - Math.random());
+        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.meaning));
+
+        // 2. 오답이 3개 미만이면 품사와 관계없이 다른 단어의 뜻을 추가
+        while (wrongAnswers.size < 3) {
+            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+            if (randomWord.meaning !== correctWordData.meaning) {
+                wrongAnswers.add(randomWord.meaning);
+            }
+        }
+        
+        const choices = [correctWordData.meaning, ...Array.from(wrongAnswers)];
+        choices.sort(() => 0.5 - Math.random());
+
+        return {
+            type: 'MULTIPLE_CHOICE_MEANING',
+            question: { word: correctWordData.word, word_info: correctWordData },
+            choices: choices,
+            answer: correctWordData.meaning
+        };
+    },
+
+    createBlankQuiz(correctWordData, allWordsData) {
+        if (!correctWordData.sample || correctWordData.sample.trim() === '') return null;
+        
+        const firstLineSentence = correctWordData.sample.split('\n')[0];
+        let sentenceWithBlank = "";
+
+        const placeholderRegex = /\*(.*?)\*/;
+        const match = firstLineSentence.match(placeholderRegex);
+
+        if (match) {
+            sentenceWithBlank = firstLineSentence.replace(placeholderRegex, "＿＿＿＿").trim();
+        } else {
+            const wordRegex = new RegExp(`\\b${correctWordData.word}\\b`, 'i');
+            if (firstLineSentence.match(wordRegex)) {
+                sentenceWithBlank = firstLineSentence.replace(wordRegex, "＿＿＿＿").trim();
+            } else {
+                return null;
+            }
+        }
+
+        const wrongAnswers = new Set();
+        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.word !== correctWordData.word);
+        candidates.sort(() => 0.5 - Math.random());
+        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.word));
+
+        while (wrongAnswers.size < 3) {
+            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+            if (randomWord.word !== correctWordData.word) {
+                wrongAnswers.add(randomWord.word);
+            }
+        }
+
+        const choices = [correctWordData.word, ...Array.from(wrongAnswers)];
+        choices.sort(() => 0.5 - Math.random());
+
+        return {
+            type: 'FILL_IN_THE_BLANK',
+            question: { sentence_with_blank: sentenceWithBlank, word_info: correctWordData },
+            choices: choices,
+            answer: correctWordData.word
+        };
+    },
+    
+    async createDefinitionQuiz(correctWordData, allWordsData) {
+        const definition = await api.fetchDefinition(correctWordData.word);
+        if (!definition) return null; // 영영풀이를 가져오지 못하면 퀴즈 생성 실패
+
+        const wrongAnswers = new Set();
+        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.word !== correctWordData.word);
+        candidates.sort(() => 0.5 - Math.random());
+        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.word));
+
+        while (wrongAnswers.size < 3) {
+            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+            if (randomWord.word !== correctWordData.word) {
+                wrongAnswers.add(randomWord.word);
+            }
+        }
+
+        const choices = [correctWordData.word, ...Array.from(wrongAnswers)];
+        choices.sort(() => 0.5 - Math.random());
+
+        return {
+            type: 'MULTIPLE_CHOICE_DEFINITION',
+            question: { definition: definition, word_info: correctWordData },
+            choices: choices,
+            answer: correctWordData.word
+        };
     },
     showError(message) {
         this.elements.loader.querySelector('.loader').style.display = 'none';
@@ -1299,5 +1463,6 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
 
 
