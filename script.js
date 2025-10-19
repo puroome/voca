@@ -4,6 +4,7 @@
 const firebaseConfig = {
     apiKey: "AIzaSyBE_Gxd1haPazVK61F9sjCwK0X4Gw5rERM",
     authDomain: "wordapp-91c0a.firebaseapp.com",
+    databaseURL: "https://wordapp-91c0a-default-rtdb.asia-southeast1.firebasedatabase.app",
     projectId: "wordapp-91c0a",
     storageBucket: "wordapp-91c0a.firebasestorage.app",
     messagingSenderId: "213863780677",
@@ -288,21 +289,14 @@ const app = {
         const refreshIconHTML = this.elements.refreshBtn.innerHTML;
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
-        localStorage.removeItem(`wordListCache_${sheet}`);
-        
         try {
-            const data = await api.fetchFromGoogleSheet('getWords', { force_refresh: 'true' });
-            if (data.words) {
-                const cachePayload = { timestamp: Date.now(), words: data.words };
-                localStorage.setItem(`wordListCache_${sheet}`, JSON.stringify(cachePayload));
-                if(learningMode.state.isWordListReady) {
-                    learningMode.state.wordList = data.words;
-                }
-            }
+            // learningMode의 loadWordList를 force 옵션과 함께 호출합니다.
+            // 이 함수가 Firebase에서 직접 데이터를 가져와 로컬 캐시를 갱신합니다.
+            await learningMode.loadWordList(true);
             this.showRefreshSuccessMessage();
         } catch(err) {
             console.error("Error during data refresh:", err);
-            alert("데이터 새로고침에 실패했습니다.");
+            alert("데이터 새로고침에 실패했습니다: " + err.message);
         } finally {
             elementsToDisable.forEach(el => el.classList.remove('pointer-events-none', 'opacity-50'));
             this.elements.refreshBtn.innerHTML = refreshIconHTML;
@@ -1068,28 +1062,59 @@ const learningMode = {
         document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
         document.addEventListener('touchend', this.handleTouchEnd.bind(this));
     },
-    async loadWordList() {
+    async loadWordList(force = false) {
         const sheet = app.state.selectedSheet;
-        try {
-            const cachedData = localStorage.getItem(`wordListCache_${sheet}`);
-            if (cachedData) {
-                const { timestamp, words } = JSON.parse(cachedData);
-                if (Date.now() - timestamp < 86400000) { this.state.wordList = words; this.state.isWordListReady = true; return; }
+        const cacheKey = `wordListCache_${sheet}`;
+        
+        if (force) {
+            localStorage.removeItem(cacheKey);
+            this.state.isWordListReady = false;
+        }
+
+        if (!this.state.isWordListReady) {
+            try {
+                const cachedData = localStorage.getItem(cacheKey);
+                if (cachedData) {
+                    const { timestamp, words } = JSON.parse(cachedData);
+                    if (Date.now() - timestamp < 864000000) { // 캐시 유효기간 10일로 연장
+                        this.state.wordList = words;
+                        this.state.isWordListReady = true;
+                    }
+                }
+            } catch (e) {
+                console.error("Cache loading failed:", e);
+                localStorage.removeItem(cacheKey);
             }
-        } catch (e) { console.error("Cache loading failed:", e); localStorage.removeItem(`wordListCache_${sheet}`); }
+        }
+
+        if (this.state.isWordListReady && !force) return;
+
+        // --- 데이터 로딩 UI 처리 시작 ---
         this.elements.loaderText.textContent = "단어 목록을 동기화하는 중...";
         this.elements.loader.classList.remove('hidden');
         this.elements.startScreen.classList.add('hidden');
+        // --- 데이터 로딩 UI 처리 끝 ---
+
         try {
-            const data = await api.fetchFromGoogleSheet('getWords');
-            if(data.error) throw new Error(data.message);
-            this.state.wordList = data.words;
+            // Firebase Realtime Database에서 직접 데이터를 가져옵니다.
+            const dbRef = database.ref(`/vocabulary/${sheet}`);
+            const snapshot = await dbRef.once('value');
+            const data = snapshot.val();
+            if (!data) throw new Error("Firebase에 해당 학년의 단어 데이터가 없습니다. 동기화가 필요합니다.");
+            
+            // Firebase에서 받은 객체를 앱에서 사용할 배열 형태로 변환합니다.
+            const wordsArray = Object.values(data);
+            
+            this.state.wordList = wordsArray;
             this.state.isWordListReady = true;
-            const cachePayload = { timestamp: Date.now(), words: data.words };
-            localStorage.setItem(`wordListCache_${sheet}`, JSON.stringify(cachePayload));
+
+            const cachePayload = { timestamp: Date.now(), words: wordsArray };
+            localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
         } catch (error) {
-            console.error("Word list loading failed:", error);
+            console.error("Firebase에서 단어 목록 로딩 실패:", error);
             this.showError(error.message);
+            // 오류가 발생해도 다음 단계로 진행할 수 있도록 isWordListReady를 true로 설정
+            this.state.isWordListReady = true; 
         } finally {
             this.elements.loader.classList.add('hidden');
             this.elements.startScreen.classList.remove('hidden');
@@ -1274,4 +1299,5 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
 
