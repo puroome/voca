@@ -1004,33 +1004,33 @@ const quizMode = {
         this.elements.choices.classList.remove('disabled');
     },
     checkAnswer(selectedLi, selectedChoice) {
-        // (기존 코드와 대부분 동일, quizData.question.word_info.word를 quizData.question.word로 변경)
         this.elements.choices.classList.add('disabled');
         const isCorrect = selectedChoice === this.state.currentQuiz.answer;
         const isPass = selectedChoice === 'USER_PASSED';
-        const word = this.state.currentQuiz.question.word;
+        const word = this.state.currentQuiz.question.word; // .word_info 제거
         const quizType = this.state.currentQuiz.type;
 
-        if (isPass) {
-            selectedLi.classList.add('incorrect');
-        } else {
-            selectedLi.classList.add(isCorrect ? 'correct' : 'incorrect');
-        }
+        // 1. 사용자가 선택한 답 표시 (맞으면 correct, 틀리거나 PASS면 incorrect)
+        selectedLi.classList.add(isCorrect ? 'correct' : 'incorrect');
 
+        // 2. 학습 상태 업데이트
         if (this.state.isPracticeMode) {
              if(isCorrect) this.state.practiceLearnedWords.push(word);
         } else {
             utils.updateWordStatus(word, quizType, (isCorrect && !isPass) ? 'correct' : 'incorrect');
         }
 
-        if (!isCorrect && !isPass) {
+        // 3. 틀렸거나 PASS를 선택한 경우, 정답을 녹색으로 표시
+        if (!isCorrect || isPass) {
             const correctAnswerEl = Array.from(this.elements.choices.children).find(li => {
                 const choiceSpan = li.querySelector('span:last-child');
                 return choiceSpan && choiceSpan.textContent === this.state.currentQuiz.answer;
             });
             correctAnswerEl?.classList.add('correct');
         }
-        setTimeout(() => this.displayNextQuiz(), 1200);
+        
+        // 4. A앱과 동일한 딜레이(300ms) 후 다음 퀴즈로 이동
+        setTimeout(() => this.displayNextQuiz(), 300);
     },
     // --- 영영퀴즈 사전 로딩 함수들 ---
     async preloadInitialQuizzes() {
@@ -1467,5 +1467,6 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
