@@ -238,6 +238,7 @@ const app = {
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
                 this.elements.practiceModeControl.classList.remove('hidden');
                 quizMode.reset();
+                quizMode.preloadNextDefinitionQuiz();
                 break;
             case 'learning':
                 this.elements.learningModeContainer.classList.remove('hidden');
@@ -768,6 +769,8 @@ const quizMode = {
         isPracticeMode: false,
         practiceLearnedWords: [],
         currentQuizType: null,
+        preloadedDefinitionQuiz: null,
+        preloadingDefinitionWord: null,
     },
     elements: {},
     init() {
@@ -998,11 +1001,56 @@ const quizMode = {
             answer: correctWordData.word
         };
     },
+    async preloadNextDefinitionQuiz() {
+        // 이미 불러온 퀴즈가 있거나, 현재 다른 퀴즈를 불러오는 중이거나, 단어 목록이 준비되지 않았으면 실행하지 않습니다.
+        if (this.state.preloadedDefinitionQuiz || this.state.preloadingDefinitionWord || !learningMode.state.isWordListReady) {
+            return;
+        }
+
+        const allWords = learningMode.state.wordList;
+        if (allWords.length < 5) return;
+
+        // 연습 모드 여부에 따라 제외할 단어 목록을 가져옵니다.
+        const wordsToExclude = this.state.isPracticeMode ? 
+            this.state.practiceLearnedWords : 
+            utils.getCorrectlyAnsweredWords('MULTIPLE_CHOICE_DEFINITION');
+
+        // 아직 풀지 않은 영영풀이 퀴즈 후보 단어들을 찾습니다.
+        const candidates = allWords.filter(w => !wordsToExclude.includes(w.word));
+        
+        if(candidates.length === 0) return;
+
+        // 후보 중 무작위로 하나를 선택합니다.
+        const wordData = candidates[Math.floor(Math.random() * candidates.length)];
+
+        try {
+            this.state.preloadingDefinitionWord = wordData.word;
+            const quiz = await this.createDefinitionQuiz(wordData, allWords);
+            
+            if (quiz) {
+                this.state.preloadedDefinitionQuiz = quiz;
+            }
+        } catch (error) {
+            console.error("영영풀이 퀴즈 미리 불러오기 실패:", error);
+        } finally {
+            this.state.preloadingDefinitionWord = null;
+        }
+    },
     showError(message) {
         this.elements.loader.querySelector('.loader').style.display = 'none';
         this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">퀴즈를 가져올 수 없습니다.</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
     },
     displayNextQuiz() {
+        // [수정] 영영퀴즈이고 미리 불러온 퀴즈가 있으면 즉시 사용합니다.
+        if (this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION' && this.state.preloadedDefinitionQuiz) {
+            this.state.currentQuiz = this.state.preloadedDefinitionQuiz;
+            this.state.preloadedDefinitionQuiz = null; // 사용했으니 비웁니다.
+            this.showLoader(false);
+            this.renderQuiz(this.state.currentQuiz);
+            this.preloadNextDefinitionQuiz(); // 다음 퀴즈를 미리 불러옵니다.
+            return;
+        }
+
         if (!this.state.isFetching && this.state.quizBatch.length <= 3) this.fetchQuizBatch();
         
         if (this.state.quizBatch.length === 0) {
@@ -1022,6 +1070,11 @@ const quizMode = {
         this.state.currentQuiz = this.state.quizBatch.shift();
         this.showLoader(false);
         this.renderQuiz(this.state.currentQuiz);
+
+        // [추가] 일반 퀴즈를 푼 후에도 다음 영영풀이 퀴즈를 미리 준비합니다.
+        if(this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION') {
+            this.preloadNextDefinitionQuiz();
+        }
     },
     renderQuiz(quizData) {
         const { type, question, choices } = quizData;
@@ -1466,6 +1519,7 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
 
 
 
