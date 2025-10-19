@@ -1282,62 +1282,31 @@ const learningMode = {
         document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
         document.addEventListener('touchend', this.handleTouchEnd.bind(this));
     },
-    async loadWordList(force = false) {
-        const sheet = app.state.selectedSheet;
-        const cacheKey = `wordListCache_${sheet}`;
+    async forceRefreshData() {
+        const sheet = this.state.selectedSheet;
+        if (!sheet) return;
+
+        const elementsToDisable = [
+            this.elements.homeBtn, this.elements.refreshBtn, this.elements.backToGradeSelectionBtn,
+            document.getElementById('select-learning-btn'), document.getElementById('select-quiz-btn'),
+            document.getElementById('select-dashboard-btn'), document.getElementById('select-mistakes-btn'),
+        ].filter(el => el);
+
+        elementsToDisable.forEach(el => el.classList.add('pointer-events-none', 'opacity-50'));
         
-        if (force) {
-            localStorage.removeItem(cacheKey);
-            this.state.isWordListReady = false;
-        }
-
-        if (!this.state.isWordListReady) {
-            try {
-                const cachedData = localStorage.getItem(cacheKey);
-                if (cachedData) {
-                    const { timestamp, words } = JSON.parse(cachedData);
-                    if (Date.now() - timestamp < 864000000) { // 캐시 유효기간 10일로 연장
-                        this.state.wordList = words;
-                        this.state.isWordListReady = true;
-                    }
-                }
-            } catch (e) {
-                console.error("Cache loading failed:", e);
-                localStorage.removeItem(cacheKey);
-            }
-        }
-
-        if (this.state.isWordListReady && !force) return;
-
-        // --- 데이터 로딩 UI 처리 시작 ---
-        this.elements.loaderText.textContent = "단어 목록을 동기화하는 중...";
-        this.elements.loader.classList.remove('hidden');
-        this.elements.startScreen.classList.add('hidden');
-        // --- 데이터 로딩 UI 처리 끝 ---
+        const refreshIconHTML = this.elements.refreshBtn.innerHTML;
+        this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
         try {
-            // Firebase Realtime Database에서 직접 데이터를 가져옵니다.
-            const dbRef = database.ref(`/vocabulary/${sheet}`);
-            const snapshot = await dbRef.once('value');
-            const data = snapshot.val();
-            if (!data) throw new Error("Firebase에 해당 학년의 단어 데이터가 없습니다. 동기화가 필요합니다.");
-            
-            // Firebase에서 받은 객체를 앱에서 사용할 배열 형태로 변환합니다.
-            const wordsArray = Object.values(data);
-            
-            this.state.wordList = wordsArray;
-            this.state.isWordListReady = true;
-
-            const cachePayload = { timestamp: Date.now(), words: wordsArray };
-            localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
-        } catch (error) {
-            console.error("Firebase에서 단어 목록 로딩 실패:", error);
-            this.showError(error.message);
-            // 오류가 발생해도 다음 단계로 진행할 수 있도록 isWordListReady를 true로 설정
-            this.state.isWordListReady = true; 
+            // 위에서 수정한 최종 버전의 loadWordList를 force: true 옵션으로 호출합니다.
+            await learningMode.loadWordList(true);
+            this.showRefreshSuccessMessage();
+        } catch(err) {
+            console.error("Error during data refresh:", err);
+            alert("데이터 새로고침에 실패했습니다: " + err.message);
         } finally {
-            this.elements.loader.classList.add('hidden');
-            this.elements.startScreen.classList.remove('hidden');
+            elementsToDisable.forEach(el => el.classList.remove('pointer-events-none', 'opacity-50'));
+            this.elements.refreshBtn.innerHTML = refreshIconHTML;
         }
     },
     async start() {
@@ -1519,6 +1488,7 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
 
 
 
