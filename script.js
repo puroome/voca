@@ -34,7 +34,7 @@ const app = {
             messagingSenderId: "213863780677",
             appId: "1:213863780677:web:78d6b8755866a0c5ddee2c",
             // Realtime Database URL 추가
-            databaseURL: "https://wordapp-91c0a-default-rtdb.firebaseio.com"
+            databaseURL: "https://wordapp-91c0a-default-rtdb.asia-southeast1.firebasedatabase.app/"
         },
         SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec",
         // A앱의 API 키 이식
@@ -1467,3 +1467,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
