@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <style>
         .loader {
@@ -96,12 +97,20 @@
             projectId: "wordapp-91c0a",
             storageBucket: "wordapp-91c0a.firebasestorage.app",
             messagingSenderId: "213863780677",
-            appId: "1:213863780677:web:78d6b8755866a0c5ddee2c"
+            appId: "1:213863780677:web:78d6b8755866a0c5ddee2c",
+            // ================================================================
+            // ===== [수정됨] 1: Realtime Database URL 추가
+            // ================================================================
+            databaseURL: "https://wordapp-91c0a-default-rtdb.asia-southeast1.firebasedatabase.app/"
         };
 
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.firestore();
+        // ================================================================
+        // ===== [수정됨] 2: Realtime Database (rt_db) 초기화
+        // ================================================================
+        const rt_db = firebase.database();
 
         const adminApp = {
             ADMIN_EMAIL: 'puroome@gmail.com',
@@ -243,13 +252,7 @@
                         e.preventDefault();
                         document.querySelectorAll('#student-list a').forEach(el => el.classList.remove('bg-blue-100'));
                         a.classList.add('bg-blue-100');
-                        // ================================================================
-                        // ===== [수정됨] 시작: 항상 모든 학년 통계를 불러오도록 변경 ========
-                        // ================================================================
                         this.loadAllDetailsForStudent(studentData, displayName);
-                        // ================================================================
-                        // ===== [수정됨] 끝 ==============================================
-                        // ================================================================
                     };
                     li.appendChild(a);
                     this.elements.studentList.appendChild(li);
@@ -265,23 +268,47 @@
                 }
                 
                 try {
+                    // ================================================================
+                    // ===== [수정됨] 3: Google Script(fetch) 대신 Firebase RT_DB에서 단어 목록 로드
+                    // ================================================================
                     if (!this.state.wordLists[grade]) {
-                        const url = new URL(this.SCRIPT_URL);
-                        url.searchParams.append('action', 'getWords');
-                        url.searchParams.append('sheet', grade);
-                        const response = await fetch(url);
-                        const data = await response.json();
-                        this.state.wordLists[grade] = data.words;
+                        console.log(`[${grade}] 단어 목록 로드 중... (from Realtime Database)`);
+                        const dbRef = rt_db.ref(`${grade}/vocabulary`);
+                        const snapshot = await dbRef.once('value');
+                        const data = snapshot.val();
+                        if (!data) throw new Error(`Firebase Realtime Database에 '${grade}' 단어 데이터가 없습니다.`);
+                        
+                        // v8은 Object.values를 지원하므로 학생 앱(b_script.js)과 동일하게 배열로 변환
+                        const wordsArray = Object.values(data).sort((a, b) => a.id - b.id);
+                        this.state.wordLists[grade] = wordsArray;
+                        console.log(`[${grade}] 단어 ${wordsArray.length}개 로드 완료.`);
                     }
+                    // ================================================================
+                    // ===== [수정됨] 끝
+                    // ================================================================
+
                     const totalWords = this.state.wordLists[grade];
                     const progressRef = db.collection('users').doc(student.id).collection('progress').doc(grade);
                     const progressSnap = await progressRef.get();
                     const progressData = progressSnap.exists ? progressSnap.data() : {};
+                    
+                    // totalWords가 배열인지 확인 (이전에는 undefined일 수 있었음)
+                    console.log(`[${grade}] 통계 계산 시작. 총 단어:`, totalWords ? totalWords.length : 0);
+                    
                     const stats = this.calculateStats(totalWords, progressData);
                     this.renderStats(stats, grade, clearContainer);
+
                 } catch (error) {
-                    console.error("학생 통계 로딩 실패:", error);
-                    this.elements.statsContainer.innerHTML = '<p class="text-red-500">통계 정보를 불러오는 데 실패했습니다.</p>';
+                    console.error(`[${grade}] 학생 통계 로딩 실패:`, error);
+                    // 컨테이너가 지워지지 않았을 때(loadAllDetailsForStudent 호출 시) 오류 메시지를 추가합니다.
+                    if (!clearContainer) {
+                         const errorEl = document.createElement('p');
+                         errorEl.className = 'text-red-500 text-sm mt-2';
+                         errorEl.textContent = `[${grade}] 통계 로딩 실패: ${error.message}`;
+                         this.elements.statsContainer.appendChild(errorEl);
+                    } else {
+                        this.elements.statsContainer.innerHTML = '<p class="text-red-500">통계 정보를 불러오는 데 실패했습니다.</p>';
+                    }
                 } finally {
                     if (clearContainer) {
                         this.elements.studentDetailsLoader.classList.add('hidden');
@@ -290,14 +317,11 @@
                 }
             },
 
-            // ================================================================
-            // ===== [수정됨] 시작: 학생의 배정 학년을 찾아 제목에 표시 ========
-            // ================================================================
             async loadAllDetailsForStudent(student, displayName) {
                 this.elements.detailsPrompt.classList.add('hidden');
                 this.elements.studentDetails.classList.add('hidden');
                 this.elements.studentDetailsLoader.classList.remove('hidden');
-                this.elements.statsContainer.innerHTML = '';
+                this.elements.statsContainer.innerHTML = ''; // 통계 컨테이너 초기화
 
                 let assignedGrade = 'unassigned';
                 for (const gradeKey of ['1y', '2y', '3y']) {
@@ -309,6 +333,7 @@
                 const gradeText = assignedGrade === 'unassigned' ? '(미배정)' : `(${assignedGrade.replace('y', '')}학년)`;
                 this.elements.studentNameTitle.textContent = `${displayName} ${gradeText} 학습 현황`;
                 
+                // 1, 2, 3학년 데이터를 순차적으로 로드하고 렌더링
                 for (const grade of ['1y', '2y', '3y']) {
                     await this.loadStudentDetails(student, displayName, grade, false);
                 }
@@ -316,14 +341,18 @@
                 this.elements.studentDetailsLoader.classList.add('hidden');
                 this.elements.studentDetails.classList.remove('hidden');
             },
-            // ================================================================
-            // ===== [수정됨] 끝 ==============================================
-            // ================================================================
             
             calculateStats(totalWords, progressData) {
                 const counts = { learned: 0, learning: 0, review: 0, unseen: 0 };
-                if (!totalWords || totalWords.length === 0) return { ...counts, total: 0 };
+                // totalWords가 undefined이거나 배열이 아닌 경우를 방어
+                if (!totalWords || !Array.isArray(totalWords) || totalWords.length === 0) {
+                     return { ...counts, total: 0 };
+                }
+
                 totalWords.forEach(wordObj => {
+                    // wordObj가 객체이고 word 속성을 가졌는지 확인
+                    if (!wordObj || !wordObj.word) return; 
+
                     const progress = progressData[wordObj.word];
                     let status = 'unseen';
                     if (progress) {
@@ -338,8 +367,17 @@
             },
 
             renderStats(stats, grade, clearContainer) {
+                // [수정됨] total이 0이어도 "학습 현황 없음"을 표시하기 위해 return 조건 변경
+                if (stats.total === 0 && clearContainer) {
+                    this.elements.statsContainer.innerHTML = '<p class="text-gray-500">아직 학습 데이터가 없습니다.</p>';
+                    return;
+                }
+                // [수정됨] total이 0인 학년은 아예 표시하지 않음 (loadAllDetailsForStudent 호출 시)
+                if (stats.total === 0 && !clearContainer) {
+                    return;
+                }
+
                 if (clearContainer) this.elements.statsContainer.innerHTML = '';
-                if (stats.total === 0) return;
 
                 const statCard = document.createElement('div');
                 statCard.className = 'mt-6 first:mt-0';
@@ -366,7 +404,8 @@
                         </div>`;
                 });
                 
-                const titleHtml = clearContainer ? '' : `<h3 class="text-xl font-bold text-gray-700 border-t pt-4 mt-6">${grade.replace('y','')}학년</h3>`;
+                // clearContainer가 false일 때 (즉, loadAllDetailsForStudent에서 호출될 때)만 학년 제목 추가
+                const titleHtml = clearContainer ? '' : `<h3 class="text-xl font-bold text-gray-700 border-t pt-4 mt-6">${grade.replace('y','')}학년 (총 ${stats.total}단어)</h3>`;
                 statCard.innerHTML = `
                     ${titleHtml}
                     <div class="space-y-4 mt-4">${itemsHtml}</div>
@@ -379,4 +418,3 @@
     </script>
 </body>
 </html>
-
