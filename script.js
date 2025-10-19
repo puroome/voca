@@ -1282,7 +1282,7 @@ const learningMode = {
 
         try {
             // ▼▼▼ [수정된 코드] Firebase 경로를 올바르게 수정합니다. ▼▼▼
-            const dbRef = ref(rt_db, `/${grade}/vocabulary`);
+            const dbRef = ref(rt_db, `${grade}/vocabulary`);
             // ▲▲▲ [수정된 코드] ▲▲▲
             const snapshot = await get(dbRef);
             const data = snapshot.val();
@@ -1552,4 +1552,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
