@@ -15,7 +15,9 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
+// [오류 수정] 이 한 줄이 누락되어 로그인 및 데이터 로딩 문제가 발생했습니다.
 const database = firebase.database();
+
 
 // ================================================================
 // App Main Controller
@@ -84,17 +86,12 @@ const app = {
         auth.onAuthStateChanged(user => {
             if (user) {
                 this.state.user = user;
-
-                // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-                // ===== 바로 여기에 아래 코드 한 줄을 추가합니다 =====
                 
                 const userRef = db.collection('users').doc(user.uid);
                 userRef.set({
                     displayName: user.displayName,
                     email: user.email
                 }, { merge: true });
-
-                // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
             
                 this.elements.loginScreen.classList.add('hidden');
                 this.elements.mainContainer.classList.remove('hidden');
@@ -291,8 +288,6 @@ const app = {
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
         try {
-            // learningMode의 loadWordList를 force 옵션과 함께 호출합니다.
-            // 이 함수가 Firebase에서 직접 데이터를 가져와 로컬 캐시를 갱신합니다.
             await learningMode.loadWordList(true);
             this.showRefreshSuccessMessage();
         } catch(err) {
@@ -428,7 +423,6 @@ const api = {
 
         if (isAndroid && 'speechSynthesis' in window) {
             try {
-                // Cancel any ongoing speech to prevent overlap
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(processedText);
                 utterance.lang = 'en-US';
@@ -483,12 +477,10 @@ const api = {
         }
     },
     async fetchDefinition(word) {
-        // Merriam-Webster API 키를 이곳으로 옮겨옵니다.
         const MERRIAM_WEBSTER_API_KEY = "02d1892d-8fb1-4e2d-bc43-4ddd4a47eab3";
         const url = `https://www.dictionaryapi.com/api/v3/references/learners/json/${encodeURIComponent(word)}?key=${MERRIAM_WEBSTER_API_KEY}`;
         
         try {
-            // 이전에 번역 캐시용으로 만든 IndexedDB를 영영풀이 캐시에도 활용합니다.
             const cached = await translationDBCache.get(`definition_${word}`);
             if (cached) return cached;
 
@@ -500,7 +492,6 @@ const api = {
                 const firstResult = data[0];
                 if (typeof firstResult === 'object' && firstResult.shortdef && firstResult.shortdef.length > 0) {
                     const definitionText = firstResult.shortdef.join('; ');
-                    // 캐시에 저장
                     translationDBCache.save(`definition_${word}`, definitionText);
                     return definitionText;
                 }
@@ -858,7 +849,6 @@ const quizMode = {
             
             let candidateWords = allWordsData.filter(item => !wordsToExclude.includes(item.word));
 
-            // 퀴즈 유형에 따라 후보 단어 추가 필터링
             if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
                 candidateWords = candidateWords.filter(word => {
                     if (!word.sample || word.sample.trim() === '') return false;
@@ -875,7 +865,6 @@ const quizMode = {
                 return;
             }
 
-            // 후보 단어를 무작위로 섞음
             candidateWords.sort(() => 0.5 - Math.random());
             
             const newQuizzes = [];
@@ -888,7 +877,6 @@ const quizMode = {
                 } else if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
                     quiz = this.createBlankQuiz(correctWordData, allWordsData);
                 } else if (this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION') {
-                    // 영영풀이 퀴즈는 API 호출이 필요하므로 await 사용
                     quiz = await this.createDefinitionQuiz(correctWordData, allWordsData);
                 }
                 
@@ -908,12 +896,10 @@ const quizMode = {
     },
     createMeaningQuiz(correctWordData, allWordsData) {
         const wrongAnswers = new Set();
-        // 1. 같은 품사, 다른 뜻을 가진 단어를 오답 후보로 우선 추가
         let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.meaning !== correctWordData.meaning);
         candidates.sort(() => 0.5 - Math.random());
         candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.meaning));
 
-        // 2. 오답이 3개 미만이면 품사와 관계없이 다른 단어의 뜻을 추가
         while (wrongAnswers.size < 3) {
             const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
             if (randomWord.meaning !== correctWordData.meaning) {
@@ -977,7 +963,7 @@ const quizMode = {
     
     async createDefinitionQuiz(correctWordData, allWordsData) {
         const definition = await api.fetchDefinition(correctWordData.word);
-        if (!definition) return null; // 영영풀이를 가져오지 못하면 퀴즈 생성 실패
+        if (!definition) return null;
 
         const wrongAnswers = new Set();
         let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.word !== correctWordData.word);
@@ -1002,7 +988,6 @@ const quizMode = {
         };
     },
     async preloadNextDefinitionQuiz() {
-        // 이미 불러온 퀴즈가 있거나, 현재 다른 퀴즈를 불러오는 중이거나, 단어 목록이 준비되지 않았으면 실행하지 않습니다.
         if (this.state.preloadedDefinitionQuiz || this.state.preloadingDefinitionWord || !learningMode.state.isWordListReady) {
             return;
         }
@@ -1010,17 +995,14 @@ const quizMode = {
         const allWords = learningMode.state.wordList;
         if (allWords.length < 5) return;
 
-        // 연습 모드 여부에 따라 제외할 단어 목록을 가져옵니다.
         const wordsToExclude = this.state.isPracticeMode ? 
             this.state.practiceLearnedWords : 
             utils.getCorrectlyAnsweredWords('MULTIPLE_CHOICE_DEFINITION');
 
-        // 아직 풀지 않은 영영풀이 퀴즈 후보 단어들을 찾습니다.
         const candidates = allWords.filter(w => !wordsToExclude.includes(w.word));
         
         if(candidates.length === 0) return;
 
-        // 후보 중 무작위로 하나를 선택합니다.
         const wordData = candidates[Math.floor(Math.random() * candidates.length)];
 
         try {
@@ -1041,13 +1023,12 @@ const quizMode = {
         this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">퀴즈를 가져올 수 없습니다.</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
     },
     displayNextQuiz() {
-        // [수정] 영영퀴즈이고 미리 불러온 퀴즈가 있으면 즉시 사용합니다.
         if (this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION' && this.state.preloadedDefinitionQuiz) {
             this.state.currentQuiz = this.state.preloadedDefinitionQuiz;
-            this.state.preloadedDefinitionQuiz = null; // 사용했으니 비웁니다.
+            this.state.preloadedDefinitionQuiz = null;
             this.showLoader(false);
             this.renderQuiz(this.state.currentQuiz);
-            this.preloadNextDefinitionQuiz(); // 다음 퀴즈를 미리 불러옵니다.
+            this.preloadNextDefinitionQuiz();
             return;
         }
 
@@ -1071,7 +1052,6 @@ const quizMode = {
         this.showLoader(false);
         this.renderQuiz(this.state.currentQuiz);
 
-        // [추가] 일반 퀴즈를 푼 후에도 다음 영영풀이 퀴즈를 미리 준비합니다.
         if(this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION') {
             this.preloadNextDefinitionQuiz();
         }
@@ -1177,7 +1157,6 @@ const quizMode = {
             utils.updateWordStatus(word, quizType, (isCorrect && !isPass) ? 'correct' : 'incorrect');
         }
         
-        // [수정 1] PASS를 포함하여 정답이 아닐 경우, 항상 정답 선택지를 초록색으로 표시합니다.
         if (!isCorrect) { 
             const correctAnswerEl = Array.from(this.elements.choices.children).find(li => {
                 const choiceSpan = li.querySelector('span:last-child');
@@ -1186,8 +1165,7 @@ const quizMode = {
             correctAnswerEl?.classList.add('correct');
         }
         
-        // [수정 2] 딜레이 시간을 1200ms에서 300ms로 절반 단축합니다.
-        setTimeout(() => this.displayNextQuiz(), 300); 
+        setTimeout(() => this.displayNextQuiz(), 600); 
     },
     showLoader(isLoading) {
         this.elements.loader.classList.toggle('hidden', !isLoading);
@@ -1282,31 +1260,57 @@ const learningMode = {
         document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
         document.addEventListener('touchend', this.handleTouchEnd.bind(this));
     },
-    async forceRefreshData() {
-        const sheet = this.state.selectedSheet;
-        if (!sheet) return;
-
-        const elementsToDisable = [
-            this.elements.homeBtn, this.elements.refreshBtn, this.elements.backToGradeSelectionBtn,
-            document.getElementById('select-learning-btn'), document.getElementById('select-quiz-btn'),
-            document.getElementById('select-dashboard-btn'), document.getElementById('select-mistakes-btn'),
-        ].filter(el => el);
-
-        elementsToDisable.forEach(el => el.classList.add('pointer-events-none', 'opacity-50'));
+    async loadWordList(force = false) {
+        const sheet = app.state.selectedSheet;
+        const cacheKey = `wordListCache_${sheet}`;
         
-        const refreshIconHTML = this.elements.refreshBtn.innerHTML;
-        this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
+        if (force) {
+            localStorage.removeItem(cacheKey);
+            this.state.isWordListReady = false;
+        }
+
+        if (!this.state.isWordListReady) {
+            try {
+                const cachedData = localStorage.getItem(cacheKey);
+                if (cachedData) {
+                    const { timestamp, words } = JSON.parse(cachedData);
+                    if (Date.now() - timestamp < 864000000) { // 10일
+                        this.state.wordList = words;
+                        this.state.isWordListReady = true;
+                    }
+                }
+            } catch (e) {
+                console.error("Cache loading failed:", e);
+                localStorage.removeItem(cacheKey);
+            }
+        }
+
+        if (this.state.isWordListReady && !force) return;
+
+        this.elements.loaderText.textContent = "단어 목록을 동기화하는 중...";
+        this.elements.loader.classList.remove('hidden');
+        this.elements.startScreen.classList.add('hidden');
 
         try {
-            // 위에서 수정한 최종 버전의 loadWordList를 force: true 옵션으로 호출합니다.
-            await learningMode.loadWordList(true);
-            this.showRefreshSuccessMessage();
-        } catch(err) {
-            console.error("Error during data refresh:", err);
-            alert("데이터 새로고침에 실패했습니다: " + err.message);
+            const dbRef = database.ref(`/vocabulary/${sheet}`);
+            const snapshot = await dbRef.once('value');
+            const data = snapshot.val();
+            if (!data) throw new Error("Firebase에 해당 학년의 단어 데이터가 없습니다. 동기화가 필요합니다.");
+            
+            const wordsArray = Object.values(data);
+            
+            this.state.wordList = wordsArray;
+            this.state.isWordListReady = true;
+
+            const cachePayload = { timestamp: Date.now(), words: wordsArray };
+            localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
+        } catch (error) {
+            console.error("Firebase에서 단어 목록 로딩 실패:", error);
+            this.showError(error.message);
+            this.state.isWordListReady = false; 
         } finally {
-            elementsToDisable.forEach(el => el.classList.remove('pointer-events-none', 'opacity-50'));
-            this.elements.refreshBtn.innerHTML = refreshIconHTML;
+            this.elements.loader.classList.add('hidden');
+            this.elements.startScreen.classList.remove('hidden');
         }
     },
     async start() {
@@ -1319,9 +1323,6 @@ const learningMode = {
     
         if (!startWord) {
             this.elements.startScreen.classList.add('hidden');
-            // NOTE: The concept of a device-specific "last index" is less relevant
-            // with user accounts. Starting from 0 or a user-saved preference would be better.
-            // For now, we'll keep it simple and start from 0 for blank input.
             this.state.currentIndex = 0;
             this.launchApp(this.state.wordList);
             return;
@@ -1488,10 +1489,3 @@ const learningMode = {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
-
-
-
-
-
-
-
