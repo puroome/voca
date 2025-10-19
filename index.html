@@ -28,55 +28,48 @@
 
     <div class="fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
         <div class="w-full max-w-2xl relative px-4">
+            <button id="back-to-grade-selection-btn" class="hidden group absolute top-4 left-4 bg-indigo-700 hover:bg-indigo-800 text-white font-bold p-3 rounded-full shadow-lg pointer-events-auto">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                <div class="absolute top-1/2 -translate-y-1/2 left-full ml-3 w-max bg-gray-900 text-white text-sm rounded-md py-1 px-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                    학년 선택으로 돌아가기
+                    <div class="absolute top-1/2 -translate-y-1/2 right-full w-0 h-0 border-y-4 border-y-transparent border-r-4 border-r-gray-900"></div>
+                </div>
+            </button>
             <div id="author-credit" class="absolute top-5 left-1/2 -translate-x-1/2">
                 <p class="author-text text-center text-sm font-semibold">Made by JEONG KAPSU</p>
             </div>
-            
-            <!-- ===== [수정된 레이아웃 시작] ===== -->
-            <div class="flex items-center h-20">
-                <!-- 왼쪽 버튼 -->
-                <button id="back-to-grade-selection-btn" class="hidden group bg-indigo-700 hover:bg-indigo-800 text-white font-bold p-3 rounded-full shadow-lg pointer-events-auto flex-shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
-                    <div class="absolute top-1/2 -translate-y-1/2 left-full ml-3 w-max bg-gray-900 text-white text-sm rounded-md py-1 px-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-                        학년 선택으로 돌아가기
-                        <div class="absolute top-1/2 -translate-y-1/2 right-full w-0 h-0 border-y-4 border-y-transparent border-r-4 border-r-gray-900"></div>
-                    </div>
-                </button>
 
-                <!-- 가운데 프로그레스 바 -->
-                <div id="progress-bar-container" class="hidden w-full mx-4 pointer-events-auto">
-                    <div id="progress-bar-track" class="relative w-full h-2 bg-gray-300 rounded-full cursor-pointer">
-                        <div id="progress-bar-fill" class="absolute h-full bg-blue-500 rounded-full"></div>
-                        <div id="progress-bar-handle" class="absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white border-2 border-blue-500 rounded-full shadow cursor-grab"></div>
-                    </div>
-                </div>
-
-                <!-- 오른쪽 버튼 그룹 -->
-                <div class="ml-auto flex items-center space-x-2 pointer-events-auto">
-                    <button id="home-btn" class="hidden group bg-gray-700 hover:bg-gray-800 text-white font-bold p-3 rounded-full shadow-lg flex-shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-                        <div class="absolute top-1/2 -translate-y-1/2 right-full mr-3 w-max bg-gray-900 text-white text-sm rounded-md py-1 px-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-                            모드 선택으로 돌아가기
-                            <div class="absolute top-1/2 -translate-y-1/2 left-full w-0 h-0 border-y-4 border-y-transparent border-l-4 border-l-gray-900"></div>
-                        </div>
-                    </button>
-                    <button id="refresh-btn" class="hidden group bg-green-600 hover:bg-green-700 text-white font-bold p-3 rounded-full shadow-lg flex-shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                        <div class="absolute top-1/2 -translate-y-1/2 right-full mr-3 w-max bg-gray-900 text-white text-sm rounded-md py-1 px-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-                            어휘 자료 새로고침
-                            <div class="absolute top-1/2 -translate-y-1/2 left-full w-0 h-0 border-y-4 border-y-transparent border-l-4 border-l-gray-900"></div>
-                        </div>
-                    </button>
-                    <button id="logout-btn" class="hidden group bg-red-600 hover:bg-red-700 text-white font-bold p-3 rounded-full shadow-lg flex-shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                        <div class="absolute top-1/2 -translate-y-1/2 right-full mr-3 w-max bg-gray-900 text-white text-sm rounded-md py-1 px-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-                            로그아웃
-                            <div class="absolute top-1/2 -translate-y-1/2 left-full w-0 h-0 border-y-4 border-y-transparent border-l-4 border-l-gray-900"></div>
-                        </div>
-                    </button>
+            <!-- ===== [추가된 코드 시작] ===== -->
+            <div id="progress-bar-container" class="hidden absolute top-12 left-1/2 -translate-x-1/2 w-3/4 pointer-events-auto">
+                <div id="progress-bar-track" class="relative w-full h-2 bg-gray-300 rounded-full cursor-pointer">
+                    <div id="progress-bar-fill" class="absolute h-full bg-blue-500 rounded-full"></div>
+                    <div id="progress-bar-handle" class="absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white border-2 border-blue-500 rounded-full shadow cursor-grab"></div>
                 </div>
             </div>
-            <!-- ===== [수정된 레이아웃 종료] ===== -->
+            <!-- ===== [추가된 코드 종료] ===== -->
+            
+            <button id="logout-btn" class="hidden group absolute top-4 right-4 bg-red-600 hover:bg-red-700 text-white font-bold p-3 rounded-full shadow-lg pointer-events-auto">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                <div class="absolute top-1/2 -translate-y-1/2 right-full mr-3 w-max bg-gray-900 text-white text-sm rounded-md py-1 px-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                    로그아웃
+                    <div class="absolute top-1/2 -translate-y-1/2 left-full w-0 h-0 border-y-4 border-y-transparent border-l-4 border-l-gray-900"></div>
+                </div>
+            </button>
+
+            <button id="refresh-btn" class="hidden group absolute top-4 right-4 bg-green-600 hover:bg-green-700 text-white font-bold p-3 rounded-full shadow-lg pointer-events-auto">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                <div class="absolute top-1/2 -translate-y-1/2 right-full mr-3 w-max bg-gray-900 text-white text-sm rounded-md py-1 px-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                    어휘 자료 새로고침
+                    <div class="absolute top-1/2 -translate-y-1/2 left-full w-0 h-0 border-y-4 border-y-transparent border-l-4 border-l-gray-900"></div>
+                </div>
+            </button>
+            <button id="home-btn" class="hidden group absolute top-4 right-4 bg-gray-700 hover:bg-gray-800 text-white font-bold p-3 rounded-full shadow-lg pointer-events-auto">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                <div class="absolute top-1/2 -translate-y-1/2 right-full mr-3 w-max bg-gray-900 text-white text-sm rounded-md py-1 px-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                    모드 선택으로 돌아가기
+                    <div class="absolute top-1/2 -translate-y-1/2 left-full w-0 h-0 border-y-4 border-y-transparent border-l-4 border-l-gray-900"></div>
+                </div>
+            </button>
         </div>
     </div>
 
