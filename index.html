@@ -296,6 +296,18 @@
         <button id="search-longman-context-btn" class="text-left w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap">Longman</button>
     </div>
 
+    <!-- [추가] A앱의 퀴즈 결과 모달 HTML을 여기에 추가합니다. -->
+    <div id="quiz-result-modal" class="hidden fixed inset-0 bg-black/50 z-[250] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl p-8 text-center w-full max-w-sm content-panel">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">퀴즈 결과</h2>
+            <p id="quiz-result-score" class="text-xl text-gray-700 mb-6"></p>
+            <div class="space-y-3">
+                <button id="quiz-result-mistakes-btn" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors">미니 오답노트</button>
+                <button id="quiz-result-continue-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors">다음 퀴즈 계속</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Firebase SDK (v9 Modular) - A앱과 동일하게 변경 -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
