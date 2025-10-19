@@ -151,10 +151,8 @@ body::before {
     text-indent: -1.5em;
 }
 
-/* ===== [추가된 코드 시작] ===== */
-/* 진행 상태 바 핸들 활성화 스타일 */
+/* 프로그레스 바 핸들 활성화 스타일 추가 */
 #progress-bar-handle:active {
     cursor: grabbing;
     transform: scale(1.2) translateY(-10%);
 }
-/* ===== [추가된 코드 종료] ===== */
