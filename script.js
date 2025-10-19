@@ -4,6 +4,7 @@
 const firebaseConfig = {
     apiKey: "AIzaSyBE_Gxd1haPazVK61F9sjCwK0X4Gw5rERM",
     authDomain: "wordapp-91c0a.firebaseapp.com",
+    databaseURL: "https://word-91148-default-rtdb.asia-southeast1.firebasedatabase.app",
     projectId: "wordapp-91c0a",
     storageBucket: "wordapp-91c0a.firebasestorage.app",
     messagingSenderId: "213863780677",
@@ -14,6 +15,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
+const database = firebase.database();
 
 
 // ================================================================
@@ -22,6 +24,8 @@ const db = firebase.firestore();
 const app = {
     config: {
         SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec",
+        // 영영사전 API 키를 클라이언트로 이동
+        MERRIAM_WEBSTER_API_KEY: "02d1892d-8fb1-4e2d-bc43-4ddd4a47eab3",
         sheetLinks: {
             '1y': 'https://docs.google.com/spreadsheets/d/1r7fWUV1ea9CU-s2iSOwLKexEe2_7L8oUKhK0n1DpDUM/edit?usp=sharing',
             '2y': 'https://docs.google.com/spreadsheets/d/1Xydj0im3Cqq9JhjN8IezZ-7DBp1-DV703cCIb3ORdc8/edit?usp=sharing',
@@ -30,8 +34,8 @@ const app = {
         backgroundImages: []
     },
     state: {
-        user: null, // 로그인한 사용자 정보
-        currentProgress: {}, // 현재 학년의 학습 진행 상황
+        user: null, 
+        currentProgress: {}, 
         selectedSheet: '',
         translateDebounceTimeout: null,
         longPressTimer: null,
@@ -83,17 +87,12 @@ const app = {
         auth.onAuthStateChanged(user => {
             if (user) {
                 this.state.user = user;
-
-                // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-                // ===== 바로 여기에 아래 코드 한 줄을 추가합니다 =====
                 
                 const userRef = db.collection('users').doc(user.uid);
                 userRef.set({
                     displayName: user.displayName,
                     email: user.email
                 }, { merge: true });
-
-                // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
             
                 this.elements.loginScreen.classList.add('hidden');
                 this.elements.mainContainer.classList.remove('hidden');
@@ -291,14 +290,7 @@ const app = {
         localStorage.removeItem(`wordListCache_${sheet}`);
         
         try {
-            const data = await api.fetchFromGoogleSheet('getWords', { force_refresh: 'true' });
-            if (data.words) {
-                const cachePayload = { timestamp: Date.now(), words: data.words };
-                localStorage.setItem(`wordListCache_${sheet}`, JSON.stringify(cachePayload));
-                if(learningMode.state.isWordListReady) {
-                    learningMode.state.wordList = data.words;
-                }
-            }
+            await learningMode.loadWordList(true);
             this.showRefreshSuccessMessage();
         } catch(err) {
             console.error("Error during data refresh:", err);
@@ -402,13 +394,35 @@ const api = {
     async fetchFromGoogleSheet(action, params = {}) {
         const url = new URL(app.config.SCRIPT_URL);
         url.searchParams.append('action', action);
-        url.searchParams.append('sheet', app.state.selectedSheet);
+        // 'sheet' 파라미터는 이제 quizBatch 외에는 필요 없어졌지만, 호환성을 위해 유지합니다.
+        if(app.state.selectedSheet) url.searchParams.append('sheet', app.state.selectedSheet);
         Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
         if (data.error) throw new Error(data.message);
         return data;
+    },
+    async fetchDefinition(word) {
+        const apiKey = app.config.MERRIAM_WEBSTER_API_KEY;
+        const url = `https://www.dictionaryapi.com/api/v3/references/learners/json/${encodeURIComponent(word)}?key=${apiKey}`;
+        
+        try {
+            const response = await fetch(url, { mode: 'cors' });
+            if (!response.ok) return null;
+
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+                const firstResult = data[0];
+                if (typeof firstResult === 'object' && firstResult !== null && firstResult.shortdef && Array.isArray(firstResult.shortdef) && firstResult.shortdef.length > 0) {
+                    return firstResult.shortdef[0];
+                }
+            }
+            return null;
+        } catch (e) {
+            console.error(`Merriam-Webster API 호출 실패 for "${word}": ${e.message}`);
+            return null;
+        }
     },
     async translateText(text) {
         try {
@@ -433,7 +447,6 @@ const api = {
 
         if (isAndroid && 'speechSynthesis' in window) {
             try {
-                // Cancel any ongoing speech to prevent overlap
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(processedText);
                 utterance.lang = 'en-US';
@@ -672,6 +685,15 @@ const utils = {
         return allWords
             .filter(wordObj => this.getWordStatus(wordObj.word) === 'review')
             .map(wordObj => wordObj.word);
+    },
+
+    // A앱에서 가져온 유틸리티 함수
+    shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
     }
 };
 
@@ -740,7 +762,6 @@ const quizMode = {
     state: {
         currentQuiz: {},
         quizBatch: [],
-        isFetching: false,
         isFinished: false,
         isPracticeMode: false,
         practiceLearnedWords: [],
@@ -794,12 +815,11 @@ const quizMode = {
         if (!learningMode.state.isWordListReady) {
             await learningMode.loadWordList();
         }
-        await this.fetchQuizBatch();
+        await this.generateQuizBatch();
         this.displayNextQuiz();
     },
     reset(showSelection = true) {
         this.state.quizBatch = [];
-        this.state.isFetching = false;
         this.state.isFinished = false;
         this.state.practiceLearnedWords = [];
         this.elements.loader.querySelector('.loader').style.display = 'block';
@@ -813,54 +833,65 @@ const quizMode = {
         this.elements.contentContainer.classList.add('hidden');
         this.elements.finishedScreen.classList.add('hidden');
     },
-    async fetchQuizBatch() {
-        if (this.state.isFetching || this.state.isFinished) return;
-        this.state.isFetching = true;
-        try {
-            const wordsToExclude = this.state.isPracticeMode ? 
-                this.state.practiceLearnedWords : 
-                utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
+    async generateQuizBatch() {
+        const BATCH_SIZE = 10;
+        const allWords = learningMode.state.wordList;
+        if (allWords.length < 5) {
+            this.showError('퀴즈를 만들 단어가 시트에 5개 미만입니다.');
+            this.state.isFinished = true;
+            return;
+        }
 
-            const data = await api.fetchFromGoogleSheet('getQuizBatch', {
-                learnedWords: wordsToExclude.join(','),
-                quizType: this.state.currentQuizType
-            });
-            if (data.finished) {
-                this.state.isFinished = true;
-                if (this.state.quizBatch.length === 0) {
-                    this.showFinishedScreen(data.message || "모든 단어 학습을 완료했습니다!");
-                }
-                return;
+        const wordsToExclude = new Set(
+            this.state.isPracticeMode
+                ? this.state.practiceLearnedWords
+                : utils.getCorrectlyAnsweredWords(this.state.currentQuizType)
+        );
+
+        let candidates = allWords.filter(word => !wordsToExclude.has(word.word));
+        
+        if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
+            candidates = candidates.filter(word => word.sample);
+        }
+
+        if (candidates.length === 0) {
+            this.state.isFinished = true;
+            return;
+        }
+
+        utils.shuffleArray(candidates);
+        
+        for (const wordData of candidates) {
+            if (this.state.quizBatch.length >= BATCH_SIZE) break;
+
+            let quiz;
+            if (this.state.currentQuizType === 'MULTIPLE_CHOICE_MEANING') {
+                quiz = this.createMeaningQuiz(wordData, allWords);
+            } else if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
+                quiz = this.createBlankQuiz(wordData, allWords);
+            } else if (this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION') {
+                quiz = await this.createDefinitionQuiz(wordData, allWords);
             }
-            this.state.quizBatch.push(...data.quizzes);
-        } catch (error) {
-            console.error("퀴즈 묶음 가져오기 실패:", error);
-            this.showError(error.message);
-        } finally {
-            this.state.isFetching = false;
+
+            if (quiz) {
+                this.state.quizBatch.push(quiz);
+            }
         }
     },
     showError(message) {
         this.elements.loader.querySelector('.loader').style.display = 'none';
         this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">퀴즈를 가져올 수 없습니다.</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
     },
-    displayNextQuiz() {
-        if (!this.state.isFetching && this.state.quizBatch.length <= 3) this.fetchQuizBatch();
+    async displayNextQuiz() {
+        if (this.state.quizBatch.length <= 3 && !this.state.isFinished) {
+            await this.generateQuizBatch();
+        }
         
         if (this.state.quizBatch.length === 0) {
-            if (this.state.isFetching) {
-                this.elements.loaderText.textContent = "다음 퀴즈를 준비 중입니다...";
-                this.showLoader(true);
-                const checker = setInterval(() => {
-                    if (this.state.quizBatch.length > 0) { clearInterval(checker); this.displayNextQuiz(); }
-                }, 100);
-            } else if (this.state.isFinished) {
-                this.showFinishedScreen("모든 단어 학습을 완료했습니다!");
-            } else if (!this.state.isFetching) {
-                this.showFinishedScreen("풀 수 있는 퀴즈가 더 이상 없습니다!");
-            }
+            this.showFinishedScreen("모든 단어 학습을 완료했습니다!");
             return;
         }
+
         this.state.currentQuiz = this.state.quizBatch.shift();
         this.showLoader(false);
         this.renderQuiz(this.state.currentQuiz);
@@ -872,52 +903,14 @@ const quizMode = {
 
         if (type === 'MULTIPLE_CHOICE_DEFINITION') {
             questionDisplay.classList.remove('justify-center', 'items-center');
-            ui.displaySentences([question.definition], questionDisplay);
-            const sentenceElement = questionDisplay.querySelector('.sample-sentence');
-            if(sentenceElement){
-                sentenceElement.classList.add('text-lg', 'sm:text-xl', 'text-left', 'text-gray-800', 'leading-relaxed');
-                sentenceElement.classList.remove('p-2', 'hover:bg-gray-200');
-            }
+            questionDisplay.innerHTML = `<p class="text-lg sm:text-xl text-left text-gray-800 leading-relaxed">${question.definition}</p>`
         } else if (type === 'FILL_IN_THE_BLANK') {
             questionDisplay.classList.remove('justify-center', 'items-center');
             const p = document.createElement('p');
             p.className = 'text-xl sm:text-2xl text-left text-gray-800 leading-relaxed';
-
-            const processTextInto = (targetElement, text) => {
-                const parts = text.split(/([,\s\.'])/g).filter(part => part);
-                parts.forEach(part => {
-                    if (/[a-zA-Z]/.test(part)) {
-                        const span = document.createElement('span');
-                        span.textContent = part;
-                        span.className = 'hover:bg-yellow-200 rounded-sm transition-colors interactive-word';
-                        span.onclick = e => { e.stopPropagation(); clearTimeout(app.state.longPressTimer); api.speak(part); api.copyToClipboard(part); };
-                        span.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); ui.showWordContextMenu(e, part); };
-                        let touchMove = false;
-                        span.addEventListener('touchstart', e => { e.stopPropagation(); touchMove = false; clearTimeout(app.state.longPressTimer); app.state.longPressTimer = setTimeout(() => { if (!touchMove) ui.showWordContextMenu(e, part); }, 700); }, { passive: true });
-                        span.addEventListener('touchmove', e => { e.stopPropagation(); touchMove = true; clearTimeout(app.state.longPressTimer); });
-                        span.addEventListener('touchend', e => { e.stopPropagation(); clearTimeout(app.state.longPressTimer); });
-                        targetElement.appendChild(span);
-                    } else {
-                        targetElement.appendChild(document.createTextNode(part));
-                    }
-                });
-            };
-
-            const sentenceParts = question.sentence_with_blank.split(/(\*.*?\*|＿＿＿＿)/g);
-            sentenceParts.forEach(part => {
-                if (part === '＿＿＿＿') {
-                    const blankSpan = document.createElement('span');
-                    blankSpan.style.whiteSpace = 'nowrap';
-                    blankSpan.textContent = '＿＿＿＿';
-                    p.appendChild(blankSpan);
-                } else if (part && part.startsWith('*') && part.endsWith('*')) {
-                    const strong = document.createElement('strong');
-                    processTextInto(strong, part.slice(1, -1));
-                    p.appendChild(strong);
-                } else if (part) {
-                    processTextInto(p, part);
-                }
-            });
+            p.innerHTML = question.sentence_with_blank
+                .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+                .replace('＿＿＿＿', '<span style="white-space:nowrap;">＿＿＿＿</span>');
             questionDisplay.appendChild(p);
         } else {
             questionDisplay.classList.add('justify-center', 'items-center');
@@ -987,54 +980,110 @@ const quizMode = {
         this.elements.finishedScreen.classList.remove('hidden');
         this.elements.finishedMessage.textContent = message;
     },
-};
-
-function levenshteinDistance(a = '', b = '') {
-    const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
-    for (let i = 0; i <= a.length; i += 1) track[0][i] = i;
-    for (let j = 0; j <= b.length; j += 1) track[j][0] = j;
-    for (let j = 1; j <= b.length; j += 1) {
-        for (let i = 1; i <= a.length; i += 1) {
-            const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
-            track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator);
+    createMeaningQuiz(correctWordData, allWordsData) {
+        const wrongAnswers = new Set();
+        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.meaning !== correctWordData.meaning);
+        utils.shuffleArray(candidates);
+        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.meaning));
+        while (wrongAnswers.size < 3) {
+            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+            if (randomWord.meaning !== correctWordData.meaning) wrongAnswers.add(randomWord.meaning);
         }
+        const choices = utils.shuffleArray([correctWordData.meaning, ...Array.from(wrongAnswers)]);
+        return {
+            type: 'MULTIPLE_CHOICE_MEANING',
+            question: { word: correctWordData.word, word_info: correctWordData },
+            choices,
+            answer: correctWordData.meaning
+        };
+    },
+    createBlankQuiz(correctWordData, allWordsData) {
+        if (!correctWordData.sample || correctWordData.sample.trim() === '') return null;
+        const firstLineSentence = correctWordData.sample.split('\n')[0];
+        const placeholderRegex = /\*(.*?)\*/;
+        const match = firstLineSentence.match(placeholderRegex);
+        let sentenceWithBlank;
+
+        if (match) {
+            sentenceWithBlank = firstLineSentence.replace(placeholderRegex, "＿＿＿＿").trim();
+        } else {
+            const wordRegex = new RegExp(`\\b${correctWordData.word}\\b`, 'i');
+            if (firstLineSentence.match(wordRegex)) {
+                sentenceWithBlank = firstLineSentence.replace(wordRegex, "＿＿＿＿").trim();
+            } else {
+                return null;
+            }
+        }
+        
+        const wrongAnswers = new Set();
+        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.word !== correctWordData.word);
+        utils.shuffleArray(candidates);
+        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.word));
+        while (wrongAnswers.size < 3) {
+            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+            if (randomWord.word !== correctWordData.word) wrongAnswers.add(randomWord.word);
+        }
+        const choices = utils.shuffleArray([correctWordData.word, ...Array.from(wrongAnswers)]);
+        return {
+            type: 'FILL_IN_THE_BLANK',
+            question: { sentence_with_blank: sentenceWithBlank, word_info: correctWordData },
+            choices,
+            answer: correctWordData.word
+        };
+    },
+    async createDefinitionQuiz(correctWordData, allWordsData) {
+        const definition = await api.fetchDefinition(correctWordData.word);
+        if (!definition) return null;
+        const wrongAnswers = new Set();
+        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.word !== correctWordData.word);
+        utils.shuffleArray(candidates);
+        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.word));
+        while (wrongAnswers.size < 3) {
+            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+            if (randomWord.word !== correctWordData.word) wrongAnswers.add(randomWord.word);
+        }
+        const choices = utils.shuffleArray([correctWordData.word, ...Array.from(wrongAnswers)]);
+        return {
+            type: 'MULTIPLE_CHOICE_DEFINITION',
+            question: { definition, word_info: correctWordData },
+            choices,
+            answer: correctWordData.word
+        };
     }
-    return track[b.length][a.length];
-}
+};
 
 const learningMode = {
     state: {
         wordList: [], isWordListReady: false, currentIndex: 0,
         touchstartX: 0, touchstartY: 0, currentDisplayList: [],
     },
-    elements: {},
+    elements: {
+        startScreen: document.getElementById('learning-start-screen'),
+        startInputContainer: document.getElementById('learning-start-input-container'),
+        startWordInput: document.getElementById('learning-start-word-input'),
+        startBtn: document.getElementById('learning-start-btn'),
+        suggestionsContainer: document.getElementById('learning-suggestions-container'),
+        suggestionsTitle: document.getElementById('learning-suggestions-title'),
+        suggestionsVocabList: document.getElementById('learning-suggestions-vocab-list'),
+        suggestionsExplanationList: document.getElementById('learning-suggestions-explanation-list'),
+        backToStartBtn: document.getElementById('learning-back-to-start-btn'),
+        loader: document.getElementById('learning-loader'),
+        loaderText: document.getElementById('learning-loader-text'),
+        appContainer: document.getElementById('learning-app-container'),
+        cardBack: document.getElementById('learning-card-back'),
+        wordDisplay: document.getElementById('word-display'),
+        meaningDisplay: document.getElementById('meaning-display'),
+        explanationDisplay: document.getElementById('explanation-display'),
+        explanationContainer: document.getElementById('explanation-container'),
+        fixedButtons: document.getElementById('learning-fixed-buttons'),
+        nextBtn: document.getElementById('next-btn'),
+        prevBtn: document.getElementById('prev-btn'),
+        sampleBtn: document.getElementById('sample-btn'),
+        sampleBtnImg: document.getElementById('sample-btn-img'),
+        backTitle: document.getElementById('learning-back-title'),
+        backContent: document.getElementById('learning-back-content')
+    },
     init() {
-        this.elements = {
-            startScreen: document.getElementById('learning-start-screen'),
-            startInputContainer: document.getElementById('learning-start-input-container'),
-            startWordInput: document.getElementById('learning-start-word-input'),
-            startBtn: document.getElementById('learning-start-btn'),
-            suggestionsContainer: document.getElementById('learning-suggestions-container'),
-            suggestionsTitle: document.getElementById('learning-suggestions-title'),
-            suggestionsVocabList: document.getElementById('learning-suggestions-vocab-list'),
-            suggestionsExplanationList: document.getElementById('learning-suggestions-explanation-list'),
-            backToStartBtn: document.getElementById('learning-back-to-start-btn'),
-            loader: document.getElementById('learning-loader'),
-            loaderText: document.getElementById('learning-loader-text'),
-            appContainer: document.getElementById('learning-app-container'),
-            cardBack: document.getElementById('learning-card-back'),
-            wordDisplay: document.getElementById('word-display'),
-            meaningDisplay: document.getElementById('meaning-display'),
-            explanationDisplay: document.getElementById('explanation-display'),
-            explanationContainer: document.getElementById('explanation-container'),
-            fixedButtons: document.getElementById('learning-fixed-buttons'),
-            nextBtn: document.getElementById('next-btn'),
-            prevBtn: document.getElementById('prev-btn'),
-            sampleBtn: document.getElementById('sample-btn'),
-            sampleBtnImg: document.getElementById('sample-btn-img'),
-            backTitle: document.getElementById('learning-back-title'),
-            backContent: document.getElementById('learning-back-content')
-        };
         this.bindEvents();
     },
     bindEvents() {
@@ -1068,28 +1117,50 @@ const learningMode = {
         document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
         document.addEventListener('touchend', this.handleTouchEnd.bind(this));
     },
-    async loadWordList() {
+    async loadWordList(force = false) {
         const sheet = app.state.selectedSheet;
+        if (!force && this.state.isWordListReady) return;
+        if (force) {
+            localStorage.removeItem(`wordListCache_${sheet}`);
+            this.state.isWordListReady = false;
+        }
+
         try {
             const cachedData = localStorage.getItem(`wordListCache_${sheet}`);
             if (cachedData) {
                 const { timestamp, words } = JSON.parse(cachedData);
-                if (Date.now() - timestamp < 86400000) { this.state.wordList = words; this.state.isWordListReady = true; return; }
+                if (Date.now() - timestamp < 86400000) {
+                    this.state.wordList = words;
+                    this.state.isWordListReady = true;
+                    return;
+                }
             }
-        } catch (e) { console.error("Cache loading failed:", e); localStorage.removeItem(`wordListCache_${sheet}`); }
-        this.elements.loaderText.textContent = "단어 목록을 동기화하는 중...";
+        } catch (e) {
+            localStorage.removeItem(`wordListCache_${sheet}`);
+        }
+
+        this.elements.loaderText.textContent = "최신 단어 목록을 불러오는 중...";
         this.elements.loader.classList.remove('hidden');
         this.elements.startScreen.classList.add('hidden');
+
         try {
-            const data = await api.fetchFromGoogleSheet('getWords');
-            if(data.error) throw new Error(data.message);
-            this.state.wordList = data.words;
+            const dbRef = database.ref(`/${sheet}/vocabulary`);
+            const snapshot = await dbRef.get();
+            const data = snapshot.val();
+            if (!data) throw new Error("Firebase에 단어 데이터가 없습니다.");
+
+            const wordsArray = Object.values(data).sort((a, b) => a.index - b.index);
+            
+            this.state.wordList = wordsArray;
             this.state.isWordListReady = true;
-            const cachePayload = { timestamp: Date.now(), words: data.words };
+            
+            const cachePayload = { timestamp: Date.now(), words: wordsArray };
             localStorage.setItem(`wordListCache_${sheet}`, JSON.stringify(cachePayload));
         } catch (error) {
-            console.error("Word list loading failed:", error);
+            console.error("Firebase 로딩 실패:", error);
             this.showError(error.message);
+            this.state.isWordListReady = false; // 실패 시 상태를 false로 유지
+            throw error; // 에러를 상위로 전파하여 app.forceRefreshData 등에서 처리할 수 있도록 함
         } finally {
             this.elements.loader.classList.add('hidden');
             this.elements.startScreen.classList.remove('hidden');
@@ -1105,9 +1176,6 @@ const learningMode = {
     
         if (!startWord) {
             this.elements.startScreen.classList.add('hidden');
-            // NOTE: The concept of a device-specific "last index" is less relevant
-            // with user accounts. Starting from 0 or a user-saved preference would be better.
-            // For now, we'll keep it simple and start from 0 for blank input.
             this.state.currentIndex = 0;
             this.launchApp(this.state.wordList);
             return;
@@ -1178,7 +1246,8 @@ const learningMode = {
         this.elements.appContainer.classList.add('hidden');
         this.elements.loader.classList.add('hidden');
         this.elements.fixedButtons.classList.add('hidden');
-        this.state.wordList = []; this.state.isWordListReady = false; this.state.currentDisplayList = [];
+        // wordList는 유지하여 다시 로드하지 않도록 수정
+        this.state.currentDisplayList = [];
     },
     resetStartScreen() {
         this.reset();
@@ -1187,7 +1256,7 @@ const learningMode = {
         this.elements.suggestionsContainer.classList.add('hidden');
         this.elements.startWordInput.value = '';
         this.elements.startWordInput.focus();
-        this.loadWordList();
+        if (!this.state.isWordListReady) this.loadWordList();
     },
     displaySuggestions(vocabSuggestions, explanationSuggestions, title) {
         this.elements.startInputContainer.classList.add('hidden');
@@ -1270,6 +1339,19 @@ const learningMode = {
         this.state.touchstartX = this.state.touchstartY = 0;
     }
 };
+
+function levenshteinDistance(a = '', b = '') {
+    const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+    for (let i = 0; i <= a.length; i += 1) track[0][i] = i;
+    for (let j = 0; j <= b.length; j += 1) track[j][0] = j;
+    for (let j = 1; j <= b.length; j += 1) {
+        for (let i = 1; i <= a.length; i += 1) {
+            const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
+            track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator);
+        }
+    }
+    return track[b.length][a.length];
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
