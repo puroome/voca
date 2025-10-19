@@ -1249,7 +1249,7 @@ const learningMode = {
 
         // Firebase에서 데이터 가져오기
         try {
-            const dbRef = ref(rt_db, `/${grade}/vocabulary`);
+            const dbRef = ref(rt_db, `/vocabulary/${grade}`);
             const snapshot = await get(dbRef);
             const data = snapshot.val();
             if (!data) throw new Error(`Firebase에 '${grade}' 단어 데이터가 없습니다.`);
@@ -1467,4 +1467,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
