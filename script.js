@@ -273,6 +273,7 @@ const app = {
         }
     },
     async forceRefreshData() {
+        // 이 함수는 이제 Google Sheet가 아닌 Firebase에서 데이터를 다시 불러옵니다.
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
 
@@ -287,10 +288,12 @@ const app = {
         const refreshIconHTML = this.elements.refreshBtn.innerHTML;
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
+        // 로컬 캐시만 삭제하고, learningMode.loadWordList를 force 옵션으로 호출합니다.
         localStorage.removeItem(`wordListCache_${sheet}`);
         
         try {
-            await learningMode.loadWordList(true);
+            // true 옵션을 주어 Firebase로부터 강제로 새로고침하도록 수정합니다.
+            await learningMode.loadWordList(true); 
             this.showRefreshSuccessMessage();
         } catch(err) {
             console.error("Error during data refresh:", err);
@@ -1356,4 +1359,5 @@ function levenshteinDistance(a = '', b = '') {
 document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
+
 
