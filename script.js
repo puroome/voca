@@ -519,7 +519,7 @@ const ui = {
         const container = element.parentElement;
         const containerStyle = window.getComputedStyle(container);
         const containerWidth = container.clientWidth - parseFloat(containerStyle.paddingLeft) - parseFloat(containerStyle.paddingRight);
-        const minFontSize = 16;
+        const minFontSize = 12;
         while (element.scrollWidth > containerWidth && currentFontSize > minFontSize) {
             element.style.fontSize = `${--currentFontSize}px`;
         }
@@ -1586,3 +1586,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
