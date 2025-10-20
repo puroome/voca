@@ -281,6 +281,11 @@ const app = {
                 this.elements.logoutBtn.classList.add('hidden');
                 quizMode.reset();
                 learningMode.reset();
+
+                // [수정됨] 모드 선택 화면이 뜰 때 단어 목록을 미리 불러옵니다.
+                // (await를 사용하지 않아 백그라운드에서 실행됩니다.)
+                learningMode.loadWordList(false, grade);
+                
                 break;
             case 'grade':
             default:
@@ -1586,4 +1591,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
