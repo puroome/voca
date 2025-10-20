@@ -146,6 +146,11 @@ body::before {
     transform: scale(1.2) translateY(-10%);
 }
 
-#favorite-icon {
-    transition: color 0.2s, fill 0.2s;
+#favorite-btn:hover #favorite-icon {
+    transform: scale(1.2);
 }
+
+#favorite-icon {
+    transition: transform 0.2s ease-in-out, fill 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
