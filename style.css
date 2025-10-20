@@ -81,7 +81,7 @@ body::before {
 .incorrect { background-color: #dc3545 !important; color: white !important; border-color: #dc3545; }
 .disabled { pointer-events: none; opacity: 0.7; }
 
-#quiz-word {
+#word-display, #quiz-word {
     white-space: nowrap;
 }
 
@@ -92,17 +92,19 @@ body::before {
     user-select: none;
 }
 
-#quiz-word:hover, .interactive-word:hover, #word-display .word-text:hover { 
-    color: #1e40af; 
-    cursor: pointer; 
+#word-display .word-text:hover, #quiz-word:hover, .interactive-word:hover {
+    color: #1e40af;
+    cursor: pointer;
 }
-#word-display.word-clicked, #quiz-word.word-clicked, .interactive-word.word-clicked {
+
+#word-display .word-text.word-clicked, #quiz-word.word-clicked, .interactive-word.word-clicked {
     background-color: #d1fae5;
     transition: background-color 0.1s;
     border-radius: 0.375rem;
 }
 .sample-sentence:hover { 
     background-color: #f0f4f8; 
+    cursor: pointer; 
 }
 
 #learning-app-container .relative {
@@ -148,3 +150,4 @@ body::before {
 #favorite-icon {
     transition: color 0.2s, fill 0.2s;
 }
+
