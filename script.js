@@ -213,7 +213,7 @@ const app = {
         });
 
         document.addEventListener('contextmenu', (e) => {
-            const isWhitelisted = e.target.closest('.interactive-word, #word-display');
+            const isWhitelisted = e.target.closest('.interactive-word, #word-display .word-text');
             if (!isWhitelisted) e.preventDefault();
         });
 
@@ -646,7 +646,7 @@ const ui = {
         containerElement.innerHTML = '';
         sentences.filter(s => s && s.trim()).forEach(sentence => {
             const p = document.createElement('p');
-            p.className = 'p-2 rounded transition-colors hover:bg-gray-200 cursor-pointer';
+            p.className = 'p-2 rounded transition-colors';
             p.onclick = (e) => {
                 if (e.target.closest('.sentence-content-area')) return;
                 api.speak(p.textContent);
@@ -1491,10 +1491,6 @@ const learningMode = {
         this.elements.nextBtn.addEventListener('click', () => this.navigate(1));
         this.elements.prevBtn.addEventListener('click', () => this.navigate(-1));
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip());
-        this.elements.wordDisplay.addEventListener('click', () => {
-            const word = this.state.currentDisplayList[this.state.currentIndex]?.word;
-            if (word) { api.speak(word); api.copyToClipboard(word); }
-        });
         this.elements.wordDisplay.oncontextmenu = e => {
             e.preventDefault();
             const wordData = this.state.currentDisplayList[this.state.currentIndex];
@@ -1720,8 +1716,19 @@ const learningMode = {
         this.elements.cardBack.classList.remove('is-slid-up');
         const wordData = this.state.currentDisplayList[index];
         if (!wordData) return;
-        this.elements.wordDisplay.textContent = wordData.word;
+
+        this.elements.wordDisplay.innerHTML = '';
+        const wordTextSpan = document.createElement('span');
+        wordTextSpan.className = 'word-text';
+        wordTextSpan.textContent = wordData.word;
+        wordTextSpan.onclick = (e) => {
+            e.stopPropagation();
+            api.speak(wordData.word);
+            api.copyToClipboard(wordData.word);
+        };
+        this.elements.wordDisplay.appendChild(wordTextSpan);
         ui.adjustFontSize(this.elements.wordDisplay);
+        
         this.elements.meaningDisplay.innerHTML = wordData.meaning.replace(/\n/g, '<br>');
         ui.renderInteractiveText(this.elements.explanationDisplay, wordData.explanation);
         this.elements.explanationContainer.classList.toggle('hidden', !wordData.explanation || !wordData.explanation.trim());
@@ -1783,7 +1790,7 @@ const learningMode = {
         else if (e.key === ' ') { e.preventDefault(); if (!this.elements.cardBack.classList.contains('is-slid-up')) api.speak(this.elements.wordDisplay.textContent); }
     },
     handleTouchStart(e) {
-        if (!this.isLearningModeActive() || e.target.closest('.interactive-word, #word-display, #favorite-btn')) return;
+        if (!this.isLearningModeActive() || e.target.closest('.interactive-word, #word-display .word-text, #favorite-btn')) return;
         this.state.touchstartX = e.changedTouches[0].screenX; this.state.touchstartY = e.changedTouches[0].screenY;
     },
     handleTouchEnd(e) {
@@ -1862,4 +1869,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
