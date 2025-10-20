@@ -899,7 +899,7 @@ const quizMode = {
             if (this.state.sessionAnsweredInSet > 0) {
                 this.showSessionResultModal(true); // isFinal = true
             } else {
-                this.showFinishedScreen("모든 단어 학습을 완료했거나, 더 이상 만들 퀴즈가 없습니다!");
+                this.showFinishedScreen("모든 단어 학습을 완료했습니다.");
             }
         }
     },
@@ -1586,4 +1586,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
