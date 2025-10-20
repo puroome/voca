@@ -6,10 +6,6 @@
     <title>학생 학습 현황 대시보드</title>
     <link rel="icon" href="favicon.png" type="image/png">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <style>
         .loader {
             border: 4px solid #f3f3f3;
@@ -24,7 +20,7 @@
             100% { transform: rotate(360deg); }
         }
         .active-grade-btn {
-            background-color: #3B82F6; /* bg-blue-600 */
+            background-color: #3B82F6;
             color: white;
             font-weight: bold;
         }
@@ -91,7 +87,12 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+        import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+        import { getFirestore, collection, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
         const firebaseConfig = {
             apiKey: "AIzaSyBE_Gxd1haPazVK61F9sjCwK0X4Gw5rERM",
             authDomain: "wordapp-91c0a.firebaseapp.com",
@@ -99,19 +100,13 @@
             storageBucket: "wordapp-91c0a.firebasestorage.app",
             messagingSenderId: "213863780677",
             appId: "1:213863780677:web:78d6b8755866a0c5ddee2c",
-            // ================================================================
-            // ===== [수정됨] 1: Realtime Database URL 추가
-            // ================================================================
             databaseURL: "https://wordapp-91c0a-default-rtdb.asia-southeast1.firebasedatabase.app/"
         };
 
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const db = firebase.firestore();
-        // ================================================================
-        // ===== [수정됨] 2: Realtime Database (rt_db) 초기화
-        // ================================================================
-        const rt_db = firebase.database();
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const rt_db = getDatabase(app);
 
         const adminApp = {
             ADMIN_EMAIL: 'puroome@gmail.com',
@@ -145,8 +140,8 @@
             init() { this.bindAuthEvents(); },
 
             bindAuthEvents() {
-                this.elements.loginBtn.addEventListener('click', () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()));
-                this.elements.logoutBtn.addEventListener('click', () => { this.state.selectedGrade = null; auth.signOut(); });
+                this.elements.loginBtn.addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()));
+                this.elements.logoutBtn.addEventListener('click', () => { this.state.selectedGrade = null; signOut(auth); });
 
                 this.elements.gradeSelection.addEventListener('click', (e) => {
                     if (e.target.classList.contains('grade-btn')) {
@@ -159,7 +154,7 @@
                     }
                 });
 
-                auth.onAuthStateChanged(user => {
+                onAuthStateChanged(auth, user => {
                     if (user) {
                         if (user.email === this.ADMIN_EMAIL) this.showDashboard(user);
                         else this.showAccessDenied();
@@ -199,7 +194,7 @@
             },
             
             showAccessDenied() {
-                auth.signOut();
+                signOut(auth);
                 this.elements.dashboard.classList.add('hidden');
                 this.elements.loginScreen.classList.remove('hidden');
                 this.elements.authMessage.textContent = '접근 권한이 없습니다. 관리자 계정으로 로그인해주세요.';
@@ -217,8 +212,8 @@
             
             async cacheAllUsers() {
                 try {
-                    const snapshot = await db.collection('users').get();
-                    snapshot.docs.forEach(doc => { this.state.allUsers[doc.data().email] = { id: doc.id, ...doc.data() }; });
+                    const snapshot = await getDocs(collection(db, 'users'));
+                    snapshot.docs.forEach(docInst => { this.state.allUsers[docInst.data().email] = { id: docInst.id, ...docInst.data() }; });
                 } catch(e) { console.error("전체 사용자 정보 캐시 실패:", e); }
             },
             
@@ -260,48 +255,34 @@
                 });
             },
 
-            async loadStudentDetails(student, displayName, grade, clearContainer = true) {
+            async loadStudentDetails(student, grade, clearContainer = true) {
                 if (clearContainer) {
                     this.elements.detailsPrompt.classList.add('hidden');
                     this.elements.studentDetails.classList.add('hidden');
                     this.elements.studentDetailsLoader.classList.remove('hidden');
-                    this.elements.studentNameTitle.textContent = `${displayName}(${grade.replace('y','')}학년) 학습 현황`;
                 }
                 
                 try {
-                    // ================================================================
-                    // ===== [수정됨] 3: Google Script(fetch) 대신 Firebase RT_DB에서 단어 목록 로드
-                    // ================================================================
                     if (!this.state.wordLists[grade]) {
-                        console.log(`[${grade}] 단어 목록 로드 중... (from Realtime Database)`);
-                        const dbRef = rt_db.ref(`${grade}/vocabulary`);
-                        const snapshot = await dbRef.once('value');
+                        const dbRef = ref(rt_db, `${grade}/vocabulary`);
+                        const snapshot = await get(dbRef);
                         const data = snapshot.val();
                         if (!data) throw new Error(`Firebase Realtime Database에 '${grade}' 단어 데이터가 없습니다.`);
                         
-                        // v8은 Object.values를 지원하므로 학생 앱(b_script.js)과 동일하게 배열로 변환
                         const wordsArray = Object.values(data).sort((a, b) => a.id - b.id);
                         this.state.wordLists[grade] = wordsArray;
-                        console.log(`[${grade}] 단어 ${wordsArray.length}개 로드 완료.`);
                     }
-                    // ================================================================
-                    // ===== [수정됨] 끝
-                    // ================================================================
 
                     const totalWords = this.state.wordLists[grade];
-                    const progressRef = db.collection('users').doc(student.id).collection('progress').doc(grade);
-                    const progressSnap = await progressRef.get();
-                    const progressData = progressSnap.exists ? progressSnap.data() : {};
-                    
-                    // totalWords가 배열인지 확인 (이전에는 undefined일 수 있었음)
-                    console.log(`[${grade}] 통계 계산 시작. 총 단어:`, totalWords ? totalWords.length : 0);
+                    const progressRef = doc(db, 'users', student.id, 'progress', grade);
+                    const progressSnap = await getDoc(progressRef);
+                    const progressData = progressSnap.exists() ? progressSnap.data() : {};
                     
                     const stats = this.calculateStats(totalWords, progressData);
                     this.renderStats(stats, grade, clearContainer);
 
                 } catch (error) {
                     console.error(`[${grade}] 학생 통계 로딩 실패:`, error);
-                    // 컨테이너가 지워지지 않았을 때(loadAllDetailsForStudent 호출 시) 오류 메시지를 추가합니다.
                     if (!clearContainer) {
                          const errorEl = document.createElement('p');
                          errorEl.className = 'text-red-500 text-sm mt-2';
@@ -322,7 +303,7 @@
                 this.elements.detailsPrompt.classList.add('hidden');
                 this.elements.studentDetails.classList.add('hidden');
                 this.elements.studentDetailsLoader.classList.remove('hidden');
-                this.elements.statsContainer.innerHTML = ''; // 통계 컨테이너 초기화
+                this.elements.statsContainer.innerHTML = '';
 
                 let assignedGrade = 'unassigned';
                 for (const gradeKey of ['1y', '2y', '3y']) {
@@ -334,10 +315,8 @@
                 const gradeText = assignedGrade === 'unassigned' ? '(미배정)' : `(${assignedGrade.replace('y', '')}학년)`;
                 this.elements.studentNameTitle.textContent = `${displayName} ${gradeText} 학습 현황`;
                 
-                // 1, 2, 3학년 데이터를 순차적으로 로드하고 렌더링
-                for (const grade of ['1y', '2y', '3y']) {
-                    await this.loadStudentDetails(student, displayName, grade, false);
-                }
+                const detailPromises = ['1y', '2y', '3y'].map(grade => this.loadStudentDetails(student, grade, false));
+                await Promise.all(detailPromises);
                 
                 this.elements.studentDetailsLoader.classList.add('hidden');
                 this.elements.studentDetails.classList.remove('hidden');
@@ -345,13 +324,11 @@
             
             calculateStats(totalWords, progressData) {
                 const counts = { learned: 0, learning: 0, review: 0, unseen: 0 };
-                // totalWords가 undefined이거나 배열이 아닌 경우를 방어
                 if (!totalWords || !Array.isArray(totalWords) || totalWords.length === 0) {
                      return { ...counts, total: 0 };
                 }
 
                 totalWords.forEach(wordObj => {
-                    // wordObj가 객체이고 word 속성을 가졌는지 확인
                     if (!wordObj || !wordObj.word) return; 
 
                     const progress = progressData[wordObj.word];
@@ -368,12 +345,10 @@
             },
 
             renderStats(stats, grade, clearContainer) {
-                // [수정됨] total이 0이어도 "학습 현황 없음"을 표시하기 위해 return 조건 변경
                 if (stats.total === 0 && clearContainer) {
                     this.elements.statsContainer.innerHTML = '<p class="text-gray-500">아직 학습 데이터가 없습니다.</p>';
                     return;
                 }
-                // [수정됨] total이 0인 학년은 아예 표시하지 않음 (loadAllDetailsForStudent 호출 시)
                 if (stats.total === 0 && !clearContainer) {
                     return;
                 }
@@ -405,7 +380,6 @@
                         </div>`;
                 });
                 
-                // clearContainer가 false일 때 (즉, loadAllDetailsForStudent에서 호출될 때)만 학년 제목 추가
                 const titleHtml = clearContainer ? '' : `<h3 class="text-xl font-bold text-gray-700 border-t pt-4 mt-6">${grade.replace('y','')}학년 (총 ${stats.total}단어)</h3>`;
                 statCard.innerHTML = `
                     ${titleHtml}
