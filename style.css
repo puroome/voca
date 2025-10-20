@@ -81,7 +81,7 @@ body::before {
 .incorrect { background-color: #dc3545 !important; color: white !important; border-color: #dc3545; }
 .disabled { pointer-events: none; opacity: 0.7; }
 
-#word-display, #quiz-word {
+#quiz-word {
     white-space: nowrap;
 }
 
@@ -92,7 +92,7 @@ body::before {
     user-select: none;
 }
 
-#word-display:hover, #quiz-word:hover, .interactive-word:hover { 
+#quiz-word:hover, .interactive-word:hover, #word-display .word-text:hover { 
     color: #1e40af; 
     cursor: pointer; 
 }
@@ -103,7 +103,6 @@ body::before {
 }
 .sample-sentence:hover { 
     background-color: #f0f4f8; 
-    cursor: pointer; 
 }
 
 #learning-app-container .relative {
