@@ -543,6 +543,7 @@ const api = {
 };
 
 const ui = {
+    // 요청 사항 2: word 앱의 발음 제외 어휘 목록 적용
     nonInteractiveWords: new Set(['a', 'an', 'the', 'I', 'me', 'my', 'mine', 'you', 'your', 'yours', 'he', 'him', 'his', 'she', 'her', 'hers', 'it', 'its', 'we', 'us', 'our', 'ours', 'they', 'them', 'their', 'theirs', 'this', 'that', 'these', 'those', 'myself', 'yourself', 'himself', 'herself', 'itself', 'ourselves', 'yourselves', 'something', 'anybody', 'anyone', 'anything', 'nobody', 'no one', 'nothing', 'everybody', 'everyone', 'everything', 'all', 'any', 'both', 'each', 'either', 'every', 'few', 'little', 'many', 'much', 'neither', 'none', 'one', 'other', 'several', 'some', 'about', 'above', 'across', 'after', 'against', 'along', 'among', 'around', 'at', 'before', 'behind', 'below', 'beneath', 'beside', 'between', 'beyond', 'by', 'down', 'during', 'for', 'from', 'in', 'inside', 'into', 'like', 'near', 'of', 'off', 'on', 'onto', 'out', 'outside', 'over', 'past', 'since', 'through', 'throughout', 'to', 'toward', 'under', 'underneath', 'until', 'unto', 'up', 'upon', 'with', 'within', 'without', 'and', 'but', 'or', 'nor', 'for', 'yet', 'so', 'after', 'although', 'as', 'because', 'before', 'if', 'once', 'since', 'than', 'that', 'though', 'till', 'unless', 'until', 'when', 'whenever', 'where', 'whereas', 'wherever', 'whether', 'while', 'that', 'which', 'who', 'whom', 'whose', 'when', 'where', 'why', 'what', 'whatever', 'whichever', 'whoever', 'whomever', 'who', 'whom', 'whose', 'what', 'which', 'when', 'where', 'why', 'how', 'be', 'am', 'is', 'are', 'was', 'were', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'done', 'can', 'could', 'may', 'might', 'must', 'shall', 'should', 'will', 'would', 'ought', 'not', 'very', 'too', 'so', 'just', 'well', 'often', 'always', 'never', 'sometimes', 'here', 'there', 'now', 'then', 'again', 'also', 'ever', 'even', 'how', 'quite', 'rather', 'soon', 'still', 'more', 'most', 'less', 'least', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'then', 'there', 'here', "don't", "didn't", "can't", "couldn't", "she's", "he's", "i'm", "you're", "they're", "we're", "it's", "that's"]),
     
     adjustFontSize(element) {
@@ -617,7 +618,7 @@ const ui = {
                 span.onclick = (e) => {
                     if (isForSampleSentence) e.stopPropagation();
                     clearTimeout(app.state.longPressTimer);
-                    api.speak(part, 'word');
+                    api.speak(part);
                     api.copyToClipboard(part);
                 };
                 span.oncontextmenu = (e) => {
@@ -636,7 +637,11 @@ const ui = {
                 span.addEventListener('touchend', () => { clearTimeout(app.state.longPressTimer); });
                 fragment.appendChild(span);
             } else {
-                fragment.appendChild(document.createTextNode(part));
+                 // 요청 사항 2: 발음 제외 어휘 클릭 시 이벤트 버블링 방지
+                const span = document.createElement('span');
+                span.textContent = part;
+                span.onclick = (e) => e.stopPropagation();
+                fragment.appendChild(span);
             }
         });
         return fragment;
@@ -645,8 +650,10 @@ const ui = {
         containerElement.innerHTML = '';
         sentences.filter(s => s && s.trim()).forEach(sentence => {
             const p = document.createElement('p');
-            p.className = 'p-2 rounded transition-colors';
+            // 요청 사항 2: 'sample-sentence' 클래스 추가하여 CSS hover 효과 적용
+            p.className = 'p-2 rounded transition-colors sample-sentence';
             p.onclick = (e) => {
+                // word.js와 동일한 로직: .interactive-word 클릭 시 문장 전체 재생 방지
                 if (e.target.closest('.sentence-content-area .interactive-word')) return;
                 api.speak(p.textContent);
                 this.handleSentenceMouseOver(e, p.textContent);
@@ -1863,4 +1870,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
