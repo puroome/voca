@@ -8,6 +8,12 @@ body {
     font-family: 'Noto Sans KR', sans-serif;
     -webkit-tap-highlight-color: transparent;
     background-color: #f1f5f9;
+
+    /* 텍스트/이미지 드래그 선택 방지 */
+    -webkit-user-select: none; /* Safari, Chrome */
+    -moz-user-select: none;    /* Firefox */
+    -ms-user-select: none;     /* IE/Edge */
+    user-select: none;         /* Standard */
 }
 
 body::before {
@@ -163,4 +169,3 @@ body::before {
 #favorite-icon {
     transition: color 0.2s, fill 0.2s;
 }
-
