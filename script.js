@@ -856,10 +856,20 @@ const utils = {
                 typeStats.correct += 1;
             }
 
-            const updates = {};
-            updates[`${today}.${quizType}`] = typeStats;
-            await setDoc(historyRef, updates, { merge: true });
-        } catch(e) {}
+            const fieldPath = `${today}.${quizType}`;
+            await updateDoc(historyRef, {
+                [fieldPath]: typeStats
+            });
+        } catch(e) {
+            if (e.code === 'not-found') {
+                const typeStats = { correct: isCorrect ? 1 : 0, total: 1 };
+                await setDoc(historyRef, {
+                    [today]: {
+                        [quizType]: typeStats
+                    }
+                });
+            }
+        }
     }
 };
 
@@ -1824,4 +1834,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
