@@ -826,21 +826,35 @@ const utils = {
     },
     
     async saveStudyHistory(seconds) {
-        if (!app.state.user || seconds < 1) return;
+        if (!app.state.user || seconds < 1 || !app.state.selectedSheet) return;
+        const grade = app.state.selectedSheet;
         const today = new Date().toISOString().slice(0, 10);
         const historyRef = doc(db, 'users', app.state.user.uid, 'history', 'study');
         
         try {
             const docSnap = await getDoc(historyRef);
-            const currentSeconds = docSnap.exists() ? (docSnap.data()[today] || 0) : 0;
-            const updates = {};
-            updates[today] = currentSeconds + seconds;
-            await setDoc(historyRef, updates, { merge: true });
-        } catch (e) {}
+            const data = docSnap.exists() ? docSnap.data() : {};
+            const dailyData = data[today] || {};
+            const currentSeconds = dailyData[grade] || 0;
+
+            const fieldPath = `${today}.${grade}`;
+            await updateDoc(historyRef, {
+                [fieldPath]: currentSeconds + seconds
+            });
+        } catch(e) {
+            if (e.code === 'not-found') {
+                 await setDoc(historyRef, {
+                    [today]: {
+                        [grade]: seconds
+                    }
+                });
+            }
+        }
     },
 
     async saveQuizHistory(quizType, isCorrect) {
-        if (!app.state.user || !quizType) return;
+        if (!app.state.user || !quizType || !app.state.selectedSheet) return;
+        const grade = app.state.selectedSheet;
         const today = new Date().toISOString().slice(0, 10);
         const historyRef = doc(db, 'users', app.state.user.uid, 'history', 'quiz');
         
@@ -848,15 +862,16 @@ const utils = {
             const docSnap = await getDoc(historyRef);
             const data = docSnap.exists() ? docSnap.data() : {};
             
-            const todayStats = data[today] || {};
-            const typeStats = todayStats[quizType] || { correct: 0, total: 0 };
+            const todayData = data[today] || {};
+            const gradeData = todayData[grade] || {};
+            const typeStats = gradeData[quizType] || { correct: 0, total: 0 };
 
             typeStats.total += 1;
             if (isCorrect) {
                 typeStats.correct += 1;
             }
 
-            const fieldPath = `${today}.${quizType}`;
+            const fieldPath = `${today}.${grade}.${quizType}`;
             await updateDoc(historyRef, {
                 [fieldPath]: typeStats
             });
@@ -865,7 +880,9 @@ const utils = {
                 const typeStats = { correct: isCorrect ? 1 : 0, total: 1 };
                 await setDoc(historyRef, {
                     [today]: {
-                        [quizType]: typeStats
+                        [grade]: {
+                           [quizType]: typeStats
+                        }
                     }
                 });
             }
@@ -921,7 +938,8 @@ const dashboard = {
     },
 
     async renderSummaryStats() {
-        if (!app.state.user) return;
+        if (!app.state.user || !app.state.selectedSheet) return;
+        const grade = app.state.selectedSheet;
         
         try {
             const studyHistoryDoc = await getDoc(doc(db, 'users', app.state.user.uid, 'history', 'study'));
@@ -941,12 +959,16 @@ const dashboard = {
                     const d = new Date(today);
                     d.setDate(d.getDate() - i);
                     const dateString = d.toISOString().slice(0, 10);
-                    totalSeconds += studyHistory[dateString] || 0;
-                    if (quizHistory[dateString]) {
+                    
+                    if(studyHistory[dateString]){
+                        totalSeconds += studyHistory[dateString][grade] || 0;
+                    }
+
+                    if (quizHistory[dateString] && quizHistory[dateString][grade]) {
                         for(const type in quizStats){
-                            if(quizHistory[dateString][type]){
-                                quizStats[type].correct += quizHistory[dateString][type].correct || 0;
-                                quizStats[type].total += quizHistory[dateString][type].total || 0;
+                            if(quizHistory[dateString][grade][type]){
+                                quizStats[type].correct += quizHistory[dateString][grade][type].correct || 0;
+                                quizStats[type].total += quizHistory[dateString][grade][type].total || 0;
                             }
                         }
                     }
@@ -955,13 +977,19 @@ const dashboard = {
             };
             
             const totalStats = (() => {
-                let totalSeconds = Object.values(studyHistory).reduce((sum, seconds) => sum + seconds, 0);
+                let totalSeconds = 0;
+                Object.values(studyHistory).forEach(dailyData => {
+                    totalSeconds += dailyData[grade] || 0;
+                });
+
                 const quizStats = { 'MULTIPLE_CHOICE_MEANING': { correct: 0, total: 0 }, 'FILL_IN_THE_BLANK': { correct: 0, total: 0 }, 'MULTIPLE_CHOICE_DEFINITION': { correct: 0, total: 0 }};
                 Object.values(quizHistory).forEach(dailyStats => {
-                    for(const type in quizStats){
-                        if(dailyStats[type]){
-                            quizStats[type].correct += dailyStats[type].correct || 0;
-                            quizStats[type].total += dailyStats[type].total || 0;
+                    if (dailyStats[grade]) {
+                        for(const type in quizStats){
+                            if(dailyStats[grade][type]){
+                                quizStats[type].correct += dailyStats[grade][type].correct || 0;
+                                quizStats[type].total += dailyStats[grade][type].total || 0;
+                            }
                         }
                     }
                 });
@@ -1834,5 +1862,6 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
