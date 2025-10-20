@@ -5,7 +5,7 @@ let firebaseApp, auth, db, rt_db;
 let initializeApp;
 let getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup;
 let getDatabase, ref, get;
-let getFirestore, doc, getDoc, setDoc;
+let getFirestore, doc, getDoc, setDoc;ㅍ
 
 document.addEventListener('firebaseSDKLoaded', () => {
     // index.html에서 로드된 Firebase SDK 함수들을 전역 변수에 할당
@@ -519,7 +519,7 @@ const ui = {
         const container = element.parentElement;
         const containerStyle = window.getComputedStyle(container);
         const containerWidth = container.clientWidth - parseFloat(containerStyle.paddingLeft) - parseFloat(containerStyle.paddingRight);
-        const minFontSize = 16;
+        const minFontSize = 12;
         while (element.scrollWidth > containerWidth && currentFontSize > minFontSize) {
             element.style.fontSize = `${--currentFontSize}px`;
         }
@@ -1586,4 +1586,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
