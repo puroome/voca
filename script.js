@@ -1,29 +1,20 @@
-// ================================================================
-// 전역 변수 및 Firebase SDK 초기화 (모듈러 방식)
-// ================================================================
 let firebaseApp, auth, db, rt_db;
 let initializeApp;
 let getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup;
 let getDatabase, ref, get;
-let getFirestore, doc, getDoc, setDoc;
+let getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, collection;
 
 document.addEventListener('firebaseSDKLoaded', () => {
-    // index.html에서 로드된 Firebase SDK 함수들을 전역 변수에 할당
     ({ 
         initializeApp,
         getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
         getDatabase, ref, get,
-        getFirestore, doc, getDoc, setDoc,
+        getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, collection,
     } = window.firebaseSDK);
     
-    // 앱 시작
     app.init();
 });
 
-
-// ================================================================
-// App Main Controller
-// ================================================================
 const app = {
     config: {
         firebaseConfig: {
@@ -33,11 +24,9 @@ const app = {
             storageBucket: "wordapp-91c0a.firebasestorage.app",
             messagingSenderId: "213863780677",
             appId: "1:213863780677:web:78d6b8755866a0c5ddee2c",
-            // Realtime Database URL 추가
             databaseURL: "https://wordapp-91c0a-default-rtdb.asia-southeast1.firebasedatabase.app/"
         },
         SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec",
-        // A앱의 API 키 이식
         MERRIAM_WEBSTER_API_KEY: "02d1892d-8fb1-4e2d-bc43-4ddd4a47eab3",
         sheetLinks: {
             '1y': 'https://docs.google.com/spreadsheets/d/1r7fWUV1ea9CU-s2iSOwLKexEe2_7L8oUKhK0n1DpDUM/edit?usp=sharing',
@@ -47,8 +36,9 @@ const app = {
         backgroundImages: []
     },
     state: {
-        user: null, // 로그인한 사용자 정보
-        currentProgress: {}, // 현재 학년의 학습 진행 상황 (Firestore)
+        user: null,
+        currentProgress: {},
+        favorites: [],
         selectedSheet: '',
         isAppReady: false,
         translateDebounceTimeout: null,
@@ -84,6 +74,7 @@ const app = {
         searchNaverContextBtn: document.getElementById('search-naver-context-btn'),
         searchLongmanContextBtn: document.getElementById('search-longman-context-btn'),
         progressBarContainer: document.getElementById('progress-bar-container'),
+        selectFavoritesBtn: document.getElementById('select-favorites-btn'),
     },
     init() {
         firebaseApp = initializeApp(this.config.firebaseConfig);
@@ -99,10 +90,12 @@ const app = {
         quizMode.init();
         learningMode.init();
         dashboard.init();
+        studyTracker.init();
         
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 this.state.user = user;
+                studyTracker.start();
 
                 const userRef = doc(db, 'users', user.uid);
                 await setDoc(userRef, {
@@ -124,7 +117,7 @@ const app = {
                 
                 let initialState = { view: 'grade' };
                 if (grade && ['1y', '2y', '3y'].includes(grade)) {
-                    if (['mode', 'quiz', 'learning', 'dashboard', 'mistakeReview'].includes(view)) {
+                    if (['mode', 'quiz', 'learning', 'dashboard', 'mistakeReview', 'favorites'].includes(view)) {
                         initialState = { view: view, grade: grade };
                     }
                 } else if (['1y', '2y', '3y'].includes(view)) { 
@@ -135,6 +128,7 @@ const app = {
                 this._renderView(initialState.view, initialState.grade);
             } else {
                 this.state.user = null;
+                studyTracker.stop();
                 this.elements.loginScreen.classList.remove('hidden');
                 this.elements.mainContainer.classList.add('hidden');
                 document.body.classList.add('items-center');
@@ -164,6 +158,7 @@ const app = {
         document.getElementById('select-learning-btn').addEventListener('click', () => this.navigateTo('learning', this.state.selectedSheet));
         document.getElementById('select-dashboard-btn').addEventListener('click', () => this.navigateTo('dashboard', this.state.selectedSheet));
         document.getElementById('select-mistakes-btn').addEventListener('click', () => this.navigateTo('mistakeReview', this.state.selectedSheet));
+        this.elements.selectFavoritesBtn.addEventListener('click', () => this.navigateTo('favorites', this.state.selectedSheet));
 
         this.elements.homeBtn.addEventListener('click', () => this.navigateTo('mode', this.state.selectedSheet));
         this.elements.backToGradeSelectionBtn.addEventListener('click', () => this.navigateTo('grade'));
@@ -201,7 +196,7 @@ const app = {
     },
     navigateTo(view, grade, options = {}) {
         const currentState = history.state || {};
-        if (currentState.view === view && currentState.grade === grade && view !== 'mistakeReview') return;
+        if (currentState.view === view && currentState.grade === grade && !['mistakeReview', 'favorites'].includes(view)) return;
 
         let hash = '';
         if (view !== 'grade' && view !== null) {
@@ -246,6 +241,7 @@ const app = {
         } else {
             this.state.selectedSheet = '';
             this.state.currentProgress = {};
+            this.state.favorites = [];
         }
 
         switch (view) {
@@ -274,6 +270,12 @@ const app = {
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
                 learningMode.startMistakeReview(options.mistakeWords);
                 break;
+            case 'favorites':
+                this.elements.learningModeContainer.classList.remove('hidden');
+                this.elements.homeBtn.classList.remove('hidden');
+                this.elements.backToGradeSelectionBtn.classList.remove('hidden');
+                learningMode.startFavoriteMode();
+                break;
             case 'mode':
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
@@ -299,6 +301,7 @@ const app = {
             this.elements.homeBtn, this.elements.refreshBtn, this.elements.backToGradeSelectionBtn,
             document.getElementById('select-learning-btn'), document.getElementById('select-quiz-btn'),
             document.getElementById('select-dashboard-btn'), document.getElementById('select-mistakes-btn'),
+            this.elements.selectFavoritesBtn,
         ].filter(el => el);
 
         elementsToDisable.forEach(el => el.classList.add('pointer-events-none', 'opacity-50'));
@@ -379,6 +382,67 @@ const app = {
         }
     },
 };
+
+const studyTracker = {
+    inactivityTimer: null,
+    sessionSeconds: 0,
+    saveInterval: null,
+    
+    init() {
+        document.addEventListener('visibilitychange', this.handleVisibilityChange.bind(this));
+    },
+
+    start() {
+        this.stop();
+        this.sessionSeconds = 0;
+        this.resetInactivityTimer();
+        this.saveInterval = setInterval(() => this.saveData(), 10000);
+        document.body.addEventListener('click', this.recordActivity.bind(this), true);
+        document.body.addEventListener('keydown', this.recordActivity.bind(this), true);
+    },
+
+    stop() {
+        clearTimeout(this.inactivityTimer);
+        clearInterval(this.saveInterval);
+        this.saveData();
+        this.sessionSeconds = 0;
+        document.body.removeEventListener('click', this.recordActivity.bind(this), true);
+        document.body.removeEventListener('keydown', this.recordActivity.bind(this), true);
+    },
+
+    recordActivity() {
+        if (this.inactivityTimer) {
+            this.sessionSeconds += 1;
+        }
+        this.resetInactivityTimer();
+    },
+
+    resetInactivityTimer() {
+        clearTimeout(this.inactivityTimer);
+        this.inactivityTimer = setTimeout(() => {
+            this.inactivityTimer = null;
+        }, 30000); 
+    },
+    
+    handleVisibilityChange() {
+        if (document.visibilityState === 'hidden') {
+            this.saveData();
+            clearTimeout(this.inactivityTimer);
+            this.inactivityTimer = null;
+        } else {
+            this.resetInactivityTimer();
+        }
+    },
+
+    async saveData() {
+        const secondsToSave = this.sessionSeconds;
+        this.sessionSeconds = 0;
+        if (secondsToSave > 0 && app.state.user && app.state.selectedSheet) {
+            await utils.saveStudyTime(secondsToSave);
+        }
+    }
+};
+
 
 const translationDBCache = {
     db: null, dbName: 'translationCacheDB_B', storeName: 'translationStore',
@@ -517,8 +581,7 @@ const ui = {
         element.style.fontSize = '';
         let currentFontSize = parseFloat(window.getComputedStyle(element).fontSize);
         const container = element.parentElement;
-        const containerStyle = window.getComputedStyle(container);
-        const containerWidth = container.clientWidth - parseFloat(containerStyle.paddingLeft) - parseFloat(containerStyle.paddingRight);
+        const containerWidth = container.clientWidth - parseFloat(window.getComputedStyle(container).paddingLeft) - parseFloat(window.getComputedStyle(container).paddingRight);
         const minFontSize = 12;
         while (element.scrollWidth > containerWidth && currentFontSize > minFontSize) {
             element.style.fontSize = `${--currentFontSize}px`;
@@ -638,37 +701,42 @@ const utils = {
         const docRef = this._getProgressRef();
         if (!docRef) {
             app.state.currentProgress = {};
+            app.state.favorites = [];
             return;
         }
         try {
             const docSnap = await getDoc(docRef);
-            app.state.currentProgress = docSnap.exists() ? docSnap.data() : {};
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                app.state.currentProgress = data.progress || {};
+                app.state.favorites = data.favorites || [];
+            } else {
+                app.state.currentProgress = {};
+                app.state.favorites = [];
+            }
         } catch (error) {
             console.error("Error loading user progress:", error);
             app.state.currentProgress = {};
+            app.state.favorites = [];
         }
     },
-
-    async _saveCurrentProgress() {
+    
+    async _saveProgress(progressData) {
         const docRef = this._getProgressRef();
         if (!docRef) return;
         try {
-            await setDoc(docRef, app.state.currentProgress, { merge: true });
+            await setDoc(docRef, { progress: progressData }, { merge: true });
         } catch (error) {
             console.error("Error saving user progress:", error);
         }
     },
     
-    // ===== [추가된 코드 시작] =====
     async getLastLearnedIndex() {
         const docRef = this._getProgressRef();
         if (!docRef) return 0;
         try {
             const docSnap = await getDoc(docRef);
-            if (docSnap.exists() && docSnap.data().lastLearnedIndex !== undefined) {
-                return docSnap.data().lastLearnedIndex;
-            }
-            return 0;
+            return (docSnap.exists() && docSnap.data().lastLearnedIndex) || 0;
         } catch (error) {
             console.error("Error loading last learned index:", error);
             return 0;
@@ -684,7 +752,6 @@ const utils = {
             console.error("Error saving last learned index:", error);
         }
     },
-    // ===== [추가된 코드 종료] =====
     
     getWordStatus(word) {
         const progress = app.state.currentProgress[word];
@@ -707,7 +774,8 @@ const utils = {
         }
         app.state.currentProgress[word][quizType] = result;
         
-        this._saveCurrentProgress(); 
+        this._saveProgress(app.state.currentProgress);
+        this.saveQuizResult(word, result === 'correct');
     },
 
     getCorrectlyAnsweredWords(quizType) {
@@ -722,6 +790,71 @@ const utils = {
         return allWords
             .filter(wordObj => this.getWordStatus(wordObj.word) === 'review')
             .map(wordObj => wordObj.word);
+    },
+
+    async toggleFavorite(word) {
+        const docRef = this._getProgressRef();
+        if (!docRef) return;
+        const isFavorite = app.state.favorites.includes(word);
+        try {
+            if (isFavorite) {
+                await updateDoc(docRef, { favorites: arrayRemove(word) });
+                app.state.favorites = app.state.favorites.filter(w => w !== word);
+            } else {
+                await updateDoc(docRef, { favorites: arrayUnion(word) });
+                app.state.favorites.push(word);
+            }
+            return !isFavorite;
+        } catch (error) {
+            console.error("Error toggling favorite:", error);
+            return isFavorite;
+        }
+    },
+
+    async getHistoryForChart(dataType, days) {
+        if (!app.state.user || !app.state.selectedSheet) return [];
+        const path = `users/${app.state.user.uid}/${dataType}/${app.state.selectedSheet}`;
+        const today = new Date();
+        const promises = [];
+        for (let i = 0; i < days; i++) {
+            const d = new Date(today);
+            d.setDate(d.getDate() - i);
+            const dateString = d.toISOString().split('T')[0];
+            promises.push(getDoc(doc(db, path, dateString)));
+        }
+        const snapshots = await Promise.all(promises);
+        return snapshots.map(snap => snap.exists() ? snap.data() : null).reverse();
+    },
+
+    async saveStudyTime(seconds) {
+        if (!app.state.user || !app.state.selectedSheet) return;
+        const dateString = new Date().toISOString().split('T')[0];
+        const docRef = doc(db, `users/${app.state.user.uid}/studyHistory/${app.state.selectedSheet}`, dateString);
+        try {
+            const docSnap = await getDoc(docRef);
+            const currentSeconds = docSnap.exists() ? docSnap.data().seconds : 0;
+            await setDoc(docRef, { seconds: currentSeconds + seconds });
+        } catch (e) {
+            console.error("학습 시간 저장 실패", e);
+        }
+    },
+    
+    async saveQuizResult(word, isCorrect) {
+        if (!app.state.user || !app.state.selectedSheet) return;
+        const dateString = new Date().toISOString().split('T')[0];
+        const docRef = doc(db, `users/${app.state.user.uid}/quizHistory/${app.state.selectedSheet}`, dateString);
+        try {
+            const docSnap = await getDoc(docRef);
+            const data = docSnap.exists() ? docSnap.data() : { correct: 0, incorrect: 0 };
+            if (isCorrect) {
+                data.correct += 1;
+            } else {
+                data.incorrect += 1;
+            }
+            await setDoc(docRef, data);
+        } catch (e) {
+            console.error("퀴즈 결과 저장 실패", e);
+        }
     }
 };
 
@@ -729,6 +862,12 @@ const dashboard = {
     elements: {
         container: document.getElementById('dashboard-container'),
         content: document.getElementById('dashboard-content'),
+        timeChartCanvas: document.getElementById('time-chart'),
+        accuracyChartCanvas: document.getElementById('accuracy-chart'),
+    },
+    charts: {
+        time: null,
+        accuracy: null,
     },
     init() {},
     async show() {
@@ -737,6 +876,7 @@ const dashboard = {
             await learningMode.loadWordList();
         }
         this.render();
+        this.renderCharts();
     },
     render() {
         const allWords = learningMode.state.wordList[app.state.selectedSheet] || [];
@@ -783,6 +923,57 @@ const dashboard = {
 
         contentHTML += `</div></div>`;
         this.elements.content.innerHTML = contentHTML;
+    },
+    async renderCharts() {
+        const days = 30;
+        const timeData = await utils.getHistoryForChart('studyHistory', days);
+        const quizData = await utils.getHistoryForChart('quizHistory', days);
+        
+        const labels = Array.from({length: days}, (_, i) => {
+            const d = new Date();
+            d.setDate(d.getDate() - (days - 1) + i);
+            return `${d.getMonth() + 1}/${d.getDate()}`;
+        });
+
+        const timeDataset = timeData.map(d => d ? (d.seconds / 60).toFixed(1) : 0);
+        const accuracyDataset = quizData.map(d => {
+            if (!d || (d.correct + d.incorrect === 0)) return 0;
+            return ((d.correct / (d.correct + d.incorrect)) * 100).toFixed(0);
+        });
+
+        if (this.charts.time) this.charts.time.destroy();
+        this.charts.time = new Chart(this.elements.timeChartCanvas, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: '학습 시간 (분)',
+                    data: timeDataset,
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: { maintainAspectRatio: false }
+        });
+
+        if (this.charts.accuracy) this.charts.accuracy.destroy();
+        this.charts.accuracy = new Chart(this.elements.accuracyChartCanvas, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: '퀴즈 정답률 (%)',
+                    data: accuracyDataset,
+                    borderColor: 'rgb(22, 163, 74)',
+                    backgroundColor: 'rgba(22, 163, 74, 0.2)',
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
+        });
     }
 };
 
@@ -897,9 +1088,9 @@ const quizMode = {
             this.renderQuiz(nextQuiz);
         } else {
             if (this.state.sessionAnsweredInSet > 0) {
-                this.showSessionResultModal(true); // isFinal = true
+                this.showSessionResultModal(true); 
             } else {
-                this.showFinishedScreen("You've learned every word. No quizzes remaining.");
+                this.showFinishedScreen("모든 단어 학습을 완료했거나, 더 이상 만들 퀴즈가 없습니다!");
             }
         }
     },
@@ -1090,7 +1281,6 @@ const quizMode = {
         app.navigateTo('mistakeReview', app.state.selectedSheet, { mistakeWords: mistakes });
     },
     async preloadInitialQuizzes() {
-        console.log("초기 영영퀴즈 사전 로딩을 시작합니다...");
         for (const grade of ['1y', '2y', '3y']) {
             if (!learningMode.state.isWordListReady[grade]) {
                 await learningMode.loadWordList(false, grade);
@@ -1122,7 +1312,6 @@ const quizMode = {
                     const quiz = this.createDefinitionQuiz(wordData, allWords, definition);
                     if (quiz) {
                         this.state.preloadedDefinitionQuizzes[grade] = quiz;
-                        console.log(`[${grade}] 영영퀴즈 사전 로딩 성공: ${wordData.word}`);
                         return;
                     }
                 }
@@ -1209,6 +1398,7 @@ const learningMode = {
         isWordListReady: { '1y': false, '2y': false, '3y': false },
         currentIndex: 0,
         isMistakeMode: false,
+        isFavoriteMode: false,
         touchstartX: 0, touchstartY: 0, currentDisplayList: [],
         isDragging: false,
     },
@@ -1242,6 +1432,8 @@ const learningMode = {
             progressBarTrack: document.getElementById('progress-bar-track'),
             progressBarFill: document.getElementById('progress-bar-fill'),
             progressBarHandle: document.getElementById('progress-bar-handle'),
+            favoriteBtn: document.getElementById('favorite-btn'),
+            favoriteIcon: document.getElementById('favorite-icon'),
         };
         this.bindEvents();
     },
@@ -1258,6 +1450,8 @@ const learningMode = {
         this.elements.nextBtn.addEventListener('click', () => this.navigate(1));
         this.elements.prevBtn.addEventListener('click', () => this.navigate(-1));
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip());
+        this.elements.favoriteBtn.addEventListener('click', () => this.toggleFavorite());
+        
         this.elements.wordDisplay.addEventListener('click', () => {
             const word = this.state.currentDisplayList[this.state.currentIndex]?.word;
             if (word) { api.speak(word); api.copyToClipboard(word); }
@@ -1271,7 +1465,6 @@ const learningMode = {
         this.elements.wordDisplay.addEventListener('touchstart', e => { wordDisplayTouchMove = false; clearTimeout(app.state.longPressTimer); app.state.longPressTimer = setTimeout(() => { const wordData = this.state.currentDisplayList[this.state.currentIndex]; if (!wordDisplayTouchMove && wordData) ui.showWordContextMenu(e, wordData.word); }, 700); }, { passive: true });
         this.elements.wordDisplay.addEventListener('touchmove', () => { wordDisplayTouchMove = true; clearTimeout(app.state.longPressTimer); });
         this.elements.wordDisplay.addEventListener('touchend', () => clearTimeout(app.state.longPressTimer));
-        document.addEventListener('mousedown', this.handleMiddleClick.bind(this));
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
         document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
         document.addEventListener('touchend', this.handleTouchEnd.bind(this));
@@ -1337,6 +1530,7 @@ const learningMode = {
         }
         
         this.state.isMistakeMode = false;
+        this.state.isFavoriteMode = false;
         const currentWordList = this.state.wordList[grade];
         const startWord = this.elements.startWordInput.value.trim().toLowerCase();
     
@@ -1373,7 +1567,7 @@ const learningMode = {
         const levenshteinSuggestions = currentWordList
             .map((item, index) => ({
                 word: item.word, index,
-                distance: levenshteinDistance(startWord, item.word.toLowerCase())
+                distance: this.levenshteinDistance(startWord, item.word.toLowerCase())
             }))
             .sort((a, b) => a.distance - b.distance)
             .slice(0, 5)
@@ -1389,6 +1583,7 @@ const learningMode = {
     },
     async startMistakeReview(mistakeWordsFromQuiz) {
         this.state.isMistakeMode = true;
+        this.state.isFavoriteMode = false;
         const grade = app.state.selectedSheet;
         if (!this.state.isWordListReady[grade]) { await this.loadWordList(); if (!this.state.isWordListReady[grade]) return; }
         
@@ -1402,6 +1597,24 @@ const learningMode = {
         const mistakeWordList = this.state.wordList[grade].filter(wordObj => incorrectWords.includes(wordObj.word));
         this.state.currentIndex = 0;
         this.launchApp(mistakeWordList);
+    },
+    async startFavoriteMode() {
+        this.state.isMistakeMode = false;
+        this.state.isFavoriteMode = true;
+        const grade = app.state.selectedSheet;
+        if (!this.state.isWordListReady[grade]) { await this.loadWordList(); if (!this.state.isWordListReady[grade]) return; }
+
+        if (app.state.favorites.length === 0) {
+            alert("즐겨찾기에 등록된 단어가 없습니다!");
+            app.navigateTo('mode', grade);
+            return;
+        }
+
+        const favoriteWordList = this.state.wordList[grade].filter(wordObj => app.state.favorites.includes(wordObj.word));
+        favoriteWordList.sort((a, b) => app.state.favorites.indexOf(b.word) - app.state.favorites.indexOf(a.word));
+
+        this.state.currentIndex = 0;
+        this.launchApp(favoriteWordList);
     },
     displaySuggestions(vocabSuggestions, explanationSuggestions, sourceList, title) {
         this.elements.startInputContainer.classList.add('hidden');
@@ -1460,7 +1673,7 @@ const learningMode = {
         this.displayWord(this.state.currentIndex);
     },
     displayWord(index) {
-        if (!this.state.isMistakeMode) {
+        if (!this.state.isMistakeMode && !this.state.isFavoriteMode) {
             utils.setLastLearnedIndex(index);
         }
         this.updateProgressBar(index);
@@ -1474,6 +1687,7 @@ const learningMode = {
         this.elements.explanationContainer.classList.toggle('hidden', !wordData.explanation || !wordData.explanation.trim());
         const hasSample = wordData.sample && wordData.sample.trim() !== '';
         this.elements.sampleBtnImg.src = hasSample ? 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png' : 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
+        this.updateFavoriteIcon(wordData.word);
     },
     navigate(direction) {
         const isBackVisible = this.elements.cardBack.classList.contains('is-slid-up');
@@ -1499,7 +1713,6 @@ const learningMode = {
         }
     },
     isLearningModeActive() { return !this.elements.appContainer.classList.contains('hidden'); },
-    handleMiddleClick(e) { if (this.isLearningModeActive() && e.button === 1) { e.preventDefault(); this.elements.sampleBtn.click(); } },
     handleKeyDown(e) {
         if (!this.isLearningModeActive() || document.activeElement.tagName.match(/INPUT|TEXTAREA/)) return;
         const keyMap = { 'ArrowLeft': -1, 'ArrowRight': 1, 'ArrowUp': -1, 'ArrowDown': 1 };
@@ -1508,7 +1721,7 @@ const learningMode = {
         else if (e.key === ' ') { e.preventDefault(); if (!this.elements.cardBack.classList.contains('is-slid-up')) api.speak(this.elements.wordDisplay.textContent); }
     },
     handleTouchStart(e) {
-        if (!this.isLearningModeActive() || e.target.closest('.interactive-word, #word-display')) return;
+        if (!this.isLearningModeActive() || e.target.closest('.interactive-word, #word-display, #favorite-btn')) return;
         this.state.touchstartX = e.changedTouches[0].screenX; this.state.touchstartY = e.changedTouches[0].screenY;
     },
     handleTouchEnd(e) {
@@ -1572,20 +1785,42 @@ const learningMode = {
                 break;
         }
     },
-};
-
-function levenshteinDistance(a = '', b = '') {
-    const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
-    for (let i = 0; i <= a.length; i += 1) track[0][i] = i;
-    for (let j = 0; j <= b.length; j += 1) track[j][0] = j;
-    for (let j = 1; j <= b.length; j += 1) {
-        for (let i = 1; i <= a.length; i += 1) {
-            const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
-            track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator);
+    async toggleFavorite() {
+        const wordData = this.state.currentDisplayList[this.state.currentIndex];
+        if (!wordData) return;
+        
+        const newStatus = await utils.toggleFavorite(wordData.word);
+        this.updateFavoriteIcon(wordData.word, newStatus);
+        
+        if (this.state.isFavoriteMode && !newStatus) {
+            this.state.currentDisplayList.splice(this.state.currentIndex, 1);
+            if (this.state.currentDisplayList.length === 0) {
+                alert("즐겨찾기 목록이 비었습니다.");
+                app.navigateTo('mode', app.state.selectedSheet);
+            } else {
+                if (this.state.currentIndex >= this.state.currentDisplayList.length) {
+                    this.state.currentIndex = this.state.currentDisplayList.length - 1;
+                }
+                this.displayWord(this.state.currentIndex);
+            }
         }
+    },
+    updateFavoriteIcon(word, isFavorite = null) {
+        const isFav = isFavorite !== null ? isFavorite : app.state.favorites.includes(word);
+        this.elements.favoriteIcon.classList.toggle('text-yellow-400', isFav);
+        this.elements.favoriteIcon.classList.toggle('text-gray-400', !isFav);
+        this.elements.favoriteIcon.classList.toggle('fill-current', isFav);
+    },
+    levenshteinDistance(a = '', b = '') {
+        const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+        for (let i = 0; i <= a.length; i += 1) track[0][i] = i;
+        for (let j = 0; j <= b.length; j += 1) track[j][0] = j;
+        for (let j = 1; j <= b.length; j += 1) {
+            for (let i = 1; i <= a.length; i += 1) {
+                const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
+                track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator);
+            }
+        }
+        return track[b.length][a.length];
     }
-    return track[b.length][a.length];
-}
-
-
-
+};
