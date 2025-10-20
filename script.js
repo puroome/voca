@@ -213,7 +213,7 @@ const app = {
         });
 
         document.addEventListener('contextmenu', (e) => {
-            const isWhitelisted = e.target.closest('.interactive-word, #word-display .word-text');
+            const isWhitelisted = e.target.closest('.interactive-word, #word-display');
             if (!isWhitelisted) e.preventDefault();
         });
 
@@ -547,13 +547,12 @@ const ui = {
     
     adjustFontSize(element) {
         element.style.fontSize = '';
-        let currentFontSize = parseFloat(window.getComputedStyle(element).fontSize);
+        const defaultFontSize = parseFloat(window.getComputedStyle(element).fontSize);
+        let currentFontSize = defaultFontSize;
         const container = element.parentElement;
-        const containerStyle = window.getComputedStyle(container);
-        const containerWidth = container.clientWidth - parseFloat(containerStyle.paddingLeft) - parseFloat(containerStyle.paddingRight);
-        const minFontSize = 12;
-        while (element.scrollWidth > containerWidth - 16 && currentFontSize > minFontSize) {
-            element.style.fontSize = `${--currentFontSize}px`;
+        while (element.scrollWidth > container.clientWidth - 80 && currentFontSize > 12) {
+            currentFontSize -= 1;
+            element.style.fontSize = `${currentFontSize}px`;
         }
     },
     renderInteractiveText(targetElement, text) {
@@ -648,7 +647,7 @@ const ui = {
             const p = document.createElement('p');
             p.className = 'p-2 rounded transition-colors';
             p.onclick = (e) => {
-                if (e.target.closest('.sentence-content-area')) return;
+                if (e.target.closest('.sentence-content-area .interactive-word')) return;
                 api.speak(p.textContent);
                 this.handleSentenceMouseOver(e, p.textContent);
             };
@@ -1491,6 +1490,10 @@ const learningMode = {
         this.elements.nextBtn.addEventListener('click', () => this.navigate(1));
         this.elements.prevBtn.addEventListener('click', () => this.navigate(-1));
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip());
+        this.elements.wordDisplay.addEventListener('click', () => {
+            const word = this.state.currentDisplayList[this.state.currentIndex]?.word;
+            if (word) { api.speak(word); api.copyToClipboard(word); }
+        });
         this.elements.wordDisplay.oncontextmenu = e => {
             e.preventDefault();
             const wordData = this.state.currentDisplayList[this.state.currentIndex];
@@ -1717,16 +1720,7 @@ const learningMode = {
         const wordData = this.state.currentDisplayList[index];
         if (!wordData) return;
 
-        this.elements.wordDisplay.innerHTML = '';
-        const wordTextSpan = document.createElement('span');
-        wordTextSpan.className = 'word-text';
-        wordTextSpan.textContent = wordData.word;
-        wordTextSpan.onclick = (e) => {
-            e.stopPropagation();
-            api.speak(wordData.word);
-            api.copyToClipboard(wordData.word);
-        };
-        this.elements.wordDisplay.appendChild(wordTextSpan);
+        this.elements.wordDisplay.textContent = wordData.word;
         ui.adjustFontSize(this.elements.wordDisplay);
         
         this.elements.meaningDisplay.innerHTML = wordData.meaning.replace(/\n/g, '<br>');
@@ -1790,7 +1784,7 @@ const learningMode = {
         else if (e.key === ' ') { e.preventDefault(); if (!this.elements.cardBack.classList.contains('is-slid-up')) api.speak(this.elements.wordDisplay.textContent); }
     },
     handleTouchStart(e) {
-        if (!this.isLearningModeActive() || e.target.closest('.interactive-word, #word-display .word-text, #favorite-btn')) return;
+        if (!this.isLearningModeActive() || e.target.closest('.interactive-word, #word-display, #favorite-btn')) return;
         this.state.touchstartX = e.changedTouches[0].screenX; this.state.touchstartY = e.changedTouches[0].screenY;
     },
     handleTouchEnd(e) {
@@ -1869,3 +1863,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
