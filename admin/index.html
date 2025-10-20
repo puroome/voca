@@ -228,7 +228,7 @@
                 let studentsToDisplay = [];
                 if (grade === 'unassigned') {
                     const assignedEmails = Object.keys(this.state.studentNameMap);
-                    studentsToDisplay = Object.values(this.state.allUsers).filter(user => !assignedEmails.includes(user.email) && user.email !== this.ADMIN_EMAIL);
+                    studentsToDisplay = Object.values(this.state.allUsers).filter(user => !assignedEmails.includes(user.email));
                 } else {
                     const studentEmails = this.state.gradeStudentMap[grade] || [];
                     studentsToDisplay = studentEmails.map(email => this.state.allUsers[email]).filter(Boolean);
@@ -422,12 +422,16 @@
                             d.setDate(d.getDate() - i);
                             const dateString = d.toISOString().slice(0, 10);
                             
-                            totalSeconds += studyHistory[dateString] || 0;
+                            if(studyHistory[dateString]) {
+                                Object.values(studyHistory[dateString]).forEach(seconds => totalSeconds += seconds);
+                            }
 
                             if (quizHistory[dateString]) {
-                                Object.values(quizHistory[dateString]).forEach(typeStats => {
-                                    totalCorrect += typeStats.correct || 0;
-                                    totalQuizzes += typeStats.total || 0;
+                                Object.values(quizHistory[dateString]).forEach(gradeData => {
+                                    Object.values(gradeData).forEach(typeStats => {
+                                        totalCorrect += typeStats.correct || 0;
+                                        totalQuizzes += typeStats.total || 0;
+                                    });
                                 });
                             }
                         }
@@ -439,11 +443,15 @@
                     let totalCorrectAnswers = 0;
                     let totalQuizAttempts = 0;
 
-                    Object.values(studyHistory).forEach(seconds => totalStudySeconds += seconds);
+                    Object.values(studyHistory).forEach(dailyData => {
+                        Object.values(dailyData).forEach(seconds => totalStudySeconds += seconds);
+                    });
                     Object.values(quizHistory).forEach(dailyStats => {
-                        Object.values(dailyStats).forEach(typeStats => {
-                            totalCorrectAnswers += typeStats.correct || 0;
-                            totalQuizAttempts += typeStats.total || 0;
+                        Object.values(dailyStats).forEach(gradeData => {
+                            Object.values(gradeData).forEach(typeStats => {
+                                totalCorrectAnswers += typeStats.correct || 0;
+                                totalQuizAttempts += typeStats.total || 0;
+                            });
                         });
                     });
                     
@@ -465,4 +473,3 @@
     </script>
 </body>
 </html>
-
