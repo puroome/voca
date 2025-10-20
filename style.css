@@ -115,6 +115,11 @@ body::before {
     cursor: pointer; 
 }
 
+/* 추가된 요청 사항: 발음 안되는 단어는 텍스트 커서로 변경 */
+.sample-sentence span:not(.interactive-word) {
+    cursor: text;
+}
+
 #learning-app-container .relative {
     overflow: hidden;
     border-radius: 0.5rem;
@@ -158,3 +163,4 @@ body::before {
 #favorite-icon {
     transition: color 0.2s, fill 0.2s;
 }
+
