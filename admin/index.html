@@ -79,7 +79,8 @@
                         <div class="loader"></div>
                     </div>
                     <div id="student-details" class="hidden">
-                        <h2 id="student-name-title" class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2"></h2>
+                        <h2 id="student-name-title" class="text-2xl font-bold text-gray-800 border-b pb-2"></h2>
+                        <p id="student-summary-stats" class="text-sm text-gray-600 mt-2 mb-4"></p>
                         <div id="stats-container" class="space-y-6"></div>
                     </div>
                 </div>
@@ -91,7 +92,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
         import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
-        import { getFirestore, collection, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+        import { getFirestore, collection, doc, getDoc, getDocs } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBE_Gxd1haPazVK61F9sjCwK0X4Gw5rERM",
@@ -134,6 +135,7 @@
                 studentDetails: document.getElementById('student-details'),
                 studentDetailsLoader: document.getElementById('student-details-loader'),
                 studentNameTitle: document.getElementById('student-name-title'),
+                studentSummaryStats: document.getElementById('student-summary-stats'),
                 statsContainer: document.getElementById('stats-container'),
             },
 
@@ -181,7 +183,6 @@
                         this.state.gradeStudentMap = data.gradeStudentMap;
                     } else { throw new Error(data.message); }
                 } catch(e) {
-                    console.error("관리자 설정(학생 명단) 로딩 실패:", e);
                     alert(`학생 명단을 Google Sheets에서 불러오는 데 실패했습니다: ${e.message}`);
                 }
             },
@@ -212,8 +213,9 @@
             
             async cacheAllUsers() {
                 try {
-                    const snapshot = await getDocs(collection(db, 'users'));
-                    snapshot.docs.forEach(docInst => { this.state.allUsers[docInst.data().email] = { id: docInst.id, ...docInst.data() }; });
+                    const usersCollection = collection(db, 'users');
+                    const snapshot = await getDocs(usersCollection);
+                    snapshot.docs.forEach(doc => { this.state.allUsers[doc.data().email] = { id: doc.id, ...doc.data() }; });
                 } catch(e) { console.error("전체 사용자 정보 캐시 실패:", e); }
             },
             
@@ -255,11 +257,12 @@
                 });
             },
 
-            async loadStudentDetails(student, grade, clearContainer = true) {
+            async loadStudentDetails(student, displayName, grade, clearContainer = true) {
                 if (clearContainer) {
                     this.elements.detailsPrompt.classList.add('hidden');
                     this.elements.studentDetails.classList.add('hidden');
                     this.elements.studentDetailsLoader.classList.remove('hidden');
+                    this.elements.studentNameTitle.textContent = `${displayName}(${grade.replace('y','')}학년) 학습 현황`;
                 }
                 
                 try {
@@ -268,7 +271,6 @@
                         const snapshot = await get(dbRef);
                         const data = snapshot.val();
                         if (!data) throw new Error(`Firebase Realtime Database에 '${grade}' 단어 데이터가 없습니다.`);
-                        
                         const wordsArray = Object.values(data).sort((a, b) => a.id - b.id);
                         this.state.wordLists[grade] = wordsArray;
                     }
@@ -282,7 +284,6 @@
                     this.renderStats(stats, grade, clearContainer);
 
                 } catch (error) {
-                    console.error(`[${grade}] 학생 통계 로딩 실패:`, error);
                     if (!clearContainer) {
                          const errorEl = document.createElement('p');
                          errorEl.className = 'text-red-500 text-sm mt-2';
@@ -313,10 +314,15 @@
                     }
                 }
                 const gradeText = assignedGrade === 'unassigned' ? '(미배정)' : `(${assignedGrade.replace('y', '')}학년)`;
-                this.elements.studentNameTitle.textContent = `${displayName} ${gradeText} 학습 현황`;
+                this.elements.studentNameTitle.textContent = `${displayName} ${gradeText}`;
                 
-                const detailPromises = ['1y', '2y', '3y'].map(grade => this.loadStudentDetails(student, grade, false));
-                await Promise.all(detailPromises);
+                this.loadAndDisplayOverallStats(student);
+
+                await Promise.all([
+                    this.loadStudentDetails(student, displayName, '1y', false),
+                    this.loadStudentDetails(student, displayName, '2y', false),
+                    this.loadStudentDetails(student, displayName, '3y', false)
+                ]);
                 
                 this.elements.studentDetailsLoader.classList.add('hidden');
                 this.elements.studentDetails.classList.remove('hidden');
@@ -329,8 +335,7 @@
                 }
 
                 totalWords.forEach(wordObj => {
-                    if (!wordObj || !wordObj.word) return; 
-
+                    if (!wordObj || !wordObj.word) return;
                     const progress = progressData[wordObj.word];
                     let status = 'unseen';
                     if (progress) {
@@ -381,11 +386,78 @@
                 });
                 
                 const titleHtml = clearContainer ? '' : `<h3 class="text-xl font-bold text-gray-700 border-t pt-4 mt-6">${grade.replace('y','')}학년 (총 ${stats.total}단어)</h3>`;
-                statCard.innerHTML = `
-                    ${titleHtml}
-                    <div class="space-y-4 mt-4">${itemsHtml}</div>
-                `;
+                statCard.innerHTML = `${titleHtml}<div class="space-y-4 mt-4">${itemsHtml}</div>`;
                 this.elements.statsContainer.appendChild(statCard);
+            },
+            
+            formatSeconds(totalSeconds) {
+                if (!totalSeconds || totalSeconds < 60) return `0분`;
+                const d = Math.floor(totalSeconds / 86400);
+                const h = Math.floor((totalSeconds % 86400) / 3600);
+                const m = Math.floor((totalSeconds % 3600) / 60);
+                let result = '';
+                if (d > 0) result += `${d}일 `;
+                if (h > 0) result += `${h}시간 `;
+                if (m > 0) result += `${m}분`;
+                return result.trim() || '0분';
+            },
+
+            async loadAndDisplayOverallStats(student) {
+                this.elements.studentSummaryStats.textContent = '통계 요약 정보 로딩 중...';
+                
+                try {
+                    const studyHistoryDoc = await getDoc(doc(db, 'users', student.id, 'history', 'study'));
+                    const quizHistoryDoc = await getDoc(doc(db, 'users', student.id, 'history', 'quiz'));
+                    const studyHistory = studyHistoryDoc.exists() ? studyHistoryDoc.data() : {};
+                    const quizHistory = quizHistoryDoc.exists() ? quizHistoryDoc.data() : {};
+                    const today = new Date();
+
+                    const getStatsForPeriod = (days) => {
+                        let totalSeconds = 0;
+                        let totalCorrect = 0;
+                        let totalQuizzes = 0;
+
+                        for (let i = 0; i < days; i++) {
+                            const d = new Date(today);
+                            d.setDate(d.getDate() - i);
+                            const dateString = d.toISOString().slice(0, 10);
+                            
+                            totalSeconds += studyHistory[dateString] || 0;
+
+                            if (quizHistory[dateString]) {
+                                Object.values(quizHistory[dateString]).forEach(typeStats => {
+                                    totalCorrect += typeStats.correct || 0;
+                                    totalQuizzes += typeStats.total || 0;
+                                });
+                            }
+                        }
+                        const accuracy = totalQuizzes > 0 ? ((totalCorrect / totalQuizzes) * 100).toFixed(0) : 0;
+                        return { totalSeconds, accuracy };
+                    };
+                    
+                    let totalStudySeconds = 0;
+                    let totalCorrectAnswers = 0;
+                    let totalQuizAttempts = 0;
+
+                    Object.values(studyHistory).forEach(seconds => totalStudySeconds += seconds);
+                    Object.values(quizHistory).forEach(dailyStats => {
+                        Object.values(dailyStats).forEach(typeStats => {
+                            totalCorrectAnswers += typeStats.correct || 0;
+                            totalQuizAttempts += typeStats.total || 0;
+                        });
+                    });
+                    
+                    const totalAccuracy = totalQuizAttempts > 0 ? ((totalCorrectAnswers / totalQuizAttempts) * 100).toFixed(0) : 0;
+                    const stats7 = getStatsForPeriod(7);
+                    const stats30 = getStatsForPeriod(30);
+
+                    const summaryText = `최근 7일간 (정답률: ${stats7.accuracy}%, 학습시간: ${this.formatSeconds(stats7.totalSeconds)}), 최근 30일간 (정답률: ${stats30.accuracy}%, 학습시간: ${this.formatSeconds(stats30.totalSeconds)}), 총계 (정답률: ${totalAccuracy}%, ${this.formatSeconds(totalStudySeconds)})`;
+                    this.elements.studentSummaryStats.textContent = summaryText;
+
+                } catch (error) {
+                    this.elements.studentSummaryStats.textContent = '통계 요약 정보를 불러오는 데 실패했습니다.';
+                    console.error("Error loading overall stats:", error);
+                }
             }
         };
 
@@ -393,3 +465,4 @@
     </script>
 </body>
 </html>
+
