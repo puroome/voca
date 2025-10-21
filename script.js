@@ -928,7 +928,9 @@ const dashboard = {
         }
         
         this.renderBaseStats(); 
-        await this.renderAdvancedStats();
+        setTimeout(async () => {
+            await this.renderAdvancedStats();
+        }, 1);
     },
     renderBaseStats() {
         const allWords = learningMode.state.wordList[app.state.selectedSheet] || [];
@@ -2069,3 +2071,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
