@@ -1013,8 +1013,8 @@ const dashboard = {
             if (dailyStats[grade]) {
                 for (const type in totalQuizStats) {
                     if (dailyStats[grade][type]) {
-                        totalQuizStats[type].correct += dailyStats[grade][type].correct;
-                        totalQuizStats[type].total += dailyStats[grade][type].total;
+                        totalQuizStats[type].correct += dailyStats[grade][type].correct || 0;
+                        totalQuizStats[type].total += dailyStats[grade][type].total || 0;
                     }
                 }
             }
@@ -1094,8 +1094,8 @@ const dashboard = {
                     if (quizHistory[dateString] && quizHistory[dateString][grade]) {
                         for (const type in quizStats) {
                             if(quizHistory[dateString][grade][type]) {
-                                quizStats[type].correct += quizHistory[dateString][grade][type].correct;
-                                quizStats[type].total += quizHistory[dateString][grade][type].total;
+                                quizStats[type].correct += quizHistory[dateString][grade][type].correct || 0;
+                                quizStats[type].total += quizHistory[dateString][grade][type].total || 0;
                             }
                         }
                     }
@@ -1995,3 +1995,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
