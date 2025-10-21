@@ -1011,12 +1011,17 @@ const dashboard = {
                 }]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
+                animation: {
+                    duration: 1200,
+                    easing: 'easeOutCubic',
+                    from: 0
+                },
                 scales: {
                     y: { 
                         beginAtZero: true,
-                        suggestedMax: 60 
+                        ticks: {
+                            stepSize: 10
+                        }
                     }
                 },
                 plugins: {
@@ -2066,8 +2071,6 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
 
 
 
