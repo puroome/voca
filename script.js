@@ -1011,8 +1011,8 @@ const dashboard = {
             },
             options: {
                 animation: {
-                    duration: 800,
-                    easing: 'easeOutQuart',
+                    duration: 1200, // Make animation slightly longer
+                    easing: 'easeOutCubic', // Use a smooth easing function
                 },
                 scales: {
                     y: { 
@@ -1030,7 +1030,8 @@ const dashboard = {
     },
 
     renderQuizAccuracyCharts(quizHistory, grade) {
-        this.elements.quizAccuracyCharts.innerHTML = ''; 
+        this.elements.quizAccuracyCharts.innerHTML = '';
+        const today = new Date();
         
         const quizTypes = [
             { id: 'MULTIPLE_CHOICE_MEANING', name: '영한 뜻' },
@@ -1038,23 +1039,28 @@ const dashboard = {
             { id: 'MULTIPLE_CHOICE_DEFINITION', name: '영영 풀이' }
         ];
 
-        const cumulativeStats = {
+        const stats7days = {
             'MULTIPLE_CHOICE_MEANING': { correct: 0, total: 0 },
             'FILL_IN_THE_BLANK': { correct: 0, total: 0 },
             'MULTIPLE_CHOICE_DEFINITION': { correct: 0, total: 0 },
         };
 
-        Object.values(quizHistory).forEach(dailyData => {
-            if (dailyData[grade]) {
-                Object.keys(dailyData[grade]).forEach(quizType => {
-                    if (cumulativeStats[quizType]) {
-                        cumulativeStats[quizType].correct += dailyData[grade][quizType].correct || 0;
-                        cumulativeStats[quizType].total += dailyData[grade][quizType].total || 0;
+        // 1. Calculate stats for the last 7 days
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(today);
+            d.setDate(d.getDate() - i);
+            const dateString = d.toISOString().slice(0, 10);
+
+            if (quizHistory[dateString] && quizHistory[dateString][grade]) {
+                Object.keys(quizHistory[dateString][grade]).forEach(quizType => {
+                    if (stats7days[quizType]) {
+                        stats7days[quizType].correct += quizHistory[dateString][grade][quizType].correct || 0;
+                        stats7days[quizType].total += quizHistory[dateString][grade][quizType].total || 0;
                     }
                 });
             }
-        });
-
+        }
+        
         const centerTextPlugin = {
             id: 'centerText',
             beforeDraw: (chart) => {
@@ -1074,14 +1080,24 @@ const dashboard = {
         };
 
         quizTypes.forEach(quizType => {
-            const stats = cumulativeStats[quizType.id];
+            const stats = stats7days[quizType.id];
             const correct = stats.correct || 0;
             const total = stats.total || 0;
             const incorrect = total - correct;
             const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
             
-            const data = [correct, incorrect > 0 ? incorrect : 0.0001];
-            const backgroundColor = ['#34D399', '#F87171'];
+            let data, backgroundColor, centerText;
+
+            // 2. Set colors based on whether there is data
+            if (total === 0) {
+                data = [1];
+                backgroundColor = ['#d1d5db']; // Gray
+                centerText = '-';
+            } else {
+                data = [correct, incorrect > 0 ? incorrect : 0.0001];
+                backgroundColor = ['#34D399', '#F87171']; // Green, Red
+                centerText = `${accuracy}%`;
+            }
 
             const container = document.createElement('div');
             container.className = 'flex flex-col items-center bg-gray-50 p-4 rounded-lg';
@@ -1117,7 +1133,7 @@ const dashboard = {
                         legend: { display: false },
                         tooltip: { enabled: false },
                         centerText: {
-                            text: total > 0 ? `${accuracy}%` : '-'
+                            text: centerText
                         }
                     }
                 },
@@ -1488,13 +1504,13 @@ const quizMode = {
     },
     showSessionResultModal(isFinal = false) {
         this.elements.quizResultScore.textContent = `${this.state.sessionAnsweredInSet}문제 중 ${this.state.sessionCorrectInSet}개 정답!`;
-        this.elements.modalMistakesBtn.classList.toggle('hidden', this.state.sessionMistakes.length === 0);
-        this.elements.modalContinueBtn.textContent = isFinal ? "모드 선택으로" : "다음 퀴즈 계속";
-        this.elements.modal.classList.remove('hidden');
+        this.elements.quizResultMistakesBtn.classList.toggle('hidden', this.state.sessionMistakes.length === 0);
+        this.elements.quizResultContinueBtn.textContent = isFinal ? "모드 선택으로" : "다음 퀴즈 계속";
+        this.elements.quizResultModal.classList.remove('hidden');
     },
     continueAfterResult() {
-        this.elements.modal.classList.add('hidden');
-        if (this.elements.modalContinueBtn.textContent === "모드 선택으로") {
+        this.elements.quizResultModal.classList.add('hidden');
+        if (this.elements.quizResultContinueBtn.textContent === "모드 선택으로") {
             app.navigateTo('mode', app.state.selectedSheet);
             return;
         }
@@ -1504,7 +1520,7 @@ const quizMode = {
         this.displayNextQuiz();
     },
     reviewSessionMistakes() {
-        this.elements.modal.classList.add('hidden');
+        this.elements.quizResultModal.classList.add('hidden');
         const mistakes = [...new Set(this.state.sessionMistakes)];
         this.state.sessionAnsweredInSet = 0;
         this.state.sessionCorrectInSet = 0;
@@ -2053,4 +2069,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
