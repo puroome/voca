@@ -899,10 +899,12 @@ const utils = {
 const dashboard = {
     elements: {
         container: document.getElementById('dashboard-container'),
+        content: document.getElementById('dashboard-content'),
         studyTimeChartContainer: document.getElementById('study-time-chart-container'),
         quizAccuracyChartsContainer: document.getElementById('quiz-accuracy-charts-container'),
         quizAccuracyCharts: document.getElementById('quiz-accuracy-charts'),
-        content: document.getElementById('dashboard-content'),
+        stats30DayContainer: document.getElementById('dashboard-stats-30day-container'),
+        statsTotalContainer: document.getElementById('dashboard-stats-total-container'),
     },
     state: {
         studyTimeChart: null,
@@ -910,23 +912,23 @@ const dashboard = {
     },
     init() {},
     async show() {
-        // 기존 차트가 있다면 파괴
         if (this.state.studyTimeChart) this.state.studyTimeChart.destroy();
         this.state.quizAccuracyCharts.forEach(chart => chart.destroy());
         this.state.quizAccuracyCharts = [];
 
-        // 데이터 로딩 전 로더 표시
         this.elements.content.innerHTML = `<div class="text-center p-4"><div class="loader mx-auto"></div></div>`;
         this.elements.studyTimeChartContainer.classList.add('hidden');
         this.elements.quizAccuracyChartsContainer.classList.add('hidden');
+        this.elements.stats30DayContainer.innerHTML = '';
+        this.elements.statsTotalContainer.innerHTML = '';
+
 
         if (!learningMode.state.isWordListReady[app.state.selectedSheet]) {
             await learningMode.loadWordList();
         }
         
-        // 요청에 따라 차트 렌더링을 먼저 수행
-        await this.renderSummaryCharts();
         this.renderBaseStats(); 
+        await this.renderAdvancedStats();
     },
     renderBaseStats() {
         const allWords = learningMode.state.wordList[app.state.selectedSheet] || [];
@@ -957,7 +959,7 @@ const dashboard = {
         this.elements.content.innerHTML = contentHTML;
     },
 
-    async renderSummaryCharts() {
+    async renderAdvancedStats() {
         if (!app.state.user || !app.state.selectedSheet) return;
         const grade = app.state.selectedSheet;
         
@@ -969,6 +971,7 @@ const dashboard = {
             
             this.renderStudyTimeChart(studyHistory, grade);
             this.renderQuizAccuracyCharts(quizHistory, grade);
+            this.renderSummaryCards(studyHistory, quizHistory, grade);
 
             this.elements.studyTimeChartContainer.classList.remove('hidden');
             this.elements.quizAccuracyChartsContainer.classList.remove('hidden');
@@ -1018,7 +1021,7 @@ const dashboard = {
     },
 
     renderQuizAccuracyCharts(quizHistory, grade) {
-        this.elements.quizAccuracyCharts.innerHTML = ''; // 컨테이너 초기화
+        this.elements.quizAccuracyCharts.innerHTML = ''; 
         
         const quizTypes = [
             { id: 'MULTIPLE_CHOICE_MEANING', name: '영한 뜻' },
@@ -1104,7 +1107,102 @@ const dashboard = {
             });
             this.state.quizAccuracyCharts.push(chart);
         });
-    }
+    },
+
+    renderSummaryCards(studyHistory, quizHistory, grade) {
+        const today = new Date();
+        const quizTypes = [
+            { id: 'MULTIPLE_CHOICE_MEANING', name: '영한 뜻' },
+            { id: 'FILL_IN_THE_BLANK', name: '빈칸 추론' },
+            { id: 'MULTIPLE_CHOICE_DEFINITION', name: '영영 풀이' }
+        ];
+
+        const getStatsForPeriod = (days) => {
+            let totalSeconds = 0;
+            const quizStats = {
+                'MULTIPLE_CHOICE_MEANING': { correct: 0, total: 0 },
+                'FILL_IN_THE_BLANK': { correct: 0, total: 0 },
+                'MULTIPLE_CHOICE_DEFINITION': { correct: 0, total: 0 },
+            };
+            for (let i = 0; i < days; i++) {
+                const d = new Date(today);
+                d.setDate(d.getDate() - i);
+                const dateString = d.toISOString().slice(0, 10);
+                
+                if(studyHistory[dateString]){
+                    totalSeconds += studyHistory[dateString][grade] || 0;
+                }
+
+                if (quizHistory[dateString] && quizHistory[dateString][grade]) {
+                    for(const type in quizStats){
+                        if(quizHistory[dateString][grade][type]){
+                            quizStats[type].correct += quizHistory[dateString][grade][type].correct || 0;
+                            quizStats[type].total += quizHistory[dateString][grade][type].total || 0;
+                        }
+                    }
+                }
+            }
+            return { totalSeconds, quizStats };
+        };
+        
+        const totalStats = (() => {
+            let totalSeconds = 0;
+            const quizStats = { 'MULTIPLE_CHOICE_MEANING': { correct: 0, total: 0 }, 'FILL_IN_THE_BLANK': { correct: 0, total: 0 }, 'MULTIPLE_CHOICE_DEFINITION': { correct: 0, total: 0 }};
+            Object.values(quizHistory).forEach(dailyStats => {
+                if (dailyStats[grade]) {
+                    for(const type in quizStats){
+                        if(dailyStats[grade][type]){
+                            quizStats[type].correct += dailyStats[grade][type].correct || 0;
+                            quizStats[type].total += dailyStats[grade][type].total || 0;
+                        }
+                    }
+                }
+            });
+            Object.values(studyHistory).forEach(dailyData => {
+                totalSeconds += dailyData[grade] || 0;
+            });
+            return { totalSeconds, quizStats };
+        })();
+        
+        const stats30 = getStatsForPeriod(30);
+
+        const createCardHTML = (title, time, stats) => {
+            let cards = '';
+            quizTypes.forEach(type => {
+                const { correct, total } = stats[type.id];
+                const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
+                cards += `
+                    <div class="bg-white p-4 rounded-lg shadow-inner text-center">
+                        <p class="font-semibold text-gray-600">${type.name}</p>
+                        <p class="text-3xl font-bold text-gray-800 my-1">${accuracy}%</p>
+                        <p class="text-sm text-gray-500">(${correct}/${total})</p>
+                    </div>
+                `;
+            });
+
+            return `
+                <div>
+                    <h2 class="text-xl font-bold text-gray-700 mb-3 text-center">${title} (${this.formatSeconds(time)})</h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        ${cards}
+                    </div>
+                </div>
+            `;
+        };
+        
+        this.elements.stats30DayContainer.innerHTML = createCardHTML('최근 30일 기록', stats30.totalSeconds, stats30.quizStats);
+        this.elements.statsTotalContainer.innerHTML = createCardHTML('누적 총학습 기록', totalStats.totalSeconds, totalStats.quizStats);
+    },
+
+    formatSeconds(totalSeconds) {
+        if (!totalSeconds || totalSeconds < 60) return `0분`;
+        const h = Math.floor(totalSeconds / 3600);
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        let result = '';
+        if (h > 0) result += `${h}시간 `;
+        if (m > 0) result += `${m}분`;
+        return result.trim() || '0분';
+    },
 };
 
 const quizMode = {
@@ -1934,3 +2032,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
