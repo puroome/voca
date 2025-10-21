@@ -1011,7 +1011,19 @@ const dashboard = {
             },
             options: {
                 scales: {
-                    y: { beginAtZero: true }
+                    y: { 
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 10
+                        }
+                    }
+                },
+                animation: {
+                    duration: 800,
+                    easing: 'easeOutQuart',
+                    delay: (context) => {
+                        return context.dataIndex * 50;
+                    },
                 },
                 plugins: {
                     legend: { display: false }
@@ -1069,6 +1081,22 @@ const dashboard = {
             const incorrect = total - correct;
             const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
 
+            let chartData, chartBgColor;
+
+            if (total === 0) {
+                chartData = [1];
+                chartBgColor = ['#E5E7EB']; // 데이터 없음: 회색
+            } else if (correct === 0) {
+                chartData = [1];
+                chartBgColor = ['#F87171']; // 0%: 빨간색
+            } else if (correct === total) {
+                chartData = [1];
+                chartBgColor = ['#34D399']; // 100%: 녹색
+            } else {
+                chartData = [correct, incorrect];
+                chartBgColor = ['#34D399', '#F87171'];
+            }
+
             const chartWrapper = document.createElement('div');
             chartWrapper.className = 'text-center bg-white p-4 rounded-lg shadow-inner';
             
@@ -1086,15 +1114,15 @@ const dashboard = {
                 type: 'doughnut',
                 data: {
                     datasets: [{
-                        data: [correct, incorrect],
-                        backgroundColor: ['#34D399', '#F87171'],
+                        data: chartData,
+                        backgroundColor: chartBgColor,
                         borderColor: ['#ffffff'],
                         borderWidth: 2,
                     }]
                 },
                 options: {
                     responsive: true,
-                    cutout: '70%',
+                    cutout: '80%',
                     plugins: {
                         legend: { display: false },
                         tooltip: { enabled: false },
@@ -1172,10 +1200,10 @@ const dashboard = {
                 const { correct, total } = stats[type.id];
                 const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
                 cards += `
-                    <div class="bg-white p-4 rounded-lg shadow-inner text-center">
-                        <p class="font-semibold text-gray-600">${type.name}</p>
-                        <p class="text-3xl font-bold text-gray-800 my-1">${accuracy}%</p>
-                        <p class="text-sm text-gray-500">(${correct}/${total})</p>
+                    <div class="bg-white py-2 rounded-lg shadow-inner flex flex-col justify-center" style="aspect-ratio: 2 / 1;">
+                        <p class="text-sm font-semibold text-gray-600">${type.name}</p>
+                        <p class="text-2xl font-bold text-gray-800 my-1">${accuracy}%</p>
+                        <p class="text-xs text-gray-500">(${correct}/${total})</p>
                     </div>
                 `;
             });
@@ -1183,7 +1211,7 @@ const dashboard = {
             return `
                 <div>
                     <h2 class="text-xl font-bold text-gray-700 mb-3 text-center">${title} (${this.formatSeconds(time)})</h2>
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div class="grid grid-cols-3 gap-2">
                         ${cards}
                     </div>
                 </div>
