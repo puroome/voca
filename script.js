@@ -1012,8 +1012,9 @@ const dashboard = {
             },
             options: {
                 animation: {
-                    duration: 1200, // Make animation slightly longer
-                    easing: 'easeOutCubic', // Use a smooth easing function
+                    duration: 1200,
+                    easing: 'easeOutCubic',
+                    from: 0
                 },
                 scales: {
                     y: { 
@@ -2070,5 +2071,6 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
