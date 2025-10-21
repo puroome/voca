@@ -576,7 +576,7 @@ const ui = {
                         let touchMove = false;
                         span.addEventListener('touchstart', e => { touchMove = false; clearTimeout(app.state.longPressTimer); app.state.longPressTimer = setTimeout(() => { if (!touchMove) this.showWordContextMenu(e, englishPhrase); }, 700); }, { passive: true });
                         span.addEventListener('touchmove', () => { touchMove = true; clearTimeout(app.state.longPressTimer); });
-                        span.addEventListener('touchend', () => clearTimeout(app.state.longPressTimer));
+                        span.addEventListener('touchend', () => { clearTimeout(app.state.longPressTimer); });
                     }
                     targetElement.appendChild(span);
                 } else if (nonClickable) {
@@ -1014,16 +1014,21 @@ const dashboard = {
                     y: { 
                         beginAtZero: true,
                         ticks: {
-                            stepSize: 10
+                            stepSize: 20
                         }
                     }
                 },
                 animation: {
                     duration: 800,
                     easing: 'easeOutQuart',
-                    delay: (context) => {
-                        return context.dataIndex * 50;
-                    },
+                    from: (context) => {
+                        if (context.type === 'data') {
+                            if (context.mode === 'default' && !context.dropped) {
+                                context.dropped = true;
+                                return 0;
+                            }
+                        }
+                    }
                 },
                 plugins: {
                     legend: { display: false }
@@ -1061,6 +1066,7 @@ const dashboard = {
         const centerTextPlugin = {
             id: 'centerText',
             beforeDraw: (chart) => {
+                if (!chart.config.options.plugins.centerText) return;
                 const { ctx, width, height } = chart;
                 const text = chart.config.options.plugins.centerText.text;
                 ctx.restore();
@@ -1069,6 +1075,7 @@ const dashboard = {
                 ctx.textBaseline = 'middle';
                 const textX = Math.round((width - ctx.measureText(text).width) / 2);
                 const textY = height / 2;
+                ctx.fillStyle = '#374151';
                 ctx.fillText(text, textX, textY);
                 ctx.save();
             }
@@ -1078,37 +1085,41 @@ const dashboard = {
             const stats = cumulativeStats[quizType.id];
             const correct = stats.correct;
             const total = stats.total;
-            const incorrect = total - correct;
+            const incorrect = total > 0 ? total - correct : 0;
             const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
 
             let chartData, chartBgColor;
 
             if (total === 0) {
                 chartData = [1];
-                chartBgColor = ['#E5E7EB']; // 데이터 없음: 회색
+                chartBgColor = ['#E5E7EB']; 
             } else if (correct === 0) {
                 chartData = [1];
-                chartBgColor = ['#F87171']; // 0%: 빨간색
+                chartBgColor = ['#F87171'];
             } else if (correct === total) {
                 chartData = [1];
-                chartBgColor = ['#34D399']; // 100%: 녹색
+                chartBgColor = ['#34D399'];
             } else {
                 chartData = [correct, incorrect];
                 chartBgColor = ['#34D399', '#F87171'];
             }
 
-            const chartWrapper = document.createElement('div');
-            chartWrapper.className = 'text-center bg-white p-4 rounded-lg shadow-inner';
+            const container = document.createElement('div');
+            container.className = 'flex flex-col items-center bg-gray-50 p-4 rounded-lg';
             
+            const chartWrapper = document.createElement('div');
+            chartWrapper.className = 'relative w-full max-w-[150px] mx-auto';
+
             const canvas = document.createElement('canvas');
             chartWrapper.appendChild(canvas);
+            container.appendChild(chartWrapper);
             
             const label = document.createElement('p');
-            label.className = 'mt-2 font-semibold text-gray-700';
+            label.className = 'text-center font-semibold mt-2 text-gray-600';
             label.textContent = `${quizType.name} (${correct}/${total})`;
-            chartWrapper.appendChild(label);
+            container.appendChild(label);
             
-            this.elements.quizAccuracyCharts.appendChild(chartWrapper);
+            this.elements.quizAccuracyCharts.appendChild(container);
 
             const chart = new Chart(canvas.getContext('2d'), {
                 type: 'doughnut',
@@ -1116,18 +1127,18 @@ const dashboard = {
                     datasets: [{
                         data: chartData,
                         backgroundColor: chartBgColor,
-                        borderColor: ['#ffffff'],
-                        borderWidth: 2,
+                        borderWidth: 0,
                     }]
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: true,
                     cutout: '80%',
                     plugins: {
                         legend: { display: false },
                         tooltip: { enabled: false },
                         centerText: {
-                            text: `${accuracy}%`
+                            text: total > 0 ? `${accuracy}%` : '-'
                         }
                     }
                 },
@@ -1200,17 +1211,17 @@ const dashboard = {
                 const { correct, total } = stats[type.id];
                 const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
                 cards += `
-                    <div class="bg-white py-2 rounded-lg shadow-inner flex flex-col justify-center" style="aspect-ratio: 2 / 1;">
-                        <p class="text-sm font-semibold text-gray-600">${type.name}</p>
-                        <p class="text-2xl font-bold text-gray-800 my-1">${accuracy}%</p>
+                    <div class="bg-white py-2 rounded-lg shadow-inner flex flex-col justify-center text-center" style="aspect-ratio: 2 / 1;">
+                        <p class="text-sm font-semibold text-gray-600" style="font-size: 0.7rem;">${type.name}</p>
+                        <p class="font-bold text-gray-800" style="font-size: 1.2rem; margin: 0.1rem 0;">${accuracy}%</p>
                         <p class="text-xs text-gray-500">(${correct}/${total})</p>
                     </div>
                 `;
             });
 
             return `
-                <div>
-                    <h2 class="text-xl font-bold text-gray-700 mb-3 text-center">${title} (${this.formatSeconds(time)})</h2>
+                <div class="bg-gray-50 p-4 rounded-xl shadow-inner">
+                    <h2 class="font-bold text-gray-700 mb-3 text-center text-lg">${title} <span class="font-normal text-gray-500">(${this.formatSeconds(time)})</span></h2>
                     <div class="grid grid-cols-3 gap-2">
                         ${cards}
                     </div>
@@ -1495,13 +1506,13 @@ const quizMode = {
     },
     showSessionResultModal(isFinal = false) {
         this.elements.quizResultScore.textContent = `${this.state.sessionAnsweredInSet}문제 중 ${this.state.sessionCorrectInSet}개 정답!`;
-        this.elements.quizResultMistakesBtn.classList.toggle('hidden', this.state.sessionMistakes.length === 0);
-        this.elements.quizResultContinueBtn.textContent = isFinal ? "모드 선택으로" : "다음 퀴즈 계속";
-        this.elements.quizResultModal.classList.remove('hidden');
+        this.elements.modalMistakesBtn.classList.toggle('hidden', this.state.sessionMistakes.length === 0);
+        this.elements.modalContinueBtn.textContent = isFinal ? "모드 선택으로" : "다음 퀴즈 계속";
+        this.elements.modal.classList.remove('hidden');
     },
     continueAfterResult() {
-        this.elements.quizResultModal.classList.add('hidden');
-        if (this.elements.quizResultContinueBtn.textContent === "모드 선택으로") {
+        this.elements.modal.classList.add('hidden');
+        if (this.elements.modalContinueBtn.textContent === "모드 선택으로") {
             app.navigateTo('mode', app.state.selectedSheet);
             return;
         }
@@ -1511,7 +1522,7 @@ const quizMode = {
         this.displayNextQuiz();
     },
     reviewSessionMistakes() {
-        this.elements.quizResultModal.classList.add('hidden');
+        this.elements.modal.classList.add('hidden');
         const mistakes = [...new Set(this.state.sessionMistakes)];
         this.state.sessionAnsweredInSet = 0;
         this.state.sessionCorrectInSet = 0;
