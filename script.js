@@ -1238,8 +1238,8 @@ const dashboard = {
         const h = Math.floor(totalSeconds / 3600);
         const m = Math.floor((totalSeconds % 3600) / 60);
         let result = '';
-        if (h > 0) result += `${h}시간 `;
-        if (m > 0) result += `${m}분`;
+        if (h > 0) result += `${h}h `;
+        if (m > 0) result += `${m}m`;
         return result.trim() || '0분';
     },
 };
@@ -2071,6 +2071,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
