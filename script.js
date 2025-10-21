@@ -571,7 +571,7 @@ const ui = {
                     span.textContent = englishPhrase;
                     if (!this.nonInteractiveWords.has(englishPhrase.toLowerCase())) {
                         span.className = 'interactive-word';
-                        span.onclick = () => { clearTimeout(app.state.longPressTimer); api.speak(englishPhrase); api.copyToClipboard(englishPhrase); };
+                        span.onclick = () => { clearTimeout(app.state.longPressTimer); api.speak(englishPhrase); };
                         span.oncontextmenu = e => { e.preventDefault(); this.showWordContextMenu(e, englishPhrase); };
                         let touchMove = false;
                         span.addEventListener('touchstart', e => { touchMove = false; clearTimeout(app.state.longPressTimer); app.state.longPressTimer = setTimeout(() => { if (!touchMove) this.showWordContextMenu(e, englishPhrase); }, 700); }, { passive: true });
@@ -619,7 +619,6 @@ const ui = {
                     if (isForSampleSentence) e.stopPropagation();
                     clearTimeout(app.state.longPressTimer);
                     api.speak(part);
-                    api.copyToClipboard(part);
                 };
                 span.oncontextmenu = (e) => {
                     e.preventDefault();
@@ -1700,7 +1699,7 @@ const learningMode = {
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip());
         this.elements.wordDisplay.addEventListener('click', () => {
             const word = this.state.currentDisplayList[this.state.currentIndex]?.word;
-            if (word) { api.speak(word); api.copyToClipboard(word); }
+            if (word) { api.speak(word); }
         });
         this.elements.wordDisplay.oncontextmenu = e => {
             e.preventDefault();
@@ -2071,4 +2070,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
