@@ -1004,29 +1004,21 @@ const dashboard = {
                 datasets: [{
                     label: '학습 시간 (분)',
                     data: data,
-                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                    borderColor: 'rgba(59, 130, 246, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
                     borderWidth: 1
                 }]
             },
             options: {
+                animation: {
+                    duration: 800,
+                    easing: 'easeOutQuart',
+                },
                 scales: {
                     y: { 
                         beginAtZero: true,
                         ticks: {
-                            stepSize: 20
-                        }
-                    }
-                },
-                animation: {
-                    duration: 800,
-                    easing: 'easeOutQuart',
-                    from: (context) => {
-                        if (context.type === 'data') {
-                            if (context.mode === 'default' && !context.dropped) {
-                                context.dropped = true;
-                                return 0;
-                            }
+                            stepSize: 10
                         }
                     }
                 },
@@ -1070,7 +1062,7 @@ const dashboard = {
                 const { ctx, width, height } = chart;
                 const text = chart.config.options.plugins.centerText.text;
                 ctx.restore();
-                const fontSize = (height / 114).toFixed(2);
+                const fontSize = (height / 100).toFixed(2);
                 ctx.font = `bold ${fontSize}em sans-serif`;
                 ctx.textBaseline = 'middle';
                 const textX = Math.round((width - ctx.measureText(text).width) / 2);
@@ -1083,26 +1075,13 @@ const dashboard = {
 
         quizTypes.forEach(quizType => {
             const stats = cumulativeStats[quizType.id];
-            const correct = stats.correct;
-            const total = stats.total;
-            const incorrect = total > 0 ? total - correct : 0;
+            const correct = stats.correct || 0;
+            const total = stats.total || 0;
+            const incorrect = total - correct;
             const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
-
-            let chartData, chartBgColor;
-
-            if (total === 0) {
-                chartData = [1];
-                chartBgColor = ['#E5E7EB']; 
-            } else if (correct === 0) {
-                chartData = [1];
-                chartBgColor = ['#F87171'];
-            } else if (correct === total) {
-                chartData = [1];
-                chartBgColor = ['#34D399'];
-            } else {
-                chartData = [correct, incorrect];
-                chartBgColor = ['#34D399', '#F87171'];
-            }
+            
+            const data = [correct, incorrect > 0 ? incorrect : 0.0001];
+            const backgroundColor = ['#34D399', '#F87171'];
 
             const container = document.createElement('div');
             container.className = 'flex flex-col items-center bg-gray-50 p-4 rounded-lg';
@@ -1125,15 +1104,15 @@ const dashboard = {
                 type: 'doughnut',
                 data: {
                     datasets: [{
-                        data: chartData,
-                        backgroundColor: chartBgColor,
+                        data: data,
+                        backgroundColor: backgroundColor,
                         borderWidth: 0,
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
-                    cutout: '80%',
+                    cutout: '70%',
                     plugins: {
                         legend: { display: false },
                         tooltip: { enabled: false },
@@ -1211,18 +1190,21 @@ const dashboard = {
                 const { correct, total } = stats[type.id];
                 const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
                 cards += `
-                    <div class="bg-white py-2 rounded-lg shadow-inner flex flex-col justify-center text-center" style="aspect-ratio: 2 / 1;">
-                        <p class="text-sm font-semibold text-gray-600" style="font-size: 0.7rem;">${type.name}</p>
-                        <p class="font-bold text-gray-800" style="font-size: 1.2rem; margin: 0.1rem 0;">${accuracy}%</p>
-                        <p class="text-xs text-gray-500">(${correct}/${total})</p>
+                    <div class="bg-white p-2 rounded-lg shadow-sm text-center">
+                        <p class="text-sm font-semibold text-gray-500">${type.name}</p>
+                        <p class="font-bold text-gray-800 text-xl">${accuracy}%</p>
+                        <p class="text-xs text-gray-400">(${correct}/${total})</p>
                     </div>
                 `;
             });
 
             return `
                 <div class="bg-gray-50 p-4 rounded-xl shadow-inner">
-                    <h2 class="font-bold text-gray-700 mb-3 text-center text-lg">${title} <span class="font-normal text-gray-500">(${this.formatSeconds(time)})</span></h2>
-                    <div class="grid grid-cols-3 gap-2">
+                    <h4 class="font-bold text-gray-700 mb-4 text-lg text-center">
+                        ${title} 
+                        <span class="font-normal text-gray-500">(${this.formatSeconds(time)})</span>
+                    </h4>
+                    <div class="grid grid-cols-3 gap-1">
                         ${cards}
                     </div>
                 </div>
@@ -1712,7 +1694,7 @@ const learningMode = {
         let wordDisplayTouchMove = false;
         this.elements.wordDisplay.addEventListener('touchstart', e => { wordDisplayTouchMove = false; clearTimeout(app.state.longPressTimer); app.state.longPressTimer = setTimeout(() => { const wordData = this.state.currentDisplayList[this.state.currentIndex]; if (!wordDisplayTouchMove && wordData) ui.showWordContextMenu(e, wordData.word); }, 700); }, { passive: true });
         this.elements.wordDisplay.addEventListener('touchmove', () => { wordDisplayTouchMove = true; clearTimeout(app.state.longPressTimer); });
-        this.elements.wordDisplay.addEventListener('touchend', () => clearTimeout(app.state.longPressTimer));
+        this.elements.wordDisplay.addEventListener('touchend', () => { clearTimeout(app.state.longPressTimer); });
         document.addEventListener('mousedown', this.handleMiddleClick.bind(this));
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
         document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
