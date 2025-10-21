@@ -1011,8 +1011,6 @@ const dashboard = {
                 }]
             },
             options: {
-                responsive: true, // 그래프가 컨테이너 크기에 맞게 조절되도록 설정합니다. 이는 애니메이션의 정상적인 동작에 필수적입니다.
-                maintainAspectRatio: false, // 컨테이너의 너비와 높이에 독립적으로 반응하도록 합니다.
                 scales: {
                     y: { 
                         beginAtZero: true,
@@ -1027,6 +1025,7 @@ const dashboard = {
             }
         });
     },
+
     renderQuizAccuracyCharts(quizHistory, grade) {
         this.elements.quizAccuracyCharts.innerHTML = '';
         const today = new Date();
@@ -1234,8 +1233,8 @@ const dashboard = {
         const h = Math.floor(totalSeconds / 3600);
         const m = Math.floor((totalSeconds % 3600) / 60);
         let result = '';
-        if (h > 0) result += `${h}h `;
-        if (m > 0) result += `${m}m`;
+        if (h > 0) result += `${h}시간 `;
+        if (m > 0) result += `${m}분`;
         return result.trim() || '0분';
     },
 };
@@ -2067,8 +2066,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
-
 
 
