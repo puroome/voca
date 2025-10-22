@@ -37,6 +37,10 @@
         .podium .rank-2 .podium-base { height: 7rem; }
         .podium .rank-3 .podium-base { height: 5rem; }
         .podium .podium-base { width: 100%; border-radius: 0.5rem 0.5rem 0 0; display: flex; align-items: center; justify-content: center; }
+        .ranking-option {
+            font-weight: bold;
+            color: #2563eb; /* text-blue-600 */
+        }
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -129,7 +133,7 @@
             projectId: "wordapp-91c0a",
             storageBucket: "wordapp-91c0a.firebasestorage.app",
             messagingSenderId: "213863780677",
-            appId: "1:213863780677:web:78d6b8755866a0c5ddee2c",
+            appId: "1:213863780677:web:78d6_b8755866a0c5ddee2c",
             databaseURL: "https://wordapp-91c0a-default-rtdb.asia-southeast1.firebasedatabase.app/"
         };
 
@@ -382,7 +386,8 @@
                 if (studentsToDisplay.length > 0) {
                     const allStudentsOption = document.createElement('option');
                     allStudentsOption.value = "__all__";
-                    allStudentsOption.textContent = "전체 학생 랭킹";
+                    allStudentsOption.textContent = "전체 학생 순위";
+                    allStudentsOption.className = "ranking-option";
                     this.elements.studentDropdown.appendChild(allStudentsOption);
                 }
 
