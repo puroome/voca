@@ -1069,19 +1069,11 @@ const dashboard = {
                 },
                 options: {
                     responsive: true,
-maintainAspectRatio: false,
-    scales: { y: { beginAtZero: true, suggestedMax: 60 } },
-    plugins: { 
-        legend: { display: false },
-        tooltip: {
-            callbacks: {
-                label: function(context) {
-                    // context.parsed.y에 해당 막대의 숫자 값이 들어있습니다.
-                    return context.parsed.y + '분';
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, suggestedMax: 60 } },
+                    plugins: { legend: { display: false } }
                 }
-            }
-        }
-    }            });
+            });
         }
         
         const quizStats7Days = {
@@ -2117,4 +2109,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
