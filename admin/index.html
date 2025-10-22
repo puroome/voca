@@ -257,7 +257,7 @@
                 defaultOption.textContent = "학생을 선택하세요";
                 this.elements.studentDropdown.appendChild(defaultOption);
 
-                if (studentsToDisplay.length > 0 && grade !== 'unassigned') {
+                if (studentsToDisplay.length > 0) {
                     const allStudentsOption = document.createElement('option');
                     allStudentsOption.value = "__all__";
                     allStudentsOption.textContent = "전체 학생 랭킹";
