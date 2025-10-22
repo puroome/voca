@@ -1011,12 +1011,12 @@ const dashboard = {
                 }]
             },
             options: {
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     y: { 
                         beginAtZero: true,
-                        ticks: {
-                            stepSize: 10
-                        }
+                        suggestedMax: 60
                     }
                 },
                 plugins: {
@@ -1120,6 +1120,7 @@ const dashboard = {
                         data: data,
                         backgroundColor: backgroundColor,
                         borderWidth: 0,
+                        hoverBackgroundColor: ['#10B981', '#EF4444']
                     }]
                 },
                 options: {
@@ -2066,5 +2067,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
