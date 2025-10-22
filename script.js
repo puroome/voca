@@ -179,11 +179,8 @@ const app = {
         this.elements.logoutBtn.addEventListener('click', () => signOut(auth));
 
         document.querySelectorAll('.grade-select-card').forEach(card => {
-            card.addEventListener('click', async () => {
+            card.addEventListener('click', () => {
                 const grade = card.dataset.sheet;
-                const imgEl = card.querySelector('img');
-                const imgSrc = imgEl.src; // Get original src
-                imgEl.src = await imageDBCache.loadImage(imgSrc); // Ensure it's cached
                 this.navigateTo('mode', grade);
             });
         });
@@ -2112,4 +2109,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
