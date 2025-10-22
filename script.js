@@ -172,7 +172,7 @@ const app = {
         this.elements.loginBtn.addEventListener('click', () => {
             const provider = new GoogleAuthProvider();
             signInWithPopup(auth, provider).catch(error => {
-                alert("로그인에 실패했습니다. 다시 시도해 주세요.");
+                this.showToast("로그인에 실패했습니다. 다시 시도해 주세요.", true);
             });
         });
 
@@ -353,11 +353,22 @@ const app = {
             await learningMode.loadWordList(true);
             this.showRefreshSuccessMessage();
         } catch(err) {
-            alert("데이터 새로고침에 실패했습니다: " + err.message);
+            this.showToast("데이터 새로고침에 실패했습니다: " + err.message, true);
         } finally {
             elementsToDisable.forEach(el => el.classList.remove('pointer-events-none', 'opacity-50'));
             this.elements.refreshBtn.innerHTML = refreshIconHTML;
         }
+    },
+    showToast(message, isError = false) {
+        const toast = document.createElement('div');
+        toast.textContent = message;
+        toast.className = `fixed top-20 left-1/2 -translate-x-1/2 text-white py-2 px-5 rounded-lg shadow-xl z-[200] text-lg font-semibold ${isError ? 'bg-red-500' : 'bg-green-500'}`;
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            toast.style.transition = 'opacity 0.5s';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 500);
+        }, 2500);
     },
     showRefreshSuccessMessage() {
         const msgEl = this.elements.refreshSuccessMessage;
@@ -796,12 +807,10 @@ const utils = {
     },
     
     async getLastLearnedIndex() {
-        // This function is now disabled and always returns 0.
         return 0;
     },
 
     async setLastLearnedIndex(index) {
-        // This function is now disabled and does nothing.
         return;
     },
     
@@ -1117,7 +1126,7 @@ const dashboard = {
 
         const chartData = hasAttempts
             ? [correct, incorrect > 0 ? incorrect : 0.0001]
-            : [0, 1]; // 푼 기록이 없으면 회색으로 완전히 채움
+            : [0, 1];
             
         const centerText = hasAttempts ? `${accuracy}%` : '-';
 
@@ -1157,7 +1166,7 @@ const dashboard = {
                     const text = centerText;
                     const textX = Math.round((width - ctx.measureText(text).width) / 2);
                     const textY = height / 2;
-                    ctx.fillStyle = hasAttempts ? '#374151' : '#9CA3AF'; // 기록 없을 때 텍스트도 회색으로
+                    ctx.fillStyle = hasAttempts ? '#374151' : '#9CA3AF';
                     ctx.fillText(text, textX, textY);
                     ctx.save();
                 }
@@ -1574,7 +1583,6 @@ const quizMode = {
         this.state.isPreloading[grade][type] = true;
         
         try {
-            // A simplified version of generateSingleQuiz for preloading
             const allWords = learningMode.state.wordList[grade] || [];
             if (allWords.length < 5) return;
             const learnedWords = utils.getCorrectlyAnsweredWords(type);
@@ -1821,7 +1829,7 @@ const learningMode = {
     
         if (!startWord) {
             this.elements.startScreen.classList.add('hidden');
-            this.state.currentIndex = 0; // Always start from the beginning
+            this.state.currentIndex = 0;
             this.launchApp(currentWordList);
             return;
         }
@@ -1870,7 +1878,7 @@ const learningMode = {
         const incorrectWords = mistakeWordsFromQuiz || utils.getIncorrectWords();
 
         if (incorrectWords.length === 0) {
-            alert("오답 노트에 단어가 없습니다!");
+            app.showToast("오답 노트에 단어가 없습니다!", true);
             app.navigateTo('mode', grade);
             return;
         }
@@ -1886,7 +1894,7 @@ const learningMode = {
 
         const favoriteWords = utils.getFavoriteWords();
         if (favoriteWords.length === 0) {
-            alert("즐겨찾기에 등록된 단어가 없습니다!");
+            app.showToast("즐겨찾기에 등록된 단어가 없습니다!", true);
             app.navigateTo('mode', grade);
             return;
         }
