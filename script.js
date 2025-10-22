@@ -914,7 +914,6 @@ const dashboard = {
         this.destroyCharts();
 
         this.elements.content.innerHTML = `<div class="text-center p-4"><div class="loader mx-auto"></div></div>`;
-        this.elements.stats7DayContainer.innerHTML = '';
         this.elements.stats30DayContainer.innerHTML = '';
         this.elements.statsTotalContainer.innerHTML = '';
 
@@ -2020,3 +2019,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
