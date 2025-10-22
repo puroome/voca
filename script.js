@@ -1694,15 +1694,30 @@ const learningMode = {
         }
 
         try {
-            const cachedData = localStorage.getItem(`wordListCache_${grade}`);
-            if (cachedData) {
-                const { timestamp, words } = JSON.parse(cachedData);
-                if (Date.now() - timestamp < 10 * 24 * 60 * 60 * 1000) {
-                    this.state.wordList[grade] = words.sort((a, b) => a.id - b.id);
-                    this.state.isWordListReady[grade] = true;
-                    return;
-                }
+        const cachedData = localStorage.getItem(`wordListCache_${grade}`);
+        if (cachedData) {
+            const { timestamp } = JSON.parse(cachedData);
+
+            // --- 여기부터가 수정된 '매주 월요일' 체크 로직입니다 ---
+            const now = new Date();
+            const lastMonday = new Date(now);
+            
+            // 1. 오늘 날짜를 기준으로 가장 최근의 월요일 날짜를 계산합니다.
+            const todayDay = now.getDay(); // (일요일=0, 월요일=1, ..., 토요일=6)
+            const diff = todayDay === 0 ? 6 : todayDay - 1; // 오늘이 일요일이면 6일 전, 아니면 (오늘요일-1)일 전
+            lastMonday.setDate(now.getDate() - diff);
+            lastMonday.setHours(0, 0, 0, 0); // 월요일 0시 0분 0초로 설정
+
+            // 2. 캐시가 저장된 시각이 가장 최근 월요일 0시 이전인지 확인합니다.
+            if (timestamp >= lastMonday.getTime()) {
+                // 3. 아니라면 (즉, 이번 주에 이미 업데이트했다면) 캐시를 사용합니다.
+                const { words } = JSON.parse(cachedData);
+                this.state.wordList[grade] = words.sort((a, b) => a.id - b.id);
+                this.state.isWordListReady[grade] = true;
+                return;
             }
+            // --- 여기까지가 수정된 로직입니다 ---
+        }
         } catch (e) {
             localStorage.removeItem(`wordListCache_${grade}`);
         }
@@ -2031,6 +2046,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
