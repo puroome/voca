@@ -24,6 +24,19 @@
             color: white;
             font-weight: bold;
         }
+        /* 시상대 스타일 */
+        .podium { display: flex; align-items: flex-end; justify-content: center; gap: 0.5rem; height: 12rem; }
+        .podium-step { display: flex; flex-direction: column; align-items: center; text-align: center; }
+        .podium-step .rank-circle { width: 3rem; height: 3rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: bold; color: white; margin-bottom: 0.5rem; }
+        .podium-step .student-name { font-weight: bold; font-size: 1rem; }
+        .podium-step .student-score { font-size: 0.9rem; color: #4b5563; }
+        .podium .rank-2 { order: 1; }
+        .podium .rank-1 { order: 2; }
+        .podium .rank-3 { order: 3; }
+        .podium .rank-1 .podium-base { height: 9rem; }
+        .podium .rank-2 .podium-base { height: 7rem; }
+        .podium .rank-3 .podium-base { height: 5rem; }
+        .podium .podium-base { width: 100%; border-radius: 0.5rem 0.5rem 0 0; display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -147,9 +160,11 @@
                 });
 
                 this.elements.studentDropdown.addEventListener('change', (e) => {
-                    const selectedEmail = e.target.value;
-                    if (selectedEmail) {
-                        const studentData = this.state.studentsForSelectedGrade.find(s => s.email === selectedEmail);
+                    const selectedValue = e.target.value;
+                    if (selectedValue === '__all__') {
+                        this.loadAndDisplayRankings();
+                    } else if (selectedValue) {
+                        const studentData = this.state.studentsForSelectedGrade.find(s => s.email === selectedValue);
                         if (studentData) {
                             this.loadAllDetailsForStudent(studentData);
                         }
@@ -242,6 +257,13 @@
                 defaultOption.textContent = "학생을 선택하세요";
                 this.elements.studentDropdown.appendChild(defaultOption);
 
+                if (studentsToDisplay.length > 0 && grade !== 'unassigned') {
+                    const allStudentsOption = document.createElement('option');
+                    allStudentsOption.value = "__all__";
+                    allStudentsOption.textContent = "전체 학생 랭킹";
+                    this.elements.studentDropdown.appendChild(allStudentsOption);
+                }
+
                 if (studentsToDisplay.length === 0) {
                     defaultOption.textContent = '해당하는 학생이 없습니다.';
                     return;
@@ -277,8 +299,10 @@
                         gradesToShow = ['3y', '1y', '2y'];
                     }
                     
+                    const gradeColors = { '1y': 'bg-yellow-50', '2y': 'bg-blue-50', '3y': 'bg-red-50' };
+
                     for (const grade of gradesToShow) {
-                        const gradeBlock = await this.createGradeStatisticsBlock(student, grade, studyHistory, quizHistory);
+                        const gradeBlock = await this.createGradeStatisticsBlock(student, grade, studyHistory, quizHistory, gradeColors[grade]);
                         this.elements.studentDetails.appendChild(gradeBlock);
                     }
                 } catch (error) {
@@ -289,9 +313,9 @@
                 }
             },
 
-            async createGradeStatisticsBlock(student, grade, studyHistory, quizHistory) {
+            async createGradeStatisticsBlock(student, grade, studyHistory, quizHistory, bgColor) {
                 const block = document.createElement('div');
-                block.className = `p-6 rounded-lg shadow-lg bg-white`;
+                block.className = `p-6 rounded-lg shadow-lg ${bgColor}`;
 
                 // 1. Load word list for progress calculation
                 if (!this.state.wordLists[grade]) {
@@ -447,6 +471,116 @@
                 if (m > 0) result += `${m}분`;
                 return result.trim() || '0분';
             },
+
+            async loadAndDisplayRankings() {
+                this.elements.detailsPrompt.classList.add('hidden');
+                this.elements.studentDetails.classList.add('hidden');
+                this.elements.studentDetailsLoader.classList.remove('hidden');
+                this.elements.studentDetails.innerHTML = '';
+                
+                const students = this.state.studentsForSelectedGrade;
+                if (students.length === 0) {
+                    this.elements.studentDetails.innerHTML = '<p class="text-center text-gray-500">랭킹을 표시할 학생이 없습니다.</p>';
+                    this.elements.studentDetailsLoader.classList.add('hidden');
+                    this.elements.studentDetails.classList.remove('hidden');
+                    return;
+                }
+
+                try {
+                    const studentStatsPromises = students.map(async (student) => {
+                        const studyDoc = await getDoc(doc(db, 'users', student.id, 'history', 'study'));
+                        const quizDoc = await getDoc(doc(db, 'users', student.id, 'history', 'quiz'));
+                        const studyHistory = studyDoc.exists() ? studyDoc.data() : {};
+                        const quizHistory = quizDoc.exists() ? quizDoc.data() : {};
+                        
+                        let totalSeconds = 0;
+                        let totalCorrect = 0;
+                        let totalQuizzes = 0;
+                        const today = new Date();
+
+                        for (let i = 0; i < 7; i++) {
+                            const d = new Date(today);
+                            d.setDate(d.getDate() - i);
+                            const dateString = d.toISOString().slice(0, 10);
+
+                            if(studyHistory[dateString]) {
+                                Object.values(studyHistory[dateString]).forEach(seconds => totalSeconds += seconds);
+                            }
+                            if (quizHistory[dateString]) {
+                                Object.values(quizHistory[dateString]).forEach(gradeData => {
+                                    Object.values(gradeData).forEach(typeStats => {
+                                        totalCorrect += typeStats.correct || 0;
+                                        totalQuizzes += typeStats.total || 0;
+                                    });
+                                });
+                            }
+                        }
+                        const accuracy = totalQuizzes > 0 ? (totalCorrect / totalQuizzes) * 100 : 0;
+                        const displayName = this.state.studentNameMap[student.email] || student.displayName;
+                        return { name: displayName, time: totalSeconds, accuracy: accuracy };
+                    });
+
+                    const allStats = await Promise.all(studentStatsPromises);
+
+                    const timeRanking = [...allStats].sort((a, b) => b.time - a.time);
+                    const accuracyRanking = [...allStats].sort((a, b) => b.accuracy - a.accuracy);
+
+                    const timeRankingHTML = this.renderRankingBoard('학습 시간 순위 (최근 7일)', timeRanking, (s) => this.formatSeconds(s.time));
+                    const accuracyRankingHTML = this.renderRankingBoard('퀴즈 정답률 순위 (최근 7일)', accuracyRanking, (s) => `${s.accuracy.toFixed(1)}%`);
+                    
+                    this.elements.studentDetails.innerHTML = timeRankingHTML + accuracyRankingHTML;
+
+                } catch (error) {
+                    this.elements.studentDetails.innerHTML = `<p class="text-red-500 text-center">랭킹 정보를 불러오는 데 실패했습니다: ${error.message}</p>`;
+                } finally {
+                    this.elements.studentDetailsLoader.classList.add('hidden');
+                    this.elements.studentDetails.classList.remove('hidden');
+                }
+            },
+
+            renderRankingBoard(title, rankedData, formatter) {
+                const top3 = rankedData.slice(0, 3);
+                
+                const podiumHTML = `
+                    <div class="podium">
+                        ${[2, 1, 3].map(rank => {
+                            const student = top3[rank - 1];
+                            if (!student) return `<div class="w-1/3"></div>`;
+                            const medal = ['🥇', '🥈', '🥉'][rank - 1];
+                            const color = ['bg-yellow-400', 'bg-gray-300', 'bg-yellow-600'][rank-1];
+                            return `
+                                <div class="w-1/3 podium-step rank-${rank}">
+                                    <div class="podium-base ${color}">
+                                        <div class="p-2">
+                                            <div class="text-4xl">${medal}</div>
+                                            <p class="student-name text-white">${student.name}</p>
+                                            <p class="student-score text-gray-800">${formatter(student)}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+
+                const listHTML = rankedData.map((student, index) => `
+                    <li class="flex items-center justify-between p-3 rounded-md ${index < 3 ? 'bg-gray-200 font-bold' : 'bg-white'}">
+                        <div class="flex items-center">
+                            <span class="w-8 text-center text-gray-500">${index + 1}</span>
+                            <span>${student.name}</span>
+                        </div>
+                        <span class="font-semibold">${formatter(student)}</span>
+                    </li>
+                `).join('');
+
+                return `
+                    <div class="bg-white p-6 rounded-lg shadow-lg">
+                        <h3 class="text-2xl font-bold text-gray-800 text-center mb-6">${title}</h3>
+                        ${podiumHTML}
+                        <ul class="mt-8 space-y-2">${listHTML}</ul>
+                    </div>
+                `;
+            }
         };
 
         adminApp.init();
