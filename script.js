@@ -900,25 +900,23 @@ const dashboard = {
         container: document.getElementById('dashboard-container'),
         content: document.getElementById('dashboard-content'),
         stats7DayContainer: document.getElementById('dashboard-stats-7day-container'),
-        // quizAccuracyChartsContainer: ... (삭제됨)
-        // quizAccuracyCharts: ... (삭제됨)
         stats30DayContainer: document.getElementById('dashboard-stats-30day-container'),
         statsTotalContainer: document.getElementById('dashboard-stats-total-container'),
     },
     state: {
-        // quizAccuracyCharts: [], // 삭제됨
+        studyTimeChart: null,
+        quiz1Chart: null,
+        quiz2Chart: null,
+        quiz3Chart: null,
     },
     init() {},
     async show() {
-        // this.state.quizAccuracyCharts.forEach(chart => chart.destroy()); // 삭제됨
-        // this.state.quizAccuracyCharts = []; // 삭제됨
+        this.destroyCharts();
 
         this.elements.content.innerHTML = `<div class="text-center p-4"><div class="loader mx-auto"></div></div>`;
         this.elements.stats7DayContainer.innerHTML = '';
-        // this.elements.quizAccuracyChartsContainer.classList.add('hidden'); // 삭제됨
         this.elements.stats30DayContainer.innerHTML = '';
         this.elements.statsTotalContainer.innerHTML = '';
-
 
         if (!learningMode.state.isWordListReady[app.state.selectedSheet]) {
             await learningMode.loadWordList();
@@ -968,17 +966,133 @@ const dashboard = {
             const studyHistory = studyHistoryDoc.exists() ? studyHistoryDoc.data() : {};
             const quizHistory = quizHistoryDoc.exists() ? quizHistoryDoc.data() : {};
             
-            // this.renderQuizAccuracyCharts(quizHistory, grade); // 삭제됨
+            this.render7DayCharts(studyHistory, quizHistory, grade);
             this.renderSummaryCards(studyHistory, quizHistory, grade);
-
-            // this.elements.quizAccuracyChartsContainer.classList.remove('hidden'); // 삭제됨
 
         } catch (e) {
             this.elements.content.innerHTML = `<p class="text-red-500 text-center">통계 정보를 불러오는 데 실패했습니다.</p>`;
         }
     },
+    
+    destroyCharts() {
+        if (this.state.studyTimeChart) this.state.studyTimeChart.destroy();
+        if (this.state.quiz1Chart) this.state.quiz1Chart.destroy();
+        if (this.state.quiz2Chart) this.state.quiz2Chart.destroy();
+        if (this.state.quiz3Chart) this.state.quiz3Chart.destroy();
+        this.state.studyTimeChart = this.state.quiz1Chart = this.state.quiz2Chart = this.state.quiz3Chart = null;
+    },
 
-    // renderQuizAccuracyCharts(quizHistory, grade) { ... } // 함수 전체 삭제됨
+    render7DayCharts(studyHistory, quizHistory, grade) {
+        const today = new Date();
+        const labels = [];
+        const data = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date(today);
+            d.setDate(d.getDate() - i);
+            const dateString = d.toISOString().slice(0, 10);
+            labels.push(`${d.getMonth() + 1}/${d.getDate()}`);
+            data.push(Math.round(((studyHistory[dateString] && studyHistory[dateString][grade]) || 0) / 60));
+        }
+
+        const studyTimeCtx = document.getElementById('study-time-chart')?.getContext('2d');
+        if (studyTimeCtx) {
+            this.state.studyTimeChart = new Chart(studyTimeCtx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: '학습 시간 (분)',
+                        data,
+                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, suggestedMax: 60 } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+        
+        const quizStats7Days = {
+            'MULTIPLE_CHOICE_MEANING': { correct: 0, total: 0 },
+            'FILL_IN_THE_BLANK': { correct: 0, total: 0 },
+            'MULTIPLE_CHOICE_DEFINITION': { correct: 0, total: 0 },
+        };
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(today);
+            d.setDate(d.getDate() - i);
+            const dateString = d.toISOString().slice(0, 10);
+            if (quizHistory[dateString] && quizHistory[dateString][grade]) {
+                for(const type in quizStats7Days){
+                    if(quizHistory[dateString][grade][type]){
+                        quizStats7Days[type].correct += quizHistory[dateString][grade][type].correct || 0;
+                        quizStats7Days[type].total += quizHistory[dateString][grade][type].total || 0;
+                    }
+                }
+            }
+        }
+        
+        this.state.quiz1Chart = this.createDoughnutChart('quiz1-chart', 'quiz1-label', '영한 뜻', quizStats7Days['MULTIPLE_CHOICE_MEANING']);
+        this.state.quiz2Chart = this.createDoughnutChart('quiz2-chart', 'quiz2-label', '빈칸 추론', quizStats7Days['FILL_IN_THE_BLANK']);
+        this.state.quiz3Chart = this.createDoughnutChart('quiz3-chart', 'quiz3-label', '영영 풀이', quizStats7Days['MULTIPLE_CHOICE_DEFINITION']);
+    },
+    
+    createDoughnutChart(elementId, labelId, labelText, stats) {
+        const ctx = document.getElementById(elementId)?.getContext('2d');
+        if (!ctx) return null;
+
+        const correct = stats.correct || 0;
+        const total = stats.total || 0;
+        const incorrect = total - correct;
+        const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
+
+        const labelEl = document.getElementById(labelId);
+        if (labelEl) {
+            labelEl.textContent = `${labelText} (${correct}/${total})`;
+        }
+        
+        return new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['정답', '오답'],
+                datasets: [{
+                    data: [correct, incorrect > 0 ? incorrect : 0.0001],
+                    backgroundColor: ['#34D399', '#F87171'],
+                    hoverBackgroundColor: ['#10B981', '#EF4444'],
+                    borderWidth: 0,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                cutout: '70%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false },
+                }
+            },
+            plugins: [{
+                id: 'doughnutLabel',
+                beforeDraw: (chart) => {
+                    const { ctx, width, height } = chart;
+                    ctx.restore();
+                    const fontSize = (height / 114).toFixed(2);
+                    ctx.font = `bold ${fontSize}em sans-serif`;
+                    ctx.textBaseline = 'middle';
+                    const text = `${accuracy}%`;
+                    const textX = Math.round((width - ctx.measureText(text).width) / 2);
+                    const textY = height / 2;
+                    ctx.fillStyle = '#374151';
+                    ctx.fillText(text, textX, textY);
+                    ctx.save();
+                }
+            }]
+        });
+    },
 
     renderSummaryCards(studyHistory, quizHistory, grade) {
         const today = new Date();
@@ -1035,7 +1149,6 @@ const dashboard = {
             return { totalSeconds, quizStats };
         })();
         
-        const stats7 = getStatsForPeriod(7); 
         const stats30 = getStatsForPeriod(30);
 
         const createCardHTML = (title, time, stats) => {
@@ -1065,7 +1178,6 @@ const dashboard = {
             `;
         };
         
-        this.elements.stats7DayContainer.innerHTML = createCardHTML('최근 7일 기록', stats7.totalSeconds, stats7.quizStats); 
         this.elements.stats30DayContainer.innerHTML = createCardHTML('최근 30일 기록', stats30.totalSeconds, stats30.quizStats);
         this.elements.statsTotalContainer.innerHTML = createCardHTML('누적 총학습 기록', totalStats.totalSeconds, totalStats.quizStats);
     },
