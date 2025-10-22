@@ -899,33 +899,28 @@ const dashboard = {
     elements: {
         container: document.getElementById('dashboard-container'),
         content: document.getElementById('dashboard-content'),
-        studyTimeChartContainer: document.getElementById('study-time-chart-container'),
+        stats7DayContainer: document.getElementById('dashboard-stats-7day-container'), // 수정됨
         quizAccuracyChartsContainer: document.getElementById('quiz-accuracy-charts-container'),
         quizAccuracyCharts: document.getElementById('quiz-accuracy-charts'),
         stats30DayContainer: document.getElementById('dashboard-stats-30day-container'),
         statsTotalContainer: document.getElementById('dashboard-stats-total-container'),
     },
     state: {
-        studyTimeChart: null,
+        // studyTimeChart: null, // 삭제됨
         quizAccuracyCharts: [],
     },
     init() {},
-    destroyCharts() {
-        if (this.state.studyTimeChart) {
-            this.state.studyTimeChart.destroy();
-            this.state.studyTimeChart = null;
-        }
+    async show() {
+        // if (this.state.studyTimeChart) this.state.studyTimeChart.destroy(); // 삭제됨
         this.state.quizAccuracyCharts.forEach(chart => chart.destroy());
         this.state.quizAccuracyCharts = [];
-    },
-    async show() {
-        this.destroyCharts();
 
         this.elements.content.innerHTML = `<div class="text-center p-4"><div class="loader mx-auto"></div></div>`;
-        this.elements.studyTimeChartContainer.classList.add('hidden');
+        this.elements.stats7DayContainer.innerHTML = ''; // 수정됨
         this.elements.quizAccuracyChartsContainer.classList.add('hidden');
         this.elements.stats30DayContainer.innerHTML = '';
         this.elements.statsTotalContainer.innerHTML = '';
+
 
         if (!learningMode.state.isWordListReady[app.state.selectedSheet]) {
             await learningMode.loadWordList();
@@ -975,11 +970,11 @@ const dashboard = {
             const studyHistory = studyHistoryDoc.exists() ? studyHistoryDoc.data() : {};
             const quizHistory = quizHistoryDoc.exists() ? quizHistoryDoc.data() : {};
             
-            this.renderStudyTimeChart(studyHistory, grade);
+            // this.renderStudyTimeChart(studyHistory, grade); // 삭제됨
             this.renderQuizAccuracyCharts(quizHistory, grade);
             this.renderSummaryCards(studyHistory, quizHistory, grade);
 
-            this.elements.studyTimeChartContainer.classList.remove('hidden');
+            // this.elements.studyTimeChartContainer.classList.remove('hidden'); // 삭제됨
             this.elements.quizAccuracyChartsContainer.classList.remove('hidden');
 
         } catch (e) {
@@ -987,70 +982,30 @@ const dashboard = {
         }
     },
     
-    renderStudyTimeChart(studyHistory, grade) {
-        const labels = [];
-        const data = [];
-        const today = new Date();
-
-        for (let i = 6; i >= 0; i--) {
-            const d = new Date(today);
-            d.setDate(d.getDate() - i);
-            const dateString = d.toISOString().slice(0, 10);
-            labels.push(`${d.getMonth() + 1}/${d.getDate()}`);
-            
-            const seconds = studyHistory[dateString]?.[grade] || 0;
-            data.push(Math.round(seconds / 60));
-        }
-
-        const ctx = document.getElementById('studyTimeChart').getContext('2d');
-        this.state.studyTimeChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: '학습 시간 (분)',
-                    data: data,
-                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: { 
-                        beginAtZero: true,
-                        suggestedMax: 60
-                    }
-                },
-                plugins: {
-                    legend: { display: false }
-                }
-            }
-        });
-    },
+    // renderStudyTimeChart(studyHistory, grade) { ... } // 함수 전체 삭제됨
 
     renderQuizAccuracyCharts(quizHistory, grade) {
+        this.elements.quizAccuracyCharts.innerHTML = '';
         const today = new Date();
         
-        const quizTypes = {
-            'MULTIPLE_CHOICE_MEANING': { id: 'quiz-meaning-chart', labelId: 'quiz-meaning-label', name: '영한 뜻' },
-            'FILL_IN_THE_BLANK': { id: 'quiz-blank-chart', labelId: 'quiz-blank-label', name: '빈칸 추론' },
-            'MULTIPLE_CHOICE_DEFINITION': { id: 'quiz-definition-chart', labelId: 'quiz-definition-label', name: '영영 풀이' }
-        };
-    
+        const quizTypes = [
+            { id: 'MULTIPLE_CHOICE_MEANING', name: '영한 뜻' },
+            { id: 'FILL_IN_THE_BLANK', name: '빈칸 추론' },
+            { id: 'MULTIPLE_CHOICE_DEFINITION', name: '영영 풀이' }
+        ];
+
         const stats7days = {
             'MULTIPLE_CHOICE_MEANING': { correct: 0, total: 0 },
             'FILL_IN_THE_BLANK': { correct: 0, total: 0 },
             'MULTIPLE_CHOICE_DEFINITION': { correct: 0, total: 0 },
         };
-    
+
+        // 1. Calculate stats for the last 7 days
         for (let i = 0; i < 7; i++) {
             const d = new Date(today);
             d.setDate(d.getDate() - i);
             const dateString = d.toISOString().slice(0, 10);
-    
+
             if (quizHistory[dateString] && quizHistory[dateString][grade]) {
                 Object.keys(quizHistory[dateString][grade]).forEach(quizType => {
                     if (stats7days[quizType]) {
@@ -1079,40 +1034,50 @@ const dashboard = {
             }
         };
 
-        const createDoughnutChart = (elementId, labelId, labelText, stats) => {
-            const canvas = document.getElementById(elementId);
-            if (!canvas) return null;
-            const ctx = canvas.getContext('2d');
+        quizTypes.forEach(quizType => {
+            const stats = stats7days[quizType.id];
             const correct = stats.correct || 0;
             const total = stats.total || 0;
             const incorrect = total - correct;
             const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
             
             let data, backgroundColor, centerText;
-    
+
+            // 2. Set colors based on whether there is data
             if (total === 0) {
                 data = [1];
-                backgroundColor = ['#d1d5db'];
+                backgroundColor = ['#d1d5db']; // Gray
                 centerText = '-';
             } else {
                 data = [correct, incorrect > 0 ? incorrect : 0.0001];
-                backgroundColor = ['#34D399', '#F87171'];
+                backgroundColor = ['#34D399', '#F87171']; // Green, Red
                 centerText = `${accuracy}%`;
             }
-    
-            const labelEl = document.getElementById(labelId);
-            if (labelEl) {
-                labelEl.textContent = `${labelText} (${correct}/${total})`;
-            }
-    
-            return new Chart(ctx, {
+
+            const container = document.createElement('div');
+            container.className = 'flex flex-col items-center bg-gray-50 p-4 rounded-lg';
+            
+            const chartWrapper = document.createElement('div');
+            chartWrapper.className = 'relative w-full max-w-[150px] mx-auto';
+
+            const canvas = document.createElement('canvas');
+            chartWrapper.appendChild(canvas);
+            container.appendChild(chartWrapper);
+            
+            const label = document.createElement('p');
+            label.className = 'text-center font-semibold mt-2 text-gray-600';
+            label.textContent = `${quizType.name} (${correct}/${total})`;
+            container.appendChild(label);
+            
+            this.elements.quizAccuracyCharts.appendChild(container);
+
+            const chart = new Chart(canvas.getContext('2d'), {
                 type: 'doughnut',
                 data: {
                     datasets: [{
                         data: data,
                         backgroundColor: backgroundColor,
                         borderWidth: 0,
-                        hoverBackgroundColor: ['#10B981', '#EF4444']
                     }]
                 },
                 options: {
@@ -1122,20 +1087,15 @@ const dashboard = {
                     plugins: {
                         legend: { display: false },
                         tooltip: { enabled: false },
-                        centerText: { text: centerText }
+                        centerText: {
+                            text: centerText
+                        }
                     }
                 },
                 plugins: [centerTextPlugin]
             });
-        };
-
-        for (const type in quizTypes) {
-            const config = quizTypes[type];
-            const chart = createDoughnutChart(config.id, config.labelId, config.name, stats7days[type]);
-            if (chart) {
-                this.state.quizAccuracyCharts.push(chart);
-            }
-        }
+            this.state.quizAccuracyCharts.push(chart);
+        });
     },
 
     renderSummaryCards(studyHistory, quizHistory, grade) {
@@ -1193,6 +1153,7 @@ const dashboard = {
             return { totalSeconds, quizStats };
         })();
         
+        const stats7 = getStatsForPeriod(7); // 7일 데이터 계산
         const stats30 = getStatsForPeriod(30);
 
         const createCardHTML = (title, time, stats) => {
@@ -1222,6 +1183,7 @@ const dashboard = {
             `;
         };
         
+        this.elements.stats7DayContainer.innerHTML = createCardHTML('최근 7일 기록', stats7.totalSeconds, stats7.quizStats); // 7일 카드 렌더링
         this.elements.stats30DayContainer.innerHTML = createCardHTML('최근 30일 기록', stats30.totalSeconds, stats30.quizStats);
         this.elements.statsTotalContainer.innerHTML = createCardHTML('누적 총학습 기록', totalStats.totalSeconds, totalStats.quizStats);
     },
@@ -2064,4 +2026,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
