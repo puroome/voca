@@ -1047,8 +1047,17 @@ const dashboard = {
         const correct = stats.correct || 0;
         const total = stats.total || 0;
         const incorrect = total - correct;
-        const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
+// --- 수정된 부분 시작 ---
 
+        const hasAttempts = total > 0;
+        const accuracy = hasAttempts ? Math.round((correct / total) * 100) : 0;
+        const chartColors = hasAttempts
+            ? ['#34D399', '#F87171']
+            : ['#E5E7EB', '#E5E7EB'];
+        const chartData = hasAttempts
+            ? [correct, incorrect > 0 ? incorrect : 0.0001]
+            : [0, 1];
+        const centerText = hasAttempts ? `${accuracy}%` : '-';
         const labelEl = document.getElementById(labelId);
         if (labelEl) {
             labelEl.textContent = `${labelText} (${correct}/${total})`;
@@ -2019,4 +2028,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
