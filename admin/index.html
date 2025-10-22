@@ -49,6 +49,13 @@
                 Google 계정으로 로그인
             </button>
         </div>
+        
+        <div id="initial-loader" class="hidden fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50">
+            <div class="text-center">
+                <div class="loader mx-auto"></div>
+                <p class="mt-4 text-gray-600 font-semibold">관리자 데이터를 불러오는 중...</p>
+            </div>
+        </div>
 
         <div id="dashboard" class="hidden">
             <div class="flex justify-between items-center mb-6 pb-4 border-b">
@@ -126,6 +133,7 @@
             },
             elements: {
                 loginScreen: document.getElementById('login-screen'),
+                initialLoader: document.getElementById('initial-loader'),
                 authMessage: document.getElementById('auth-message'),
                 loginBtn: document.getElementById('login-btn'),
                 logoutBtn: document.getElementById('logout-btn'),
@@ -145,21 +153,28 @@
 
             bindAuthEvents() {
                 this.elements.loginBtn.addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()));
-                this.elements.logoutBtn.addEventListener('click', () => { this.state.selectedGrade = null; signOut(auth); });
+                this.elements.logoutBtn.addEventListener('click', () => { 
+                    this.state.selectedGrade = null;
+                    location.hash = ''; 
+                    signOut(auth); 
+                });
 
                 this.elements.gradeSelection.addEventListener('click', (e) => {
                     if (e.target.classList.contains('grade-btn')) {
-                        const grade = e.target.dataset.grade;
-                        this.state.selectedGrade = grade;
-                        document.querySelectorAll('.grade-btn').forEach(btn => btn.classList.remove('active-grade-btn'));
-                        e.target.classList.add('active-grade-btn');
-                        this.elements.studentSelectTitle.textContent = `${e.target.textContent} 학생 선택`;
-                        this.displayStudentsForGrade(grade);
+                        location.hash = `grade=${e.target.dataset.grade}`;
                     }
                 });
 
                 this.elements.studentDropdown.addEventListener('change', (e) => {
-                    this.handleStudentSelection(e.target.value);
+                    const grade = this.state.selectedGrade;
+                    const value = e.target.value;
+                    if (value === '__all__') {
+                        location.hash = `grade=${grade}&view=ranking`;
+                    } else if (value) {
+                        location.hash = `grade=${grade}&view=student&email=${value}`;
+                    } else {
+                        location.hash = `grade=${grade}`;
+                    }
                 });
                 
                 this.elements.studentDetails.addEventListener('click', (e) => {
@@ -167,42 +182,74 @@
                     if (target) {
                         e.preventDefault();
                         const email = target.dataset.email;
-                        this.handleStudentSelection(email, true);
+                        const grade = this.state.selectedGrade;
+                        location.hash = `grade=${grade}&view=student&email=${email}`;
                     }
                 });
+                
+                window.addEventListener('hashchange', () => this.handleHashChange());
 
                 onAuthStateChanged(auth, user => {
                     if (user) {
                         if (user.email === this.ADMIN_EMAIL) this.showDashboard(user);
                         else this.showAccessDenied();
-                    } else this.showLoginScreen();
+                    } else {
+                        this.showLoginScreen();
+                        location.hash = '';
+                    }
                 });
             },
 
-            handleStudentSelection(value, fromRanking = false) {
-                if (fromRanking) {
-                    this.elements.studentDropdown.value = value;
+            handleHashChange() {
+                const params = new URLSearchParams(location.hash.substring(1));
+                const grade = params.get('grade');
+                const view = params.get('view');
+                const email = params.get('email');
+
+                if (!grade) {
+                    this.resetViews();
+                    return;
                 }
 
-                if (value === '__all__') {
-                    this.loadAndDisplayRankings();
-                } else if (value) {
-                    const studentData = this.state.studentsForSelectedGrade.find(s => s.email === value);
-                    if (studentData) {
-                        this.loadAllDetailsForStudent(studentData);
+                if (this.state.selectedGrade !== grade) {
+                    this.state.selectedGrade = grade;
+                    const gradeBtn = document.querySelector(`.grade-btn[data-grade="${grade}"]`);
+                    if (gradeBtn) {
+                        document.querySelectorAll('.grade-btn').forEach(btn => btn.classList.remove('active-grade-btn'));
+                        gradeBtn.classList.add('active-grade-btn');
+                        this.elements.studentSelectTitle.textContent = `${gradeBtn.textContent} 학생 선택`;
+                        this.displayStudentsForGrade(grade);
                     }
+                }
+
+                if (view === 'ranking') {
+                    if (this.elements.studentDropdown.value !== '__all__') this.elements.studentDropdown.value = '__all__';
+                    this.loadAndDisplayRankings();
+                } else if (view === 'student' && email) {
+                     if (this.elements.studentDropdown.value !== email) this.elements.studentDropdown.value = email;
+                    const studentData = this.state.studentsForSelectedGrade.find(s => s.email === email);
+                    if(studentData) this.loadAllDetailsForStudent(studentData);
                 } else {
+                    if (this.elements.studentDropdown.value !== '') this.elements.studentDropdown.value = '';
                     this.elements.detailsPrompt.classList.remove('hidden');
                     this.elements.studentDetails.classList.add('hidden');
+                    this.elements.studentDetails.innerHTML = '';
                 }
             },
             
             async showDashboard(user) {
                 this.elements.loginScreen.classList.add('hidden');
-                this.elements.dashboard.classList.remove('hidden');
                 this.elements.adminInfo.textContent = `관리자: ${user.displayName} (${user.email})`;
+                
+                this.elements.initialLoader.classList.remove('hidden');
+                this.elements.dashboard.classList.add('hidden');
+
                 await Promise.all([this.loadAdminConfig(), this.cacheAllUsers()]);
-                this.resetViews();
+                
+                this.elements.initialLoader.classList.add('hidden');
+                this.elements.dashboard.classList.remove('hidden');
+
+                this.handleHashChange();
             },
             
             async loadAdminConfig() {
@@ -238,9 +285,11 @@
             resetViews() {
                  this.elements.detailsPrompt.classList.remove('hidden');
                  this.elements.studentDetails.classList.add('hidden');
+                 this.elements.studentDetails.innerHTML = '';
                  this.elements.studentDropdown.innerHTML = '<option value="">먼저 위에서 학년 구분을 선택해주세요.</option>';
                  document.querySelectorAll('.grade-btn').forEach(btn => btn.classList.remove('active-grade-btn'));
                  this.elements.studentSelectTitle.textContent = '학생 선택';
+                 this.state.selectedGrade = null;
             },
             
             async cacheAllUsers() {
@@ -253,8 +302,6 @@
             
             displayStudentsForGrade(grade) {
                 this.elements.studentDropdown.innerHTML = '';
-                this.elements.detailsPrompt.classList.remove('hidden');
-                this.elements.studentDetails.classList.add('hidden');
 
                 let studentsToDisplay = [];
                 if (grade === 'unassigned') {
@@ -332,7 +379,6 @@
                 const block = document.createElement('div');
                 block.className = `p-6 rounded-lg shadow-lg ${bgColor}`;
 
-                // 1. Load word list for progress calculation
                 if (!this.state.wordLists[grade]) {
                     try {
                         const dbRef = ref(rt_db, `${grade}/vocabulary`);
@@ -347,17 +393,15 @@
                 }
                 const totalWords = this.state.wordLists[grade];
 
-                // 2. Calculate and render progress bars
                 const progressRef = doc(db, 'users', student.id, 'progress', grade);
                 const progressSnap = await getDoc(progressRef);
                 const progressData = progressSnap.exists() ? progressSnap.data() : {};
                 const progressStats = this.calculateProgressStats(totalWords, progressData);
                 block.innerHTML = this.renderProgressBarsHTML(progressStats, grade);
 
-                // 3. Calculate and render period stats cards
                 const stats7 = this.getStatsForPeriod(7, grade, studyHistory, quizHistory);
                 const stats30 = this.getStatsForPeriod(30, grade, studyHistory, quizHistory);
-                const totalStats = this.getStatsForPeriod(3650, grade, studyHistory, quizHistory); // Using a large number for total
+                const totalStats = this.getStatsForPeriod(3650, grade, studyHistory, quizHistory);
 
                 const cardsContainer = document.createElement('div');
                 cardsContainer.className = 'space-y-4 mt-6';
@@ -536,12 +580,9 @@
                     });
 
                     const allStats = await Promise.all(studentStatsPromises);
-
-                    const timeRanking = [...allStats].sort((a, b) => b.time - a.time);
-                    const accuracyRankingRaw = [...allStats].sort((a, b) => b.accuracy - a.accuracy);
-
-                    const timeRankingHTML = this.renderRankingBoard('학습 시간 순위 (최근 7일)', timeRanking, (s) => this.formatSeconds(s.time));
-                    const accuracyRankingHTML = this.renderRankingBoard('퀴즈 정답률 순위 (최근 7일)', accuracyRankingRaw, 
+                    
+                    const timeRankingHTML = this.renderRankingBoard('학습 시간 순위 (최근 7일)', allStats, (s) => this.formatSeconds(s.time));
+                    const accuracyRankingHTML = this.renderRankingBoard('퀴즈 정답률 순위 (최근 7일)', allStats, 
                         (s) => `${s.accuracy.toFixed(1)}% <span class='text-xs text-gray-500'>(${s.totalCorrect}/${s.totalQuizzes})</span>`,
                         true);
                     
@@ -555,27 +596,23 @@
                 }
             },
 
-            renderRankingBoard(title, rankedData, formatter, isAccuracy = false) {
-                let qualifiedStudents;
-                let processedData;
-
-                // 1. 순위 계산 및 데이터 처리
+            renderRankingBoard(title, data, formatter, isAccuracy = false) {
+                let qualifiedStudents, processedData;
+                
                 if (isAccuracy) {
-                    qualifiedStudents = rankedData.filter(s => s.totalQuizzes >= 50);
-                    processedData = [...qualifiedStudents].sort((a,b) => b.accuracy - a.accuracy)
-                                    .concat(rankedData.filter(s => s.totalQuizzes < 50).sort((a,b) => b.accuracy - a.accuracy));
+                    processedData = [...data].sort((a, b) => b.accuracy - a.accuracy);
+                    qualifiedStudents = processedData.filter(s => s.totalQuizzes >= 50);
                 } else {
-                    qualifiedStudents = rankedData;
-                    processedData = rankedData;
+                    processedData = [...data].sort((a, b) => b.time - a.time);
+                    qualifiedStudents = processedData;
                 }
 
-                // 공통 순위 부여 로직
                 let rank = 0;
                 let lastScore = -1;
                 let skip = 1;
                 qualifiedStudents.forEach((student) => {
                     const currentScore = isAccuracy ? student.accuracy : student.time;
-                    if (currentScore !== lastScore) {
+                    if (currentScore.toFixed(5) !== lastScore.toFixed(5)) { // 소수점 비교를 위해 toFixed 사용
                         rank += skip;
                         skip = 1;
                     } else {
@@ -585,26 +622,20 @@
                     lastScore = currentScore;
                 });
 
-                // 2. 시상대 렌더링
                 const top3 = qualifiedStudents.filter(s => s.rank <= 3);
                 
                 const podiumHTML = `
                     <div class="podium">
-                        ${[2, 1, 3].map(rank => { // 시각적 순서: 2등, 1등, 3등
-                            const student = top3.find(s => s.rank === rank);
+                        ${[2, 1, 3].map(rankValue => {
+                            const student = top3.find(s => s.rank === rankValue);
+                            const height = rankValue === 1 ? '9rem' : rankValue === 2 ? '7rem' : '5rem';
                             if (!student) {
-                                const height = rank === 1 ? '9rem' : rank === 2 ? '7rem' : '5rem';
-                                const color = 'bg-gray-200';
-                                return `
-                                    <div class="podium-step rank-${rank}">
-                                        <div class="podium-base ${color}" style="height: ${height};"></div>
-                                    </div>
-                                `;
+                                return `<div class="podium-step rank-${rankValue}"><div class="podium-base bg-gray-200" style="height: ${height};"></div></div>`;
                             }
-                            const medal = ['🥇', '🥈', '🥉'][rank - 1];
-                            const color = ['bg-yellow-400', 'bg-gray-300', 'bg-orange-400'][rank-1];
+                            const medal = ['🥇', '🥈', '🥉'][rankValue - 1];
+                            const color = ['bg-yellow-400', 'bg-gray-300', 'bg-orange-400'][rankValue-1];
                             return `
-                                <div class="podium-step rank-${rank} cursor-pointer" data-email="${student.email}">
+                                <div class="podium-step rank-${rankValue} cursor-pointer" data-email="${student.email}">
                                     <div class="podium-base ${color}">
                                         <div class="p-2">
                                             <div class="text-4xl">${medal}</div>
@@ -612,20 +643,19 @@
                                             <p class="student-score text-gray-800">${formatter(student)}</p>
                                         </div>
                                     </div>
-                                </div>
-                            `;
+                                </div>`;
                         }).join('')}
-                    </div>
-                `;
+                    </div>`;
 
-                // 3. 전체 목록 렌더링
                 const listHTML = processedData.map((student) => {
                     const isQualified = !isAccuracy || student.totalQuizzes >= 50;
                     const rank = isQualified ? (student.rank || '') : '';
                     
                     let itemClass = 'bg-white';
-                    if (isQualified && student.rank && student.rank <= 3) {
-                       itemClass = 'bg-gray-200 font-bold';
+                    if (isQualified && student.rank) {
+                        if (student.rank === 1) itemClass = 'bg-yellow-100 font-bold';
+                        else if (student.rank === 2) itemClass = 'bg-gray-200 font-bold';
+                        else if (student.rank === 3) itemClass = 'bg-orange-100 font-bold';
                     } else if (!isQualified) {
                         itemClass = 'bg-white text-gray-400';
                     }
@@ -637,17 +667,15 @@
                             <span>${student.name}</span>
                         </div>
                         <span class="font-semibold">${formatter(student)}</span>
-                    </li>
-                `;}).join('');
-
+                    </li>`;
+                }).join('');
 
                 return `
                     <div class="bg-white p-6 rounded-lg shadow-lg">
                         <h3 class="text-2xl font-bold text-gray-800 text-center mb-6">${title}</h3>
                         ${podiumHTML}
                         <ul class="mt-8 space-y-2">${listHTML}</ul>
-                    </div>
-                `;
+                    </div>`;
             }
         };
 
