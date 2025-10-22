@@ -2024,7 +2024,7 @@ const learningMode = {
             this.elements.sampleBtnImg.src = await imageDBCache.loadImage(backImgUrl);
         } else {
             this.elements.cardBack.classList.remove('is-slid-up');
-            this.elements.sampleBtnImg.src = await imageDBCache.loadImage(hasSample ? sampleImgUrl : noSampleImgUrl);
+            this.displayWord(this.state.currentIndex);
         }
     },
     isLearningModeActive() { return !this.elements.appContainer.classList.contains('hidden'); },
@@ -2117,3 +2117,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
