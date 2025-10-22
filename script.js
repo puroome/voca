@@ -109,15 +109,18 @@ const app = {
         progressBarContainer: document.getElementById('progress-bar-container'),
         selectFavoritesBtn: document.getElementById('select-favorites-btn'),
     },
-    init() {
+    async init() {
         firebaseApp = initializeApp(this.config.firebaseConfig);
         auth = getAuth(firebaseApp);
         db = getFirestore(firebaseApp); 
         rt_db = getDatabase(firebaseApp);
 
-        this.fetchAndSetBackgroundImages();
-        
-        translationDBCache.init().catch(e => console.error("번역 캐시 초기화 실패", e));
+        await Promise.all([
+            translationDBCache.init(),
+            audioDBCache.init(),
+            imageDBCache.init(),
+            this.fetchAndSetBackgroundImages()
+        ]).catch(e => console.error("Cache or image init failed", e));
 
         this.bindGlobalEvents();
         quizMode.init();
@@ -175,9 +178,12 @@ const app = {
 
         this.elements.logoutBtn.addEventListener('click', () => signOut(auth));
 
-        document.querySelectorAll('.grade-select-card img.group').forEach(img => {
-            img.addEventListener('click', () => {
-                const grade = img.closest('.grade-select-card').dataset.sheet;
+        document.querySelectorAll('.grade-select-card').forEach(card => {
+            card.addEventListener('click', async () => {
+                const grade = card.dataset.sheet;
+                const imgEl = card.querySelector('img');
+                const imgSrc = imgEl.src; // Get original src
+                imgEl.src = await imageDBCache.loadImage(imgSrc); // Ensure it's cached
                 this.navigateTo('mode', grade);
             });
         });
@@ -317,6 +323,7 @@ const app = {
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
                 this.elements.refreshBtn.classList.remove('hidden');
                 this.elements.logoutBtn.classList.add('hidden');
+                this.loadModeImages();
                 quizMode.reset();
                 learningMode.reset();
                 break;
@@ -324,6 +331,7 @@ const app = {
             default:
                 this.elements.gradeSelectionScreen.classList.remove('hidden');
                 this.setBackgroundImage();
+                this.loadGradeImages();
                 quizMode.reset();
                 learningMode.reset();
                 break;
@@ -377,17 +385,12 @@ const app = {
             setTimeout(() => msgEl.classList.add('hidden'), 500);
         }, 1500);
     },
-    preloadImages() {
-        this.config.backgroundImages.forEach(src => {
-            const img = new Image();
-            img.src = src;
-        });
-    },
-    setBackgroundImage() {
+    async setBackgroundImage() {
         if (this.config.backgroundImages.length === 0) return;
         const randomIndex = Math.floor(Math.random() * this.config.backgroundImages.length);
         const imageUrl = this.config.backgroundImages[randomIndex];
-        document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
+        const cachedUrl = await imageDBCache.loadImage(imageUrl);
+        document.documentElement.style.setProperty('--bg-image', `url('${cachedUrl}')`);
     },
     async fetchAndSetBackgroundImages() {
         const cloudName = 'dx07dymqs';
@@ -410,10 +413,84 @@ const app = {
                 'https://i.imgur.com/6gZtYDb.jpeg'
             ];
         } finally {
-            this.preloadImages();
             this.setBackgroundImage();
         }
     },
+    async loadGradeImages() {
+        document.querySelectorAll('.grade-select-card img').forEach(async (img) => {
+            img.src = await imageDBCache.loadImage(img.src);
+        });
+    },
+    async loadModeImages() {
+        const ids = ['#select-learning-btn img', '#select-quiz-btn img', '#start-meaning-quiz-btn img', '#start-blank-quiz-btn img', '#start-definition-quiz-btn img'];
+        ids.forEach(async (id) => {
+            const img = document.querySelector(id);
+            if (img) img.src = await imageDBCache.loadImage(img.src);
+        });
+    }
+};
+
+const imageDBCache = {
+    db: null, dbName: 'imageCacheDB', storeName: 'imageStore',
+    init() {
+        return new Promise((resolve, reject) => {
+            if (!('indexedDB' in window)) { console.warn('IndexedDB for images not supported.'); return resolve(); }
+            const request = indexedDB.open(this.dbName, 1);
+            request.onupgradeneeded = e => e.target.result.createObjectStore(this.storeName);
+            request.onsuccess = e => { this.db = e.target.result; resolve(); };
+            request.onerror = e => reject(e.target.error);
+        });
+    },
+    async loadImage(url) {
+        if (!this.db || !url) return url;
+        const cachedBlob = await this.getImage(url);
+        if (cachedBlob) return URL.createObjectURL(cachedBlob);
+
+        try {
+            const response = await fetch(url);
+            if (!response.ok) return url;
+            const blob = await response.blob();
+            this.saveImage(url, blob);
+            return URL.createObjectURL(blob);
+        } catch (e) {
+            return url;
+        }
+    },
+    getImage: key => new Promise((resolve) => {
+        if (!imageDBCache.db) return resolve(null);
+        const request = imageDBCache.db.transaction([imageDBCache.storeName]).objectStore(imageDBCache.storeName).get(key);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(null);
+    }),
+    saveImage: (key, blob) => {
+        if (!imageDBCache.db) return;
+        try { imageDBCache.db.transaction([imageDBCache.storeName], 'readwrite').objectStore(imageDBCache.storeName).put(blob, key); }
+        catch (e) { console.error("Failed to save image to IndexedDB", e); }
+    }
+};
+
+const audioDBCache = {
+    db: null, dbName: 'ttsAudioCacheDB_voca', storeName: 'audioStore',
+    init() {
+        return new Promise((resolve, reject) => {
+            if (!('indexedDB' in window)) { console.warn('IndexedDB not supported, TTS caching disabled.'); return resolve(); }
+            const request = indexedDB.open(this.dbName, 1);
+            request.onupgradeneeded = event => { const db = event.target.result; if (!db.objectStoreNames.contains(this.storeName)) { db.createObjectStore(this.storeName); } };
+            request.onsuccess = event => { this.db = event.target.result; resolve(); };
+            request.onerror = event => { console.error("IndexedDB error:", event.target.error); reject(event.target.error); };
+        });
+    },
+    getAudio: key => new Promise((resolve) => {
+        if (!audioDBCache.db) return resolve(null);
+        const request = audioDBCache.db.transaction([audioDBCache.storeName]).objectStore(audioDBCache.storeName).get(key);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(null);
+    }),
+    saveAudio: (key, audioData) => {
+        if (!audioDBCache.db) return;
+        try { audioDBCache.db.transaction([audioDBCache.storeName], 'readwrite').objectStore(audioDBCache.storeName).put(audioData, key); } 
+        catch (e) { console.error("IndexedDB save audio error:", e); }
+    }
 };
 
 const translationDBCache = {
@@ -464,14 +541,14 @@ const api = {
         }
     },
     googleTtsApiKey: 'AIzaSyAJmQBGY4H9DVMlhMtvAAVMi_4N7__DfKA',
-    audioCache: {},
     async speak(text) {
         if (!text || !text.trim()) return;
         activityTracker.recordActivity();
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
-        const isAndroid = /android/i.test(navigator.userAgent);
+        
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
-        if (isAndroid && 'speechSynthesis' in window) {
+        if (!isIOS && 'speechSynthesis' in window) {
             try {
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(processedText);
@@ -479,13 +556,15 @@ const api = {
                 window.speechSynthesis.speak(utterance);
                 return;
             } catch (error) {
-                console.warn("Android 내장 TTS 실행 실패, Google TTS로 대체:", error);
+                console.warn("Native TTS failed, falling back to Google TTS API:", error);
             }
         }
         
-        if (this.audioCache[processedText]) {
-            this.audioCache[processedText].currentTime = 0;
-            this.audioCache[processedText].play();
+        const cacheKey = processedText;
+        const cachedAudio = await audioDBCache.getAudio(cacheKey);
+        if (cachedAudio) {
+            const audio = new Audio(URL.createObjectURL(new Blob([cachedAudio], { type: 'audio/mp3' })));
+            audio.play();
             return;
         }
 
@@ -507,9 +586,9 @@ const api = {
 
             const data = await response.json();
             if (data.audioContent) {
-                const audioSrc = `data:audio/mp3;base64,${data.audioContent}`;
-                const audio = new Audio(audioSrc);
-                this.audioCache[processedText] = audio;
+                const audioBlob = new Blob([Uint8Array.from(atob(data.audioContent), c => c.charCodeAt(0))], { type: 'audio/mp3' });
+                audioDBCache.saveAudio(cacheKey, audioBlob);
+                const audio = new Audio(URL.createObjectURL(audioBlob));
                 audio.play();
             }
         } catch (error) {
@@ -543,7 +622,6 @@ const api = {
 };
 
 const ui = {
-    // 요청 사항 2: word 앱의 발음 제외 어휘 목록 적용
     nonInteractiveWords: new Set(['a', 'an', 'the', 'I', 'me', 'my', 'mine', 'you', 'your', 'yours', 'he', 'him', 'his', 'she', 'her', 'hers', 'it', 'its', 'we', 'us', 'our', 'ours', 'they', 'them', 'their', 'theirs', 'this', 'that', 'these', 'those', 'myself', 'yourself', 'himself', 'herself', 'itself', 'ourselves', 'yourselves', 'something', 'anybody', 'anyone', 'anything', 'nobody', 'no one', 'nothing', 'everybody', 'everyone', 'everything', 'all', 'any', 'both', 'each', 'either', 'every', 'few', 'little', 'many', 'much', 'neither', 'none', 'one', 'other', 'several', 'some', 'about', 'above', 'across', 'after', 'against', 'along', 'among', 'around', 'at', 'before', 'behind', 'below', 'beneath', 'beside', 'between', 'beyond', 'by', 'down', 'during', 'for', 'from', 'in', 'inside', 'into', 'like', 'near', 'of', 'off', 'on', 'onto', 'out', 'outside', 'over', 'past', 'since', 'through', 'throughout', 'to', 'toward', 'under', 'underneath', 'until', 'unto', 'up', 'upon', 'with', 'within', 'without', 'and', 'but', 'or', 'nor', 'for', 'yet', 'so', 'after', 'although', 'as', 'because', 'before', 'if', 'once', 'since', 'than', 'that', 'though', 'till', 'unless', 'until', 'when', 'whenever', 'where', 'whereas', 'wherever', 'whether', 'while', 'that', 'which', 'who', 'whom', 'whose', 'when', 'where', 'why', 'what', 'whatever', 'whichever', 'whoever', 'whomever', 'who', 'whom', 'whose', 'what', 'which', 'when', 'where', 'why', 'how', 'be', 'am', 'is', 'are', 'was', 'were', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'done', 'can', 'could', 'may', 'might', 'must', 'shall', 'should', 'will', 'would', 'ought', 'not', 'very', 'too', 'so', 'just', 'well', 'often', 'always', 'never', 'sometimes', 'here', 'there', 'now', 'then', 'again', 'also', 'ever', 'even', 'how', 'quite', 'rather', 'soon', 'still', 'more', 'most', 'less', 'least', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'then', 'there', 'here', "don't", "didn't", "can't", "couldn't", "she's", "he's", "i'm", "you're", "they're", "we're", "it's", "that's"]),
     
     adjustFontSize(element) {
@@ -636,7 +714,6 @@ const ui = {
                 span.addEventListener('touchend', () => { clearTimeout(app.state.longPressTimer); });
                 fragment.appendChild(span);
             } else {
-                 // 요청 사항 2: 발음 제외 어휘 클릭 시 이벤트 버블링 방지
                 const span = document.createElement('span');
                 span.textContent = part;
                 span.onclick = (e) => e.stopPropagation();
@@ -649,10 +726,8 @@ const ui = {
         containerElement.innerHTML = '';
         sentences.filter(s => s && s.trim()).forEach(sentence => {
             const p = document.createElement('p');
-            // 요청 사항 2: 'sample-sentence' 클래스 추가하여 CSS hover 효과 적용
             p.className = 'p-2 rounded transition-colors sample-sentence';
             p.onclick = (e) => {
-                // word.js와 동일한 로직: .interactive-word 클릭 시 문장 전체 재생 방지
                 if (e.target.closest('.sentence-content-area .interactive-word')) return;
                 api.speak(p.textContent);
                 this.handleSentenceMouseOver(e, p.textContent);
@@ -724,25 +799,13 @@ const utils = {
     },
     
     async getLastLearnedIndex() {
-        const docRef = this._getProgressRef();
-        if (!docRef) return 0;
-        try {
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists() && docSnap.data().lastLearnedIndex !== undefined) {
-                return docSnap.data().lastLearnedIndex;
-            }
-            return 0;
-        } catch (error) {
-            return 0;
-        }
+        // This function is now disabled and always returns 0.
+        return 0;
     },
 
     async setLastLearnedIndex(index) {
-        const docRef = this._getProgressRef();
-        if (!docRef) return;
-        try {
-            await setDoc(docRef, { lastLearnedIndex: index }, { merge: true });
-        } catch (error) {}
+        // This function is now disabled and does nothing.
+        return;
     },
     
     getWordStatus(word) {
@@ -1213,8 +1276,14 @@ const quizMode = {
         sessionAnsweredInSet: 0,
         sessionCorrectInSet: 0,
         sessionMistakes: [],
-        preloadedDefinitionQuizzes: { '1y': null, '2y': null, '3y': null },
-        isPreloading: { '1y': false, '2y': false, '3y': false },
+        preloadedQuizzes: {
+            '1y': { 'MULTIPLE_CHOICE_MEANING': null, 'FILL_IN_THE_BLANK': null, 'MULTIPLE_CHOICE_DEFINITION': null },
+            '2y': { 'MULTIPLE_CHOICE_MEANING': null, 'FILL_IN_THE_BLANK': null, 'MULTIPLE_CHOICE_DEFINITION': null },
+            '3y': { 'MULTIPLE_CHOICE_MEANING': null, 'FILL_IN_THE_BLANK': null, 'MULTIPLE_CHOICE_DEFINITION': null }
+        },
+        isPreloading: {
+            '1y': {}, '2y': {}, '3y': {}
+        },
     },
     elements: {},
     init() {
@@ -1296,14 +1365,14 @@ const quizMode = {
     async displayNextQuiz() {
         this.showLoader(true, '다음 문제 생성 중...');
         let nextQuiz = null;
+        const grade = app.state.selectedSheet;
+        const type = this.state.currentQuizType;
 
-        if (this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION') {
-            const preloaded = this.state.preloadedDefinitionQuizzes[app.state.selectedSheet];
-            if (preloaded) {
-                nextQuiz = preloaded;
-                this.state.preloadedDefinitionQuizzes[app.state.selectedSheet] = null; 
-                this.preloadNextDefinitionQuiz(app.state.selectedSheet); 
-            }
+        const preloaded = this.state.preloadedQuizzes[grade]?.[type];
+        if (preloaded) {
+            nextQuiz = preloaded;
+            this.state.preloadedQuizzes[grade][type] = null;
+            this.preloadNextQuiz(grade, type); 
         }
         
         if (!nextQuiz) {
@@ -1495,40 +1564,42 @@ const quizMode = {
             if (!learningMode.state.isWordListReady[grade]) {
                 await learningMode.loadWordList(false, grade);
             }
-            this.preloadNextDefinitionQuiz(grade);
+            for (const type of ['MULTIPLE_CHOICE_MEANING', 'FILL_IN_THE_BLANK', 'MULTIPLE_CHOICE_DEFINITION']) {
+                this.preloadNextQuiz(grade, type);
+            }
         }
     },
-    async preloadNextDefinitionQuiz(grade) {
-        if (!grade || this.state.isPreloading[grade] || this.state.preloadedDefinitionQuizzes[grade]) {
+    async preloadNextQuiz(grade, type) {
+        if (!grade || !type || this.state.isPreloading[grade][type] || this.state.preloadedQuizzes[grade]?.[type]) {
             return;
         }
 
-        this.state.isPreloading[grade] = true;
+        this.state.isPreloading[grade][type] = true;
         
         try {
+            // A simplified version of generateSingleQuiz for preloading
             const allWords = learningMode.state.wordList[grade] || [];
             if (allWords.length < 5) return;
-
-            const learnedWords = utils.getCorrectlyAnsweredWords('MULTIPLE_CHOICE_DEFINITION');
-            let candidates = allWords.filter(word => !learnedWords.includes(word.word));
-            
-            if (candidates.length === 0) return;
-            
-            candidates.sort(() => 0.5 - Math.random());
+            const learnedWords = utils.getCorrectlyAnsweredWords(type);
+            const candidates = allWords.filter(w => !learnedWords.includes(w.word)).sort(() => 0.5 - Math.random());
 
             for (const wordData of candidates) {
-                const definition = await api.fetchDefinition(wordData.word);
-                if (definition) {
-                    const quiz = this.createDefinitionQuiz(wordData, allWords, definition);
-                    if (quiz) {
-                        this.state.preloadedDefinitionQuizzes[grade] = quiz;
-                        return;
-                    }
-                }
+                 let quiz = null;
+                 if (type === 'MULTIPLE_CHOICE_MEANING') quiz = this.createMeaningQuiz(wordData, allWords);
+                 else if (type === 'FILL_IN_THE_BLANK') quiz = this.createBlankQuiz(wordData, allWords);
+                 else if (type === 'MULTIPLE_CHOICE_DEFINITION') {
+                     const definition = await api.fetchDefinition(wordData.word);
+                     if (definition) quiz = this.createDefinitionQuiz(wordData, allWords, definition);
+                 }
+                 if (quiz) {
+                     this.state.preloadedQuizzes[grade][type] = quiz;
+                     return;
+                 }
             }
         } catch(e) {
+            console.error(`Preloading ${grade}-${type} failed:`, e);
         } finally {
-            this.state.isPreloading[grade] = false;
+            this.state.isPreloading[grade][type] = false;
         }
     },
     createMeaningQuiz(correctWordData, allWordsData) {
@@ -1698,25 +1769,20 @@ const learningMode = {
         if (cachedData) {
             const { timestamp } = JSON.parse(cachedData);
 
-            // --- 여기부터가 수정된 '매주 월요일' 체크 로직입니다 ---
             const now = new Date();
             const lastMonday = new Date(now);
             
-            // 1. 오늘 날짜를 기준으로 가장 최근의 월요일 날짜를 계산합니다.
-            const todayDay = now.getDay(); // (일요일=0, 월요일=1, ..., 토요일=6)
-            const diff = todayDay === 0 ? 6 : todayDay - 1; // 오늘이 일요일이면 6일 전, 아니면 (오늘요일-1)일 전
+            const todayDay = now.getDay(); 
+            const diff = todayDay === 0 ? 6 : todayDay - 1;
             lastMonday.setDate(now.getDate() - diff);
-            lastMonday.setHours(0, 0, 0, 0); // 월요일 0시 0분 0초로 설정
+            lastMonday.setHours(0, 0, 0, 0);
 
-            // 2. 캐시가 저장된 시각이 가장 최근 월요일 0시 이전인지 확인합니다.
             if (timestamp >= lastMonday.getTime()) {
-                // 3. 아니라면 (즉, 이번 주에 이미 업데이트했다면) 캐시를 사용합니다.
                 const { words } = JSON.parse(cachedData);
                 this.state.wordList[grade] = words.sort((a, b) => a.id - b.id);
                 this.state.isWordListReady[grade] = true;
                 return;
             }
-            // --- 여기까지가 수정된 로직입니다 ---
         }
         } catch (e) {
             localStorage.removeItem(`wordListCache_${grade}`);
@@ -1758,12 +1824,7 @@ const learningMode = {
     
         if (!startWord) {
             this.elements.startScreen.classList.add('hidden');
-            this.elements.loaderText.textContent = "마지막 학습 위치를 불러오는 중...";
-            this.elements.loader.classList.remove('hidden');
-            
-            this.state.currentIndex = await utils.getLastLearnedIndex();
-            
-            this.elements.loader.classList.add('hidden');
+            this.state.currentIndex = 0; // Always start from the beginning
             this.launchApp(currentWordList);
             return;
         }
@@ -1893,10 +1954,7 @@ const learningMode = {
         app.elements.progressBarContainer.classList.remove('hidden');
         this.displayWord(this.state.currentIndex);
     },
-    displayWord(index) {
-        if (!this.state.isMistakeMode && !this.state.isFavoriteMode) {
-            utils.setLastLearnedIndex(index);
-        }
+    async displayWord(index) {
         activityTracker.recordActivity();
         this.updateProgressBar(index);
         this.elements.cardBack.classList.remove('is-slid-up');
@@ -1910,7 +1968,10 @@ const learningMode = {
         ui.renderInteractiveText(this.elements.explanationDisplay, wordData.explanation);
         this.elements.explanationContainer.classList.toggle('hidden', !wordData.explanation || !wordData.explanation.trim());
         const hasSample = wordData.sample && wordData.sample.trim() !== '';
-        this.elements.sampleBtnImg.src = hasSample ? 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png' : 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
+        
+        const defaultImg = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
+        const sampleImg = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
+        this.elements.sampleBtnImg.src = await imageDBCache.loadImage(hasSample ? sampleImg : defaultImg);
         
         const isFavorite = app.state.currentProgress[wordData.word]?.favorite || false;
         this.updateFavoriteIcon(isFavorite);
@@ -1940,20 +2001,25 @@ const learningMode = {
         if (isBackVisible) { this.handleFlip(); setTimeout(navigateAction, 300); } 
         else { navigateAction(); }
     },
-    handleFlip() {
+    async handleFlip() {
         activityTracker.recordActivity();
         const isBackVisible = this.elements.cardBack.classList.contains('is-slid-up');
         const wordData = this.state.currentDisplayList[this.state.currentIndex];
         const hasSample = wordData && wordData.sample && wordData.sample.trim() !== '';
+        
+        const backImgUrl = 'https://images.icon-icons.com/1055/PNG/128/5-remove-cat_icon-icons.com_76681.png';
+        const sampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
+        const noSampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
+
         if (!isBackVisible) {
             if (!hasSample) { app.showNoSampleMessage(); return; }
             this.elements.backTitle.textContent = wordData.word;
             ui.displaySentences(wordData.sample.split('\n'), this.elements.backContent);
             this.elements.cardBack.classList.add('is-slid-up');
-            this.elements.sampleBtnImg.src = 'https://images.icon-icons.com/1055/PNG/128/5-remove-cat_icon-icons.com_76681.png';
+            this.elements.sampleBtnImg.src = await imageDBCache.loadImage(backImgUrl);
         } else {
             this.elements.cardBack.classList.remove('is-slid-up');
-            this.displayWord(this.state.currentIndex);
+            this.elements.sampleBtnImg.src = await imageDBCache.loadImage(hasSample ? sampleImgUrl : noSampleImgUrl);
         }
     },
     isLearningModeActive() { return !this.elements.appContainer.classList.contains('hidden'); },
@@ -2046,7 +2112,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
-
-
