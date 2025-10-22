@@ -1047,17 +1047,20 @@ const dashboard = {
         const correct = stats.correct || 0;
         const total = stats.total || 0;
         const incorrect = total - correct;
-// --- 수정된 부분 시작 ---
-
+        
         const hasAttempts = total > 0;
         const accuracy = hasAttempts ? Math.round((correct / total) * 100) : 0;
+        
         const chartColors = hasAttempts
             ? ['#34D399', '#F87171']
             : ['#E5E7EB', '#E5E7EB'];
+
         const chartData = hasAttempts
             ? [correct, incorrect > 0 ? incorrect : 0.0001]
-            : [0, 1];
+            : [0, 1]; // 푼 기록이 없으면 회색으로 완전히 채움
+            
         const centerText = hasAttempts ? `${accuracy}%` : '-';
+
         const labelEl = document.getElementById(labelId);
         if (labelEl) {
             labelEl.textContent = `${labelText} (${correct}/${total})`;
@@ -1066,11 +1069,11 @@ const dashboard = {
         return new Chart(ctx, {
             type: 'doughnut',
             data: {
-                labels: ['정답', '오답'],
+                labels: hasAttempts ? ['정답', '오답'] : ['기록 없음'],
                 datasets: [{
-                    data: [correct, incorrect > 0 ? incorrect : 0.0001],
-                    backgroundColor: ['#34D399', '#F87171'],
-                    hoverBackgroundColor: ['#10B981', '#EF4444'],
+                    data: chartData,
+                    backgroundColor: chartColors,
+                    hoverBackgroundColor: chartColors,
                     borderWidth: 0,
                 }]
             },
@@ -1091,10 +1094,10 @@ const dashboard = {
                     const fontSize = (height / 114).toFixed(2);
                     ctx.font = `bold ${fontSize}em sans-serif`;
                     ctx.textBaseline = 'middle';
-                    const text = `${accuracy}%`;
+                    const text = centerText;
                     const textX = Math.round((width - ctx.measureText(text).width) / 2);
                     const textY = height / 2;
-                    ctx.fillStyle = '#374151';
+                    ctx.fillStyle = hasAttempts ? '#374151' : '#9CA3AF'; // 기록 없을 때 텍스트도 회색으로
                     ctx.fillText(text, textX, textY);
                     ctx.save();
                 }
@@ -2028,5 +2031,6 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
