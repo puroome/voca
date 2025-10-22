@@ -268,10 +268,17 @@
                     const studyHistory = studyHistoryDoc.exists() ? studyHistoryDoc.data() : {};
                     const quizHistory = quizHistoryDoc.exists() ? quizHistoryDoc.data() : {};
                     
-                    const gradeColors = { '1y': 'bg-blue-50', '2y': 'bg-green-50', '3y': 'bg-yellow-50' };
+                    let gradesToShow = ['1y', '2y', '3y'];
+                    const selectedGradeFilter = this.state.selectedGrade;
 
-                    for (const grade of ['1y', '2y', '3y']) {
-                        const gradeBlock = await this.createGradeStatisticsBlock(student, grade, studyHistory, quizHistory, gradeColors[grade]);
+                    if (selectedGradeFilter === '2y') {
+                        gradesToShow = ['2y', '3y', '1y'];
+                    } else if (selectedGradeFilter === '3y') {
+                        gradesToShow = ['3y', '1y', '2y'];
+                    }
+                    
+                    for (const grade of gradesToShow) {
+                        const gradeBlock = await this.createGradeStatisticsBlock(student, grade, studyHistory, quizHistory);
                         this.elements.studentDetails.appendChild(gradeBlock);
                     }
                 } catch (error) {
@@ -282,9 +289,9 @@
                 }
             },
 
-            async createGradeStatisticsBlock(student, grade, studyHistory, quizHistory, bgColor) {
+            async createGradeStatisticsBlock(student, grade, studyHistory, quizHistory) {
                 const block = document.createElement('div');
-                block.className = `p-6 rounded-lg shadow-lg ${bgColor}`;
+                block.className = `p-6 rounded-lg shadow-lg bg-white`;
 
                 // 1. Load word list for progress calculation
                 if (!this.state.wordLists[grade]) {
@@ -446,3 +453,4 @@
     </script>
 </body>
 </html>
+
