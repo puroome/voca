@@ -5,13 +5,13 @@ let getDatabase, ref, get;
 let getFirestore, doc, getDoc, setDoc, updateDoc;
 
 document.addEventListener('firebaseSDKLoaded', () => {
-    ({ 
+    ({
         initializeApp,
         getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
         getDatabase, ref, get,
         getFirestore, doc, getDoc, setDoc, updateDoc,
     } = window.firebaseSDK);
-    
+
     app.init();
 });
 
@@ -19,7 +19,8 @@ const activityTracker = {
     sessionSeconds: 0,
     lastActivityTimestamp: 0,
     timerInterval: null,
-    INACTIVITY_LIMIT: 30000, 
+    saveInterval: null,
+    INACTIVITY_LIMIT: 30000,
 
     start() {
         if (this.timerInterval) return;
@@ -32,20 +33,48 @@ const activityTracker = {
                 this.sessionSeconds++;
             }
         }, 1000);
+
+        this.saveInterval = setInterval(() => {
+            if (this.sessionSeconds > 0 && app.state.selectedSheet) {
+                try {
+                    const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_TIME(app.state.selectedSheet);
+                    const currentLocalTime = parseInt(localStorage.getItem(key) || '0');
+                    localStorage.setItem(key, currentLocalTime + this.sessionSeconds);
+                    this.sessionSeconds = 0;
+                } catch (e) {
+                    console.error("Error saving study time to localStorage", e);
+                }
+            }
+        }, 10000);
+
+        ['click', 'keydown', 'touchstart'].forEach(event =>
+            document.body.addEventListener(event, this.recordActivity, true));
     },
 
     stopAndSave() {
         if (!this.timerInterval) return;
         clearInterval(this.timerInterval);
+        clearInterval(this.saveInterval);
         this.timerInterval = null;
-        if (this.sessionSeconds > 0) {
-            utils.saveStudyHistory(this.sessionSeconds);
+        this.saveInterval = null;
+
+        if (this.sessionSeconds > 0 && app.state.selectedSheet) {
+             try {
+                 const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_TIME(app.state.selectedSheet);
+                 const currentLocalTime = parseInt(localStorage.getItem(key) || '0');
+                 localStorage.setItem(key, currentLocalTime + this.sessionSeconds);
+             } catch (e) {
+                 console.error("Error saving remaining study time to localStorage", e);
+             }
         }
         this.sessionSeconds = 0;
+
+        ['click', 'keydown', 'touchstart'].forEach(event =>
+            document.body.removeEventListener(event, this.recordActivity, true));
     },
 
     recordActivity() {
-        this.lastActivityTimestamp = Date.now();
+        activityTracker.lastActivityTimestamp = Date.now();
     }
 };
 
@@ -76,6 +105,13 @@ const app = {
         isAppReady: false,
         translateDebounceTimeout: null,
         longPressTimer: null,
+        LOCAL_STORAGE_KEYS: {
+            LAST_GRADE: 'student_lastGrade',
+            PRACTICE_MODE: 'student_practiceMode',
+            LAST_INDEX: (grade) => `student_lastIndex_${grade}`,
+            UNSYNCED_TIME: (grade) => `student_unsyncedTime_${grade}`,
+            UNSYNCED_QUIZ: (grade) => `student_unsyncedQuizStats_${grade}`
+        }
     },
     elements: {
         loginScreen: document.getElementById('login-screen'),
@@ -112,7 +148,7 @@ const app = {
     async init() {
         firebaseApp = initializeApp(this.config.firebaseConfig);
         auth = getAuth(firebaseApp);
-        db = getFirestore(firebaseApp); 
+        db = getFirestore(firebaseApp);
         rt_db = getDatabase(firebaseApp);
 
         await Promise.all([
@@ -126,7 +162,17 @@ const app = {
         quizMode.init();
         learningMode.init();
         dashboard.init();
-        
+
+        try {
+            const savedPracticeMode = localStorage.getItem(this.state.LOCAL_STORAGE_KEYS.PRACTICE_MODE);
+            if (savedPracticeMode === 'true') {
+                quizMode.state.isPracticeMode = true;
+                this.elements.practiceModeCheckbox.checked = true;
+            }
+        } catch (e) {
+            console.error("Error reading practice mode from localStorage", e);
+        }
+
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 this.state.user = user;
@@ -135,10 +181,12 @@ const app = {
                     displayName: user.displayName,
                     email: user.email
                 }, { merge: true });
-            
+
                 this.elements.loginScreen.classList.add('hidden');
                 this.elements.mainContainer.classList.remove('hidden');
                 document.body.classList.remove('items-center');
+
+                await this.syncOfflineData();
 
                 if (!this.state.isAppReady) {
                     this.state.isAppReady = true;
@@ -146,17 +194,21 @@ const app = {
                 }
 
                 const hash = window.location.hash.substring(1);
-                const [view, grade] = hash.split('-');
-                
+                const [view, gradeFromHash] = hash.split('-');
+
                 let initialState = { view: 'grade' };
-                if (grade && ['1y', '2y', '3y'].includes(grade)) {
+                const lastGrade = localStorage.getItem(this.state.LOCAL_STORAGE_KEYS.LAST_GRADE);
+
+                if (gradeFromHash && ['1y', '2y', '3y'].includes(gradeFromHash)) {
                     if (['mode', 'quiz', 'learning', 'dashboard', 'mistakeReview', 'favoriteReview'].includes(view)) {
-                        initialState = { view: view, grade: grade };
+                        initialState = { view: view, grade: gradeFromHash };
                     }
-                } else if (['1y', '2y', '3y'].includes(view)) { 
-                    initialState = { view: 'mode', grade: view };
+                } else if (['1y', '2y', '3y'].includes(view)) {
+                     initialState = { view: 'mode', grade: view };
+                } else if (lastGrade && ['1y', '2y', '3y'].includes(lastGrade)) {
+                    initialState = { view: 'mode', grade: lastGrade };
                 }
-                
+
                 history.replaceState(initialState, '');
                 this._renderView(initialState.view, initialState.grade);
             } else {
@@ -164,9 +216,33 @@ const app = {
                 this.elements.loginScreen.classList.remove('hidden');
                 this.elements.mainContainer.classList.add('hidden');
                 document.body.classList.add('items-center');
-                this._renderView(null); 
+                this._renderView(null);
             }
         });
+    },
+    async syncOfflineData() {
+        if (!app.state.user) return;
+
+        for (const grade of ['1y', '2y', '3y']) {
+            try {
+                const timeKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_TIME(grade);
+                const quizKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_QUIZ(grade);
+
+                const timeToSync = parseInt(localStorage.getItem(timeKey) || '0');
+                if (timeToSync > 0) {
+                    await utils.saveStudyHistory(timeToSync, grade);
+                    localStorage.removeItem(timeKey);
+                }
+
+                const statsToSync = JSON.parse(localStorage.getItem(quizKey) || 'null');
+                if (statsToSync) {
+                    await utils.syncQuizHistory(statsToSync, grade);
+                    localStorage.removeItem(quizKey);
+                }
+            } catch (error) {
+                console.error(`Offline data sync failed for grade ${grade}:`, error);
+            }
+        }
     },
     bindGlobalEvents() {
         this.elements.loginBtn.addEventListener('click', () => {
@@ -181,6 +257,11 @@ const app = {
         document.querySelectorAll('.grade-select-card').forEach(card => {
             card.addEventListener('click', () => {
                 const grade = card.dataset.sheet;
+                try {
+                    localStorage.setItem(this.state.LOCAL_STORAGE_KEYS.LAST_GRADE, grade);
+                } catch (e) {
+                    console.error("Error saving last grade to localStorage", e);
+                }
                 this.navigateTo('mode', grade);
             });
         });
@@ -193,7 +274,7 @@ const app = {
 
         this.elements.homeBtn.addEventListener('click', () => this.navigateTo('mode', this.state.selectedSheet));
         this.elements.backToGradeSelectionBtn.addEventListener('click', () => this.navigateTo('grade'));
-        
+
         this.elements.refreshBtn.addEventListener('click', () => {
             if (!this.state.selectedSheet) return;
             this.elements.confirmationModal.classList.remove('hidden');
@@ -203,9 +284,14 @@ const app = {
             this.elements.confirmationModal.classList.add('hidden');
             this.forceRefreshData();
         });
-        
+
         this.elements.practiceModeCheckbox.addEventListener('change', (e) => {
             quizMode.state.isPracticeMode = e.target.checked;
+            try {
+                localStorage.setItem(this.state.LOCAL_STORAGE_KEYS.PRACTICE_MODE, quizMode.state.isPracticeMode);
+            } catch (err) {
+                console.error("Error saving practice mode state:", err);
+            }
             quizMode.start(quizMode.state.currentQuizType);
         });
 
@@ -224,9 +310,10 @@ const app = {
             const state = e.state || { view: 'grade' };
             this._renderView(state.view, state.grade);
         });
-        
+
         window.addEventListener('beforeunload', () => {
             activityTracker.stopAndSave();
+            this.syncOfflineData();
         });
     },
     navigateTo(view, grade, options = {}) {
@@ -240,7 +327,7 @@ const app = {
                 hash = `#${view}-${grade}`;
             }
         }
-        
+
         history.pushState({ view, grade, options }, '', window.location.pathname + window.location.search + hash);
         this._renderView(view, grade, options);
     },
@@ -253,7 +340,7 @@ const app = {
         this.elements.dashboardContainer.classList.add('hidden');
         learningMode.elements.fixedButtons.classList.add('hidden');
         this.elements.progressBarContainer.classList.add('hidden');
-        
+
         this.elements.homeBtn.classList.add('hidden');
         this.elements.backToGradeSelectionBtn.classList.add('hidden');
         this.elements.refreshBtn.classList.add('hidden');
@@ -261,7 +348,7 @@ const app = {
         this.elements.sheetLink.classList.add('hidden');
         this.elements.logoutBtn.classList.add('hidden');
 
-        if (!this.state.user) return; 
+        if (!this.state.user) return;
 
         this.elements.logoutBtn.classList.remove('hidden');
 
@@ -345,10 +432,10 @@ const app = {
         ].filter(el => el);
 
         elementsToDisable.forEach(el => el.classList.add('pointer-events-none', 'opacity-50'));
-        
+
         const refreshIconHTML = this.elements.refreshBtn.innerHTML;
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
-        
+
         try {
             await learningMode.loadWordList(true);
             this.showRefreshSuccessMessage();
@@ -409,8 +496,8 @@ const app = {
             const response = await fetch(url);
             if (!response.ok) throw new Error(`Cloudinary API Error: ${response.statusText}`);
             const data = await response.json();
-            
-            this.config.backgroundImages = data.resources.map(img => 
+
+            this.config.backgroundImages = data.resources.map(img =>
                 `https://res.cloudinary.com/${cloudName}/image/upload/v${img.version}/${img.public_id}.${img.format}`
             );
 
@@ -496,7 +583,7 @@ const audioDBCache = {
     }),
     saveAudio: (key, audioData) => {
         if (!audioDBCache.db) return;
-        try { audioDBCache.db.transaction([audioDBCache.storeName], 'readwrite').objectStore(audioDBCache.storeName).put(audioData, key); } 
+        try { audioDBCache.db.transaction([audioDBCache.storeName], 'readwrite').objectStore(audioDBCache.storeName).put(audioData, key); }
         catch (e) { console.error("IndexedDB save audio error:", e); }
     }
 };
@@ -520,7 +607,7 @@ const translationDBCache = {
     }),
     save: (key, data) => {
         if (!translationDBCache.db) return;
-        try { translationDBCache.db.transaction([translationDBCache.storeName], 'readwrite').objectStore(translationDBCache.storeName).put(data, key); } 
+        try { translationDBCache.db.transaction([translationDBCache.storeName], 'readwrite').objectStore(translationDBCache.storeName).put(data, key); }
         catch (e) { console.error("IndexedDB save error:", e); }
     }
 };
@@ -537,7 +624,7 @@ const api = {
 
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            
+
             const data = await response.json();
             if (data.success) {
                 translationDBCache.save(text, data.translatedText);
@@ -553,7 +640,7 @@ const api = {
         if (!text || !text.trim()) return;
         activityTracker.recordActivity();
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
-        
+
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
         if (!isIOS && 'speechSynthesis' in window) {
@@ -567,7 +654,7 @@ const api = {
                 console.warn("Native TTS failed, falling back to Google TTS API:", error);
             }
         }
-        
+
         const cacheKey = processedText;
         const cachedAudio = await audioDBCache.getAudio(cacheKey);
         if (cachedAudio) {
@@ -605,7 +692,7 @@ const api = {
     },
     async copyToClipboard(text) {
         if (navigator.clipboard) {
-            try { await navigator.clipboard.writeText(text); } 
+            try { await navigator.clipboard.writeText(text); }
             catch (err) {}
         }
     },
@@ -631,7 +718,7 @@ const api = {
 
 const ui = {
     nonInteractiveWords: new Set(['a', 'an', 'the', 'I', 'me', 'my', 'mine', 'you', 'your', 'yours', 'he', 'him', 'his', 'she', 'her', 'hers', 'it', 'its', 'we', 'us', 'our', 'ours', 'they', 'them', 'their', 'theirs', 'this', 'that', 'these', 'those', 'myself', 'yourself', 'himself', 'herself', 'itself', 'ourselves', 'yourselves', 'something', 'anybody', 'anyone', 'anything', 'nobody', 'no one', 'nothing', 'everybody', 'everyone', 'everything', 'all', 'any', 'both', 'each', 'either', 'every', 'few', 'little', 'many', 'much', 'neither', 'none', 'one', 'other', 'several', 'some', 'about', 'above', 'across', 'after', 'against', 'along', 'among', 'around', 'at', 'before', 'behind', 'below', 'beneath', 'beside', 'between', 'beyond', 'by', 'down', 'during', 'for', 'from', 'in', 'inside', 'into', 'like', 'near', 'of', 'off', 'on', 'onto', 'out', 'outside', 'over', 'past', 'since', 'through', 'throughout', 'to', 'toward', 'under', 'underneath', 'until', 'unto', 'up', 'upon', 'with', 'within', 'without', 'and', 'but', 'or', 'nor', 'for', 'yet', 'so', 'after', 'although', 'as', 'because', 'before', 'if', 'once', 'since', 'than', 'that', 'though', 'till', 'unless', 'until', 'when', 'whenever', 'where', 'whereas', 'wherever', 'whether', 'while', 'that', 'which', 'who', 'whom', 'whose', 'when', 'where', 'why', 'what', 'whatever', 'whichever', 'whoever', 'whomever', 'who', 'whom', 'whose', 'what', 'which', 'when', 'where', 'why', 'how', 'be', 'am', 'is', 'are', 'was', 'were', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'done', 'can', 'could', 'may', 'might', 'must', 'shall', 'should', 'will', 'would', 'ought', 'not', 'very', 'too', 'so', 'just', 'well', 'often', 'always', 'never', 'sometimes', 'here', 'there', 'now', 'then', 'again', 'also', 'ever', 'even', 'how', 'quite', 'rather', 'soon', 'still', 'more', 'most', 'less', 'least', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'then', 'there', 'here', "don't", "didn't", "can't", "couldn't", "she's", "he's", "i'm", "you're", "they're", "we're", "it's", "that's"]),
-    
+
     adjustFontSize(element) {
         element.style.fontSize = '';
         const defaultFontSize = parseFloat(window.getComputedStyle(element).fontSize);
@@ -805,7 +892,7 @@ const utils = {
             app.state.currentProgress = {};
         }
     },
-    
+
     async getLastLearnedIndex() {
         return 0;
     },
@@ -813,7 +900,7 @@ const utils = {
     async setLastLearnedIndex(index) {
         return;
     },
-    
+
     getWordStatus(word) {
         const progress = app.state.currentProgress[word];
         if (!progress) return 'unseen';
@@ -825,8 +912,8 @@ const utils = {
     },
 
     async updateWordStatus(word, quizType, result) {
-        if (!word || !quizType) return;
-        
+        if (!word || !quizType || !app.state.user || !app.state.selectedSheet) return;
+
         const progressRef = this._getProgressRef();
         if (!progressRef) return;
 
@@ -838,13 +925,13 @@ const utils = {
             if (!app.state.currentProgress[word]) app.state.currentProgress[word] = {};
             app.state.currentProgress[word][quizType] = result;
 
-            this.saveQuizHistory(quizType, result === 'correct');
+            this.saveQuizHistoryToLocal(quizType, result === 'correct');
         } catch (error) {
             if (error.code === 'not-found') {
                 await setDoc(progressRef, { [word]: { [quizType]: result } }, { merge: true });
                 if (!app.state.currentProgress[word]) app.state.currentProgress[word] = {};
                 app.state.currentProgress[word][quizType] = result;
-                this.saveQuizHistory(quizType, result === 'correct');
+                this.saveQuizHistoryToLocal(quizType, result === 'correct');
             }
         }
     },
@@ -855,23 +942,26 @@ const utils = {
         return Object.keys(allProgress)
             .filter(word => allProgress[word] && allProgress[word][quizType] === 'correct');
     },
-    
+
     getIncorrectWords() {
-        const allWords = learningMode.state.wordList[app.state.selectedSheet] || [];
+        const grade = app.state.selectedSheet;
+        if (!grade || !learningMode.state.wordList[grade]) return [];
+
+        const allWords = learningMode.state.wordList[grade];
         return allWords
             .filter(wordObj => this.getWordStatus(wordObj.word) === 'review')
             .map(wordObj => wordObj.word);
     },
 
     async toggleFavorite(word) {
-        if (!word) return false;
+        if (!word || !app.state.user || !app.state.selectedSheet) return false;
         const progressRef = this._getProgressRef();
         if (!progressRef) return false;
 
         const isFavorite = !(app.state.currentProgress[word]?.favorite || false);
         const updates = {};
         updates[`${word}.favorite`] = isFavorite;
-        
+
         try {
             await updateDoc(progressRef, updates);
             if (!app.state.currentProgress[word]) app.state.currentProgress[word] = {};
@@ -896,15 +986,15 @@ const utils = {
                 const timeA = allProgress[a].favoritedAt || 0;
                 const timeB = allProgress[b].favoritedAt || 0;
                 return timeB - timeA;
-            })
+            });
     },
-    
-    async saveStudyHistory(seconds) {
-        if (!app.state.user || seconds < 1 || !app.state.selectedSheet) return;
-        const grade = app.state.selectedSheet;
+
+    async saveStudyHistory(seconds, grade = app.state.selectedSheet) {
+        if (!app.state.user || seconds < 1 || !grade) return;
+
         const today = new Date().toISOString().slice(0, 10);
         const historyRef = doc(db, 'users', app.state.user.uid, 'history', 'study');
-        
+
         try {
             const docSnap = await getDoc(historyRef);
             const data = docSnap.exists() ? docSnap.data() : {};
@@ -912,54 +1002,59 @@ const utils = {
             const currentSeconds = dailyData[grade] || 0;
 
             const fieldPath = `${today}.${grade}`;
-            await updateDoc(historyRef, {
-                [fieldPath]: currentSeconds + seconds
-            });
+            await setDoc(historyRef, { [today]: { [grade]: currentSeconds + seconds } }, { merge: true });
         } catch(e) {
-            if (e.code === 'not-found') {
-                 await setDoc(historyRef, {
-                    [today]: {
-                        [grade]: seconds
-                    }
-                });
-            }
+            console.error("Failed to update study history:", e);
+            throw e;
         }
     },
 
-    async saveQuizHistory(quizType, isCorrect) {
-        if (!app.state.user || !quizType || !app.state.selectedSheet) return;
+    saveQuizHistoryToLocal(quizType, isCorrect) {
         const grade = app.state.selectedSheet;
+        if (!grade || !quizType) return;
+
+        try {
+            const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_QUIZ(grade);
+            const stats = JSON.parse(localStorage.getItem(key) || '{}');
+            if (!stats[quizType]) {
+                stats[quizType] = { total: 0, correct: 0 };
+            }
+            stats[quizType].total += 1;
+            if (isCorrect) {
+                stats[quizType].correct += 1;
+            }
+            localStorage.setItem(key, JSON.stringify(stats));
+        } catch (e) {
+            console.error("Error saving quiz stats to localStorage", e);
+        }
+    },
+
+    async syncQuizHistory(statsToSync, grade) {
+        if (!app.state.user || !statsToSync || !grade) return;
         const today = new Date().toISOString().slice(0, 10);
         const historyRef = doc(db, 'users', app.state.user.uid, 'history', 'quiz');
-        
+
         try {
             const docSnap = await getDoc(historyRef);
             const data = docSnap.exists() ? docSnap.data() : {};
-            
+
             const todayData = data[today] || {};
             const gradeData = todayData[grade] || {};
-            const typeStats = gradeData[quizType] || { correct: 0, total: 0 };
 
-            typeStats.total += 1;
-            if (isCorrect) {
-                typeStats.correct += 1;
+            for (const type in statsToSync) {
+                if (statsToSync.hasOwnProperty(type)) {
+                    const typeStats = gradeData[type] || { correct: 0, total: 0 };
+                    typeStats.total += statsToSync[type].total;
+                    typeStats.correct += statsToSync[type].correct;
+                    gradeData[type] = typeStats;
+                }
             }
 
-            const fieldPath = `${today}.${grade}.${quizType}`;
-            await updateDoc(historyRef, {
-                [fieldPath]: typeStats
-            });
+            const fieldPath = `${today}.${grade}`;
+            await setDoc(historyRef, { [today]: { [grade]: gradeData } }, { merge: true });
         } catch(e) {
-            if (e.code === 'not-found') {
-                const typeStats = { correct: isCorrect ? 1 : 0, total: 1 };
-                await setDoc(historyRef, {
-                    [today]: {
-                        [grade]: {
-                           [quizType]: typeStats
-                        }
-                    }
-                });
-            }
+            console.error("Failed to sync quiz history:", e);
+            throw e;
         }
     }
 };
@@ -989,14 +1084,19 @@ const dashboard = {
         if (!learningMode.state.isWordListReady[app.state.selectedSheet]) {
             await learningMode.loadWordList();
         }
-        
-        this.renderBaseStats(); 
+
+        this.renderBaseStats();
         setTimeout(async () => {
             await this.renderAdvancedStats();
         }, 1);
     },
     renderBaseStats() {
-        const allWords = learningMode.state.wordList[app.state.selectedSheet] || [];
+        const grade = app.state.selectedSheet;
+        if (!grade || !learningMode.state.wordList[grade]) {
+             this.elements.content.innerHTML = `<p class="text-center text-gray-600">데이터를 불러올 수 없습니다.</p>`;
+             return;
+        }
+        const allWords = learningMode.state.wordList[grade] || [];
         const totalWords = allWords.length;
         if (totalWords === 0) {
             this.elements.content.innerHTML = `<p class="text-center text-gray-600">학습할 단어가 없습니다.</p>`;
@@ -1027,13 +1127,13 @@ const dashboard = {
     async renderAdvancedStats() {
         if (!app.state.user || !app.state.selectedSheet) return;
         const grade = app.state.selectedSheet;
-        
+
         try {
             const studyHistoryDoc = await getDoc(doc(db, 'users', app.state.user.uid, 'history', 'study'));
             const quizHistoryDoc = await getDoc(doc(db, 'users', app.state.user.uid, 'history', 'quiz'));
             const studyHistory = studyHistoryDoc.exists() ? studyHistoryDoc.data() : {};
             const quizHistory = quizHistoryDoc.exists() ? quizHistoryDoc.data() : {};
-            
+
             this.render7DayCharts(studyHistory, quizHistory, grade);
             this.renderSummaryCards(studyHistory, quizHistory, grade);
 
@@ -1041,7 +1141,7 @@ const dashboard = {
             this.elements.content.innerHTML = `<p class="text-red-500 text-center">통계 정보를 불러오는 데 실패했습니다.</p>`;
         }
     },
-    
+
     destroyCharts() {
         if (this.state.studyTimeChart) this.state.studyTimeChart.destroy();
         if (this.state.quiz1Chart) this.state.quiz1Chart.destroy();
@@ -1084,7 +1184,7 @@ const dashboard = {
                 }
             });
         }
-        
+
         const quizStats7Days = {
             'MULTIPLE_CHOICE_MEANING': { correct: 0, total: 0 },
             'FILL_IN_THE_BLANK': { correct: 0, total: 0 },
@@ -1103,12 +1203,12 @@ const dashboard = {
                 }
             }
         }
-        
+
         this.state.quiz1Chart = this.createDoughnutChart('quiz1-chart', 'quiz1-label', '영한 뜻', quizStats7Days['MULTIPLE_CHOICE_MEANING']);
         this.state.quiz2Chart = this.createDoughnutChart('quiz2-chart', 'quiz2-label', '빈칸 추론', quizStats7Days['FILL_IN_THE_BLANK']);
         this.state.quiz3Chart = this.createDoughnutChart('quiz3-chart', 'quiz3-label', '영영 풀이', quizStats7Days['MULTIPLE_CHOICE_DEFINITION']);
     },
-    
+
     createDoughnutChart(elementId, labelId, labelText, stats) {
         const ctx = document.getElementById(elementId)?.getContext('2d');
         if (!ctx) return null;
@@ -1116,10 +1216,10 @@ const dashboard = {
         const correct = stats.correct || 0;
         const total = stats.total || 0;
         const incorrect = total - correct;
-        
+
         const hasAttempts = total > 0;
         const accuracy = hasAttempts ? Math.round((correct / total) * 100) : 0;
-        
+
         const chartColors = hasAttempts
             ? ['#34D399', '#F87171']
             : ['#E5E7EB', '#E5E7EB'];
@@ -1127,14 +1227,14 @@ const dashboard = {
         const chartData = hasAttempts
             ? [correct, incorrect > 0 ? incorrect : 0.0001]
             : [0, 1];
-            
+
         const centerText = hasAttempts ? `${accuracy}%` : '-';
 
         const labelEl = document.getElementById(labelId);
         if (labelEl) {
             labelEl.textContent = `${labelText} (${correct}/${total})`;
         }
-        
+
         return new Chart(ctx, {
             type: 'doughnut',
             data: {
@@ -1193,7 +1293,7 @@ const dashboard = {
                 const d = new Date(today);
                 d.setDate(d.getDate() - i);
                 const dateString = d.toISOString().slice(0, 10);
-                
+
                 if(studyHistory[dateString]){
                     totalSeconds += studyHistory[dateString][grade] || 0;
                 }
@@ -1209,7 +1309,7 @@ const dashboard = {
             }
             return { totalSeconds, quizStats };
         };
-        
+
         const totalStats = (() => {
             let totalSeconds = 0;
             const quizStats = { 'MULTIPLE_CHOICE_MEANING': { correct: 0, total: 0 }, 'FILL_IN_THE_BLANK': { correct: 0, total: 0 }, 'MULTIPLE_CHOICE_DEFINITION': { correct: 0, total: 0 }};
@@ -1228,13 +1328,13 @@ const dashboard = {
             });
             return { totalSeconds, quizStats };
         })();
-        
+
         const stats30 = getStatsForPeriod(30);
 
         const createCardHTML = (title, time, stats) => {
             let cards = '';
             quizTypes.forEach(type => {
-                const { correct, total } = stats[type.id];
+                const { correct, total } = stats[type.id] || { correct: 0, total: 0 };
                 const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
                 cards += `
                     <div class="bg-white p-2 rounded-lg shadow-sm text-center">
@@ -1248,7 +1348,7 @@ const dashboard = {
             return `
                 <div class="bg-gray-50 p-4 rounded-xl shadow-inner">
                     <h4 class="font-bold text-gray-700 mb-4 text-lg text-center">
-                        ${title} 
+                        ${title}
                         <span class="font-normal text-gray-500">(${this.formatSeconds(time)})</span>
                     </h4>
                     <div class="grid grid-cols-3 gap-1">
@@ -1257,7 +1357,7 @@ const dashboard = {
                 </div>
             `;
         };
-        
+
         this.elements.stats30DayContainer.innerHTML = createCardHTML('최근 30일 기록', stats30.totalSeconds, stats30.quizStats);
         this.elements.statsTotalContainer.innerHTML = createCardHTML('누적 총학습 기록', totalStats.totalSeconds, totalStats.quizStats);
     },
@@ -1316,7 +1416,7 @@ const quizMode = {
         this.elements.startMeaningQuizBtn.addEventListener('click', () => this.start('MULTIPLE_CHOICE_MEANING'));
         this.elements.startBlankQuizBtn.addEventListener('click', () => this.start('FILL_IN_THE_BLANK'));
         this.elements.startDefinitionQuizBtn.addEventListener('click', () => this.start('MULTIPLE_CHOICE_DEFINITION'));
-        
+
         this.elements.quizResultContinueBtn.addEventListener('click', () => this.continueAfterResult());
         this.elements.quizResultMistakesBtn.addEventListener('click', () => this.reviewSessionMistakes());
 
@@ -1326,7 +1426,7 @@ const quizMode = {
             activityTracker.recordActivity();
 
             const choiceCount = Array.from(this.elements.choices.children).filter(el => !el.textContent.includes('PASS')).length;
-            
+
             if (e.key.toLowerCase() === 'p' || e.key === '0') {
                  e.preventDefault();
                  const passButton = Array.from(this.elements.choices.children).find(el => el.textContent.includes('PASS'));
@@ -1355,7 +1455,7 @@ const quizMode = {
         this.state.sessionAnsweredInSet = 0;
         this.state.sessionCorrectInSet = 0;
         this.state.sessionMistakes = [];
-        
+
         this.elements.loader.querySelector('.loader').style.display = 'block';
         this.elements.loaderText.textContent = "퀴즈 데이터를 불러오는 중...";
         if (showSelection) {
@@ -1378,9 +1478,9 @@ const quizMode = {
         if (preloaded) {
             nextQuiz = preloaded;
             this.state.preloadedQuizzes[grade][type] = null;
-            this.preloadNextQuiz(grade, type); 
+            this.preloadNextQuiz(grade, type);
         }
-        
+
         if (!nextQuiz) {
             nextQuiz = await this.generateSingleQuiz();
         }
@@ -1399,15 +1499,17 @@ const quizMode = {
     },
     async generateSingleQuiz() {
         const grade = app.state.selectedSheet;
+        if (!grade || !learningMode.state.wordList[grade]) return null;
+
         const allWords = learningMode.state.wordList[grade] || [];
         if (allWords.length < 5) return null;
 
-        const learnedWords = this.state.isPracticeMode ? 
-            this.state.practiceLearnedWords : 
+        const learnedWords = this.state.isPracticeMode ?
+            this.state.practiceLearnedWords :
             utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
 
         let candidates = allWords.filter(word => !learnedWords.includes(word.word));
-        
+
         if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
             candidates = candidates.filter(word => {
                 if (!word.sample || word.sample.trim() === '') return false;
@@ -1417,9 +1519,9 @@ const quizMode = {
                 return placeholderRegex.test(firstLine) || wordRegex.test(firstLine);
             });
         }
-        
+
         if (candidates.length === 0) return null;
-        
+
         candidates.sort(() => 0.5 - Math.random());
 
         for (const wordData of candidates) {
@@ -1434,10 +1536,10 @@ const quizMode = {
                     quiz = this.createDefinitionQuiz(wordData, allWords, definition);
                 }
             }
-            if (quiz) return quiz; 
+            if (quiz) return quiz;
         }
-        
-        return null; 
+
+        return null;
     },
     renderQuiz(quizData) {
         const { type, question, choices } = quizData;
@@ -1455,7 +1557,7 @@ const quizMode = {
             questionDisplay.classList.remove('justify-center', 'items-center');
             const p = document.createElement('p');
             p.className = 'text-xl sm:text-2xl text-left text-gray-800 leading-relaxed';
-            
+
             const sentenceParts = question.sentence_with_blank.split(/(\*.*?\*|＿＿＿＿)/g);
             sentenceParts.forEach(part => {
                 if (part === '＿＿＿＿') {
@@ -1482,7 +1584,7 @@ const quizMode = {
             questionDisplay.appendChild(h1);
             ui.adjustFontSize(h1);
         }
-        
+
         this.elements.choices.innerHTML = '';
         choices.forEach((choice, index) => {
             const li = document.createElement('li');
@@ -1491,7 +1593,7 @@ const quizMode = {
             li.onclick = () => this.checkAnswer(li, choice);
             this.elements.choices.appendChild(li);
         });
-        
+
         const passLi = document.createElement('li');
         passLi.className = 'choice-item border-2 border-red-500 bg-red-500 hover:bg-red-600 text-white p-4 rounded-lg cursor-pointer flex items-center justify-center transition-all font-bold text-lg';
         passLi.innerHTML = `<span>PASS</span>`;
@@ -1516,7 +1618,7 @@ const quizMode = {
         } else {
             this.state.sessionMistakes.push(word);
         }
-        
+
         if (!this.state.isPracticeMode) {
             await utils.updateWordStatus(word, quizType, (isCorrect && !isPass) ? 'correct' : 'incorrect');
         } else if (isCorrect) {
@@ -1530,7 +1632,7 @@ const quizMode = {
             });
             correctAnswerEl?.classList.add('correct');
         }
-        
+
         setTimeout(() => {
             if (this.state.sessionAnsweredInSet >= 10) {
                 this.showSessionResultModal();
@@ -1562,7 +1664,7 @@ const quizMode = {
         this.state.sessionAnsweredInSet = 0;
         this.state.sessionCorrectInSet = 0;
         this.state.sessionMistakes = [];
-        
+
         app.navigateTo('mistakeReview', app.state.selectedSheet, { mistakeWords: mistakes });
     },
     async preloadInitialQuizzes() {
@@ -1576,12 +1678,13 @@ const quizMode = {
         }
     },
     async preloadNextQuiz(grade, type) {
-        if (!grade || !type || this.state.isPreloading[grade][type] || this.state.preloadedQuizzes[grade]?.[type]) {
+        if (!grade || !type || this.state.isPreloading[grade]?.[type] || this.state.preloadedQuizzes[grade]?.[type]) {
             return;
         }
 
+        if (!this.state.isPreloading[grade]) this.state.isPreloading[grade] = {};
         this.state.isPreloading[grade][type] = true;
-        
+
         try {
             const allWords = learningMode.state.wordList[grade] || [];
             if (allWords.length < 5) return;
@@ -1597,6 +1700,7 @@ const quizMode = {
                      if (definition) quiz = this.createDefinitionQuiz(wordData, allWords, definition);
                  }
                  if (quiz) {
+                     if (!this.state.preloadedQuizzes[grade]) this.state.preloadedQuizzes[grade] = {};
                      this.state.preloadedQuizzes[grade][type] = quiz;
                      return;
                  }
@@ -1604,7 +1708,7 @@ const quizMode = {
         } catch(e) {
             console.error(`Preloading ${grade}-${type} failed:`, e);
         } finally {
-            this.state.isPreloading[grade][type] = false;
+            if (this.state.isPreloading[grade]) this.state.isPreloading[grade][type] = false;
         }
     },
     createMeaningQuiz(correctWordData, allWordsData) {
@@ -1621,7 +1725,7 @@ const quizMode = {
     },
     createBlankQuiz(correctWordData, allWordsData) {
         if (!correctWordData.sample || correctWordData.sample.trim() === '') return null;
-        
+
         const firstLineSentence = correctWordData.sample.split('\n')[0];
         let sentenceWithBlank = "";
         const placeholderRegex = /\*(.*?)\*/;
@@ -1634,10 +1738,10 @@ const quizMode = {
             if (firstLineSentence.match(wordRegex)) {
                 sentenceWithBlank = firstLineSentence.replace(wordRegex, "＿＿＿＿").trim();
             } else {
-                return null; 
+                return null;
             }
         }
-        
+
         const wrongAnswers = new Set();
         let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.word !== correctWordData.word);
         candidates.sort(() => 0.5 - Math.random());
@@ -1683,6 +1787,7 @@ const learningMode = {
         isWordListReady: { '1y': false, '2y': false, '3y': false },
         currentIndex: 0,
         isMistakeMode: false,
+        isFavoriteMode: false,
         touchstartX: 0, touchstartY: 0, currentDisplayList: [],
         isDragging: false,
     },
@@ -1762,7 +1867,7 @@ const learningMode = {
     },
     async loadWordList(force = false, grade = app.state.selectedSheet) {
         if (!grade) return;
-        if (!force && this.state.isWordListReady[grade]) return; 
+        if (!force && this.state.isWordListReady[grade]) return;
 
         if (force) {
             localStorage.removeItem(`wordListCache_${grade}`);
@@ -1776,8 +1881,8 @@ const learningMode = {
 
             const now = new Date();
             const lastMonday = new Date(now);
-            
-            const todayDay = now.getDay(); 
+
+            const todayDay = now.getDay();
             const diff = todayDay === 0 ? 6 : todayDay - 1;
             lastMonday.setDate(now.getDate() - diff);
             lastMonday.setHours(0, 0, 0, 0);
@@ -1798,7 +1903,7 @@ const learningMode = {
             const snapshot = await get(dbRef);
             const data = snapshot.val();
             if (!data) throw new Error(`Firebase에 '${grade}' 단어 데이터가 없습니다.`);
-            
+
             const wordsArray = Object.values(data).sort((a, b) => a.id - b.id);
             this.state.wordList[grade] = wordsArray;
             this.state.isWordListReady[grade] = true;
@@ -1817,23 +1922,30 @@ const learningMode = {
             this.elements.loaderText.textContent = "단어 목록을 동기화하는 중...";
             this.elements.loader.classList.remove('hidden');
             this.elements.startScreen.classList.add('hidden');
-            await this.loadWordList();
+            await this.loadWordList(false, grade);
             this.elements.loader.classList.add('hidden');
             this.elements.startScreen.classList.remove('hidden');
             if (!this.state.isWordListReady[grade]) return;
         }
-        
+
         this.state.isMistakeMode = false;
+        this.state.isFavoriteMode = false;
         const currentWordList = this.state.wordList[grade];
         const startWord = this.elements.startWordInput.value.trim().toLowerCase();
-    
+
         if (!startWord) {
             this.elements.startScreen.classList.add('hidden');
-            this.state.currentIndex = 0;
+            try {
+                const key = app.state.LOCAL_STORAGE_KEYS.LAST_INDEX(grade);
+                const savedIndex = parseInt(localStorage.getItem(key) || '0');
+                this.state.currentIndex = savedIndex < currentWordList.length ? savedIndex : 0;
+            } catch(e) {
+                this.state.currentIndex = 0;
+            }
             this.launchApp(currentWordList);
             return;
         }
-    
+
         const exactMatchIndex = currentWordList.findIndex(item => item.word.toLowerCase() === startWord);
         if (exactMatchIndex !== -1) {
             this.elements.startScreen.classList.add('hidden');
@@ -1841,7 +1953,7 @@ const learningMode = {
             this.launchApp(currentWordList);
             return;
         }
-    
+
         const searchRegex = new RegExp(`\\b${startWord}\\b`, 'i');
         const explanationMatches = currentWordList
             .map((item, index) => ({ word: item.word, index }))
@@ -1851,7 +1963,7 @@ const learningMode = {
                 const cleanedExplanation = explanation.replace(/\[.*?\]/g, '');
                 return searchRegex.test(cleanedExplanation);
             });
-    
+
         const levenshteinSuggestions = currentWordList
             .map((item, index) => ({
                 word: item.word, index,
@@ -1860,7 +1972,7 @@ const learningMode = {
             .sort((a, b) => a.distance - b.distance)
             .slice(0, 5)
             .filter(s => s.distance < s.word.length / 2 + 1);
-    
+
         if (levenshteinSuggestions.length > 0 || explanationMatches.length > 0) {
             const title = `<strong>${startWord}</strong> 없으니, 아래에서 확인하세요.`;
             this.displaySuggestions(levenshteinSuggestions, explanationMatches, currentWordList, title);
@@ -1873,8 +1985,8 @@ const learningMode = {
         this.state.isMistakeMode = true;
         this.state.isFavoriteMode = false;
         const grade = app.state.selectedSheet;
-        if (!this.state.isWordListReady[grade]) { await this.loadWordList(); if (!this.state.isWordListReady[grade]) return; }
-        
+        if (!this.state.isWordListReady[grade]) { await this.loadWordList(false, grade); if (!this.state.isWordListReady[grade]) return; }
+
         const incorrectWords = mistakeWordsFromQuiz || utils.getIncorrectWords();
 
         if (incorrectWords.length === 0) {
@@ -1890,7 +2002,7 @@ const learningMode = {
         this.state.isMistakeMode = false;
         this.state.isFavoriteMode = true;
         const grade = app.state.selectedSheet;
-        if (!this.state.isWordListReady[grade]) { await this.loadWordList(); if (!this.state.isWordListReady[grade]) return; }
+        if (!this.state.isWordListReady[grade]) { await this.loadWordList(false, grade); if (!this.state.isWordListReady[grade]) return; }
 
         const favoriteWords = utils.getFavoriteWords();
         if (favoriteWords.length === 0) {
@@ -1906,7 +2018,7 @@ const learningMode = {
     displaySuggestions(vocabSuggestions, explanationSuggestions, sourceList, title) {
         this.elements.startInputContainer.classList.add('hidden');
         this.elements.suggestionsTitle.innerHTML = title;
-        
+
         const populateList = (listElement, suggestions) => {
             listElement.innerHTML = '';
             if (suggestions.length === 0) {
@@ -1924,7 +2036,7 @@ const learningMode = {
 
         populateList(this.elements.suggestionsVocabList, vocabSuggestions);
         populateList(this.elements.suggestionsExplanationList, explanationSuggestions);
-        
+
         this.elements.suggestionsContainer.classList.remove('hidden');
     },
     reset() {
@@ -1942,7 +2054,7 @@ const learningMode = {
         this.elements.startWordInput.value = '';
         this.elements.startWordInput.focus();
         if (app.state.selectedSheet) {
-            this.loadWordList();
+            this.loadWordList(false, app.state.selectedSheet);
         }
     },
     showError(message) {
@@ -1966,18 +2078,27 @@ const learningMode = {
         const wordData = this.state.currentDisplayList[index];
         if (!wordData) return;
 
+        if (!this.state.isMistakeMode && !this.state.isFavoriteMode) {
+            try {
+                const key = app.state.LOCAL_STORAGE_KEYS.LAST_INDEX(app.state.selectedSheet);
+                localStorage.setItem(key, index);
+            } catch (e) {
+                console.error("Error saving last index to localStorage", e);
+            }
+        }
+
         this.elements.wordDisplay.textContent = wordData.word;
         ui.adjustFontSize(this.elements.wordDisplay);
-        
+
         this.elements.meaningDisplay.innerHTML = wordData.meaning.replace(/\n/g, '<br>');
         ui.renderInteractiveText(this.elements.explanationDisplay, wordData.explanation);
         this.elements.explanationContainer.classList.toggle('hidden', !wordData.explanation || !wordData.explanation.trim());
         const hasSample = wordData.sample && wordData.sample.trim() !== '';
-        
+
         const defaultImg = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
         const sampleImg = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
         this.elements.sampleBtnImg.src = await imageDBCache.loadImage(hasSample ? sampleImg : defaultImg);
-        
+
         const isFavorite = app.state.currentProgress[wordData.word]?.favorite || false;
         this.updateFavoriteIcon(isFavorite);
     },
@@ -1996,6 +2117,19 @@ const learningMode = {
         if (!wordData) return;
         const isFavorite = await utils.toggleFavorite(wordData.word);
         this.updateFavoriteIcon(isFavorite);
+
+        if (this.state.isFavoriteMode && !isFavorite) {
+             this.state.currentDisplayList.splice(this.state.currentIndex, 1);
+             if (this.state.currentDisplayList.length === 0) {
+                 app.showToast("즐겨찾기 목록이 비었습니다.", false);
+                 app.navigateTo('mode', app.state.selectedSheet);
+                 return;
+             }
+             if(this.state.currentIndex >= this.state.currentDisplayList.length) {
+                 this.state.currentIndex = this.state.currentDisplayList.length - 1;
+             }
+             this.displayWord(this.state.currentIndex);
+        }
     },
     navigate(direction) {
         activityTracker.recordActivity();
@@ -2003,7 +2137,7 @@ const learningMode = {
         const len = this.state.currentDisplayList.length;
         if (len === 0) return;
         const navigateAction = () => { this.state.currentIndex = (this.state.currentIndex + direction + len) % len; this.displayWord(this.state.currentIndex); };
-        if (isBackVisible) { this.handleFlip(); setTimeout(navigateAction, 300); } 
+        if (isBackVisible) { this.handleFlip(); setTimeout(navigateAction, 300); }
         else { navigateAction(); }
     },
     async handleFlip() {
@@ -2011,7 +2145,7 @@ const learningMode = {
         const isBackVisible = this.elements.cardBack.classList.contains('is-slid-up');
         const wordData = this.state.currentDisplayList[this.state.currentIndex];
         const hasSample = wordData && wordData.sample && wordData.sample.trim() !== '';
-        
+
         const backImgUrl = 'https://images.icon-icons.com/1055/PNG/128/5-remove-cat_icon-icons.com_76681.png';
         const sampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
         const noSampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
@@ -2033,8 +2167,8 @@ const learningMode = {
         if (!this.isLearningModeActive() || document.activeElement.tagName.match(/INPUT|TEXTAREA/)) return;
         activityTracker.recordActivity();
         const keyMap = { 'ArrowLeft': -1, 'ArrowRight': 1, 'ArrowUp': -1, 'ArrowDown': 1 };
-        if (keyMap[e.key] !== undefined) { e.preventDefault(); this.navigate(keyMap[e.key]); } 
-        else if (e.key === 'Enter') { e.preventDefault(); this.handleFlip(); } 
+        if (keyMap[e.key] !== undefined) { e.preventDefault(); this.navigate(keyMap[e.key]); }
+        else if (e.key === 'Enter') { e.preventDefault(); this.handleFlip(); }
         else if (e.key === ' ') { e.preventDefault(); if (!this.elements.cardBack.classList.contains('is-slid-up')) api.speak(this.elements.wordDisplay.textContent); }
     },
     handleTouchStart(e) {
@@ -2062,7 +2196,7 @@ const learningMode = {
     },
     handleProgressBarInteraction(e) {
         if (!this.isLearningModeActive()) return;
-        
+
         const track = this.elements.progressBarTrack;
         const totalWords = this.state.currentDisplayList.length;
         if (totalWords <= 1) return;
@@ -2117,4 +2251,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
