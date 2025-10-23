@@ -2,15 +2,16 @@ let firebaseApp, auth, db, rt_db;
 let initializeApp;
 let getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup;
 let getDatabase, ref, get;
-let getFirestore, doc, getDoc, setDoc, updateDoc;
+let getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch; // Added writeBatch
 
 document.addEventListener('firebaseSDKLoaded', () => {
     ({
         initializeApp,
         getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
         getDatabase, ref, get,
-        getFirestore, doc, getDoc, setDoc, updateDoc,
+        getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch // Ensure writeBatch is available
     } = window.firebaseSDK);
+    window.firebaseSDK.writeBatch = writeBatch; // Make it available globally
 
     app.init();
 });
@@ -110,7 +111,8 @@ const app = {
             PRACTICE_MODE: 'student_practiceMode',
             LAST_INDEX: (grade) => `student_lastIndex_${grade}`,
             UNSYNCED_TIME: (grade) => `student_unsyncedTime_${grade}`,
-            UNSYNCED_QUIZ: (grade) => `student_unsyncedQuizStats_${grade}`
+            UNSYNCED_QUIZ: (grade) => `student_unsyncedQuizStats_${grade}`,
+            UNSYNCED_INCORRECT: (grade) => `student_unsyncedIncorrect_${grade}` // New key
         }
     },
     elements: {
@@ -227,6 +229,7 @@ const app = {
             try {
                 const timeKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_TIME(grade);
                 const quizKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_QUIZ(grade);
+                const incorrectKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_INCORRECT(grade); // New
 
                 const timeToSync = parseInt(localStorage.getItem(timeKey) || '0');
                 if (timeToSync > 0) {
@@ -239,8 +242,16 @@ const app = {
                     await utils.syncQuizHistory(statsToSync, grade);
                     localStorage.removeItem(quizKey);
                 }
+
+                 const incorrectToSync = JSON.parse(localStorage.getItem(incorrectKey) || 'null');
+                 if (incorrectToSync && Object.keys(incorrectToSync).length > 0) {
+                     await utils.syncIncorrectStatus(incorrectToSync, grade);
+                     localStorage.removeItem(incorrectKey);
+                 }
+
             } catch (error) {
                 console.error(`Offline data sync failed for grade ${grade}:`, error);
+                // Do not remove item from localStorage if sync fails
             }
         }
     },
@@ -307,18 +318,40 @@ const app = {
         });
 
         window.addEventListener('popstate', (e) => {
+            this.syncOfflineData(); // Sync on navigation
             const state = e.state || { view: 'grade' };
             this._renderView(state.view, state.grade);
         });
 
-        window.addEventListener('beforeunload', () => {
+        window.addEventListener('beforeunload', (e) => {
             activityTracker.stopAndSave();
-            this.syncOfflineData();
+            this.syncOfflineDataSync(); // Best-effort sync
         });
     },
+     syncOfflineDataSync() {
+         if (!app.state.user) return;
+         const timeKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_TIME(this.state.selectedSheet);
+         const quizKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_QUIZ(this.state.selectedSheet);
+         const incorrectKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_INCORRECT(this.state.selectedSheet);
+
+         const timeToSync = localStorage.getItem(timeKey);
+         const statsToSync = localStorage.getItem(quizKey);
+         const incorrectToSync = localStorage.getItem(incorrectKey);
+
+         if (timeToSync || statsToSync || incorrectToSync) {
+            // Firestore SDK is async, cannot reliably wait in beforeunload.
+            // Sync on next load is the primary mechanism.
+         }
+     },
     navigateTo(view, grade, options = {}) {
         const currentState = history.state || {};
+
+        if (currentState.view !== view || currentState.grade !== grade) { // Sync if changing view/grade
+            this.syncOfflineData();
+        }
+
         if (currentState.view === view && currentState.grade === grade && view !== 'mistakeReview' && view !== 'favoriteReview') return;
+
 
         let hash = '';
         if (view !== 'grade' && view !== null) {
@@ -874,11 +907,46 @@ const ui = {
 };
 
 const utils = {
-    _getProgressRef() {
-        if (!app.state.user || !app.state.selectedSheet) return null;
-        return doc(db, 'users', app.state.user.uid, 'progress', app.state.selectedSheet);
+    _getProgressRef(grade = app.state.selectedSheet) { // Accept grade
+        if (!app.state.user || !grade) return null;
+        return doc(db, 'users', app.state.user.uid, 'progress', grade);
     },
-
+    addIncorrectWordToLocalSync(word, quizType, grade = app.state.selectedSheet) { // Accept grade
+        if (!grade) return;
+        try {
+            const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_INCORRECT(grade);
+            const unsynced = JSON.parse(localStorage.getItem(key) || '{}');
+            if (!unsynced[word]) {
+                unsynced[word] = [];
+            }
+            if (!unsynced[word].includes(quizType)) {
+                unsynced[word].push(quizType);
+            }
+            localStorage.setItem(key, JSON.stringify(unsynced));
+        } catch (e) {
+            console.error("Error adding incorrect word to localStorage sync", e);
+        }
+    },
+    removeIncorrectWordFromLocalSync(word, quizType, grade = app.state.selectedSheet) { // Accept grade
+         if (!grade) return;
+         try {
+            const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_INCORRECT(grade);
+            const unsynced = JSON.parse(localStorage.getItem(key) || '{}');
+            if (unsynced[word]) {
+                unsynced[word] = unsynced[word].filter(qt => qt !== quizType);
+                if (unsynced[word].length === 0) {
+                    delete unsynced[word];
+                }
+                if (Object.keys(unsynced).length === 0) {
+                     localStorage.removeItem(key);
+                } else {
+                    localStorage.setItem(key, JSON.stringify(unsynced));
+                }
+            }
+        } catch (e) {
+            console.error("Error removing incorrect word from localStorage sync", e);
+        }
+    },
     async loadUserProgress() {
         const docRef = this._getProgressRef();
         if (!docRef) {
@@ -892,18 +960,24 @@ const utils = {
             app.state.currentProgress = {};
         }
     },
-
-    async getLastLearnedIndex() {
-        return 0;
-    },
-
-    async setLastLearnedIndex(index) {
-        return;
-    },
-
     getWordStatus(word) {
+        const grade = app.state.selectedSheet;
         const progress = app.state.currentProgress[word];
+
+        let isIncorrectLocally = false;
+        if (grade) {
+            try {
+                const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_INCORRECT(grade);
+                const unsynced = JSON.parse(localStorage.getItem(key) || '{}');
+                if (unsynced[word] && unsynced[word].length > 0) {
+                    isIncorrectLocally = true;
+                }
+            } catch(e) {}
+        }
+
+        if (isIncorrectLocally) return 'review';
         if (!progress) return 'unseen';
+
         const statuses = ['MULTIPLE_CHOICE_MEANING', 'FILL_IN_THE_BLANK', 'MULTIPLE_CHOICE_DEFINITION'].map(type => progress[type] || 'unseen');
         if (statuses.includes('incorrect')) return 'review';
         if (statuses.every(s => s === 'correct')) return 'learned';
@@ -912,28 +986,40 @@ const utils = {
     },
 
     async updateWordStatus(word, quizType, result) {
-        if (!word || !quizType || !app.state.user || !app.state.selectedSheet) return;
+        const grade = app.state.selectedSheet;
+        if (!word || !quizType || !app.state.user || !grade) return;
 
-        const progressRef = this._getProgressRef();
+        const isCorrect = result === 'correct';
+
+        if (!app.state.currentProgress[word]) app.state.currentProgress[word] = {};
+        app.state.currentProgress[word][quizType] = result; // Update local state immediately
+
+        const progressRef = this._getProgressRef(grade);
         if (!progressRef) return;
 
-        const updates = {};
-        updates[`${word}.${quizType}`] = result;
-
-        try {
-            await updateDoc(progressRef, updates);
-            if (!app.state.currentProgress[word]) app.state.currentProgress[word] = {};
-            app.state.currentProgress[word][quizType] = result;
-
-            this.saveQuizHistoryToLocal(quizType, result === 'correct');
-        } catch (error) {
-            if (error.code === 'not-found') {
-                await setDoc(progressRef, { [word]: { [quizType]: result } }, { merge: true });
-                if (!app.state.currentProgress[word]) app.state.currentProgress[word] = {};
-                app.state.currentProgress[word][quizType] = result;
-                this.saveQuizHistoryToLocal(quizType, result === 'correct');
+        if (isCorrect) {
+            // Update Firestore immediately for correct answers
+            try {
+                await updateDoc(progressRef, {
+                    [`${word}.${quizType}`]: 'correct'
+                });
+                // If it was pending incorrect, remove it
+                this.removeIncorrectWordFromLocalSync(word, quizType, grade);
+            } catch (error) {
+                if (error.code === 'not-found') {
+                    await setDoc(progressRef, { [word]: { [quizType]: 'correct' } }, { merge: true });
+                     this.removeIncorrectWordFromLocalSync(word, quizType, grade);
+                } else {
+                    console.error("Firebase update error (correct):", error);
+                    // Consider adding 'correct' to a separate local sync list for retry if needed
+                }
             }
+        } else {
+            // Add to localStorage for batch update later
+            this.addIncorrectWordToLocalSync(word, quizType, grade);
         }
+
+        this.saveQuizHistoryToLocal(quizType, isCorrect, grade);
     },
 
     getCorrectlyAnsweredWords(quizType) {
@@ -954,8 +1040,9 @@ const utils = {
     },
 
     async toggleFavorite(word) {
-        if (!word || !app.state.user || !app.state.selectedSheet) return false;
-        const progressRef = this._getProgressRef();
+        const grade = app.state.selectedSheet;
+        if (!word || !app.state.user || !grade) return false;
+        const progressRef = this._getProgressRef(grade);
         if (!progressRef) return false;
 
         const isFavorite = !(app.state.currentProgress[word]?.favorite || false);
@@ -989,7 +1076,7 @@ const utils = {
             });
     },
 
-    async saveStudyHistory(seconds, grade = app.state.selectedSheet) {
+    async saveStudyHistory(seconds, grade) {
         if (!app.state.user || seconds < 1 || !grade) return;
 
         const today = new Date().toISOString().slice(0, 10);
@@ -1001,7 +1088,6 @@ const utils = {
             const dailyData = data[today] || {};
             const currentSeconds = dailyData[grade] || 0;
 
-            const fieldPath = `${today}.${grade}`;
             await setDoc(historyRef, { [today]: { [grade]: currentSeconds + seconds } }, { merge: true });
         } catch(e) {
             console.error("Failed to update study history:", e);
@@ -1009,8 +1095,7 @@ const utils = {
         }
     },
 
-    saveQuizHistoryToLocal(quizType, isCorrect) {
-        const grade = app.state.selectedSheet;
+    saveQuizHistoryToLocal(quizType, isCorrect, grade) {
         if (!grade || !quizType) return;
 
         try {
@@ -1050,13 +1135,57 @@ const utils = {
                 }
             }
 
-            const fieldPath = `${today}.${grade}`;
             await setDoc(historyRef, { [today]: { [grade]: gradeData } }, { merge: true });
         } catch(e) {
             console.error("Failed to sync quiz history:", e);
             throw e;
         }
-    }
+    },
+    async syncIncorrectStatus(incorrectToSync, grade) {
+         if (!app.state.user || !incorrectToSync || Object.keys(incorrectToSync).length === 0 || !grade) return;
+         const progressRef = this._getProgressRef(grade);
+         if (!progressRef) return;
+
+         try {
+             const batch = writeBatch(db);
+             let updatesExist = false;
+             for (const word in incorrectToSync) {
+                 if (incorrectToSync.hasOwnProperty(word)) {
+                     incorrectToSync[word].forEach(quizType => {
+                         batch.update(progressRef, { [`${word}.${quizType}`]: 'incorrect' });
+                         updatesExist = true;
+                     });
+                 }
+             }
+             if (updatesExist) {
+                await batch.commit();
+             }
+         } catch (error) {
+            if (error.code === 'not-found' || error.message.includes("No document to update")) {
+                 // If the progress document doesn't exist, create it with the incorrect statuses
+                 const initialData = {};
+                 for (const word in incorrectToSync) {
+                     if (incorrectToSync.hasOwnProperty(word)) {
+                         initialData[word] = {};
+                         incorrectToSync[word].forEach(quizType => {
+                             initialData[word][quizType] = 'incorrect';
+                         });
+                     }
+                 }
+                 if (Object.keys(initialData).length > 0) {
+                    try {
+                        await setDoc(progressRef, initialData, { merge: true });
+                    } catch (setErr) {
+                         console.error("Firebase incorrect status sync (setDoc) failed:", setErr);
+                         throw setErr; // Re-throw to prevent localStorage clear if sync fails
+                    }
+                 }
+            } else {
+                 console.error("Firebase incorrect status sync failed:", error);
+                 throw error; // Re-throw to prevent localStorage clear if sync fails
+            }
+         }
+     }
 };
 
 const dashboard = {
@@ -1508,7 +1637,10 @@ const quizMode = {
             this.state.practiceLearnedWords :
             utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
 
-        let candidates = allWords.filter(word => !learnedWords.includes(word.word));
+        let candidates = allWords.filter(wordObj => {
+             const status = utils.getWordStatus(wordObj.word); // Check combined status
+             return status !== 'learned' && !learnedWords.includes(wordObj.word);
+        });
 
         if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
             candidates = candidates.filter(word => {
@@ -1620,10 +1752,12 @@ const quizMode = {
         }
 
         if (!this.state.isPracticeMode) {
+             // Pass result ('correct' or 'incorrect')
             await utils.updateWordStatus(word, quizType, (isCorrect && !isPass) ? 'correct' : 'incorrect');
         } else if (isCorrect) {
              this.state.practiceLearnedWords.push(word);
         }
+
 
         if (!isCorrect || isPass) {
             const correctAnswerEl = Array.from(this.elements.choices.children).find(li => {
@@ -1650,6 +1784,7 @@ const quizMode = {
     continueAfterResult() {
         this.elements.quizResultModal.classList.add('hidden');
         if (this.elements.quizResultContinueBtn.textContent === "모드 선택으로") {
+             app.syncOfflineData(); // Sync before leaving quiz mode
             app.navigateTo('mode', app.state.selectedSheet);
             return;
         }
@@ -1664,7 +1799,7 @@ const quizMode = {
         this.state.sessionAnsweredInSet = 0;
         this.state.sessionCorrectInSet = 0;
         this.state.sessionMistakes = [];
-
+         app.syncOfflineData(); // Sync before leaving quiz mode
         app.navigateTo('mistakeReview', app.state.selectedSheet, { mistakeWords: mistakes });
     },
     async preloadInitialQuizzes() {
@@ -1689,7 +1824,12 @@ const quizMode = {
             const allWords = learningMode.state.wordList[grade] || [];
             if (allWords.length < 5) return;
             const learnedWords = utils.getCorrectlyAnsweredWords(type);
-            const candidates = allWords.filter(w => !learnedWords.includes(w.word)).sort(() => 0.5 - Math.random());
+
+            const candidates = allWords.filter(wordObj => {
+                 const status = utils.getWordStatus(wordObj.word); // Use combined status check
+                 return status !== 'learned' && !learnedWords.includes(wordObj.word);
+            }).sort(() => 0.5 - Math.random());
+
 
             for (const wordData of candidates) {
                  let quiz = null;
@@ -2079,13 +2219,14 @@ const learningMode = {
         if (!wordData) return;
 
         if (!this.state.isMistakeMode && !this.state.isFavoriteMode) {
-            try {
+             try {
                 const key = app.state.LOCAL_STORAGE_KEYS.LAST_INDEX(app.state.selectedSheet);
                 localStorage.setItem(key, index);
             } catch (e) {
                 console.error("Error saving last index to localStorage", e);
             }
         }
+
 
         this.elements.wordDisplay.textContent = wordData.word;
         ui.adjustFontSize(this.elements.wordDisplay);
