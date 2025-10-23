@@ -46,7 +46,7 @@
 <body class="bg-gray-100 font-sans">
 
     <div id="app" class="container mx-auto p-4 md:p-8 max-w-2xl">
-        
+
         <div id="login-screen" class="text-center mt-10">
             <h1 class="text-3xl font-bold mb-6 text-gray-800">관리자 대시보드</h1>
             <p id="auth-message" class="mb-4 text-gray-600">관리자 계정으로 로그인해주세요.</p>
@@ -54,7 +54,7 @@
                 Google 계정으로 로그인
             </button>
         </div>
-        
+
         <div id="initial-loader" class="hidden fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50">
             <div class="text-center">
                 <div class="loader mx-auto"></div>
@@ -81,7 +81,7 @@
                     </button>
                 </div>
             </div>
-            
+
             <div class="mb-6 bg-white p-4 rounded-lg shadow">
                 <h2 class="text-lg font-bold mb-3 text-gray-700">학년 구분</h2>
                 <div id="grade-selection" class="flex flex-wrap gap-2">
@@ -91,7 +91,7 @@
                     <button data-grade="unassigned" class="grade-btn flex-1 py-2 px-4 bg-white border border-yellow-500 text-yellow-600 rounded-lg hover:bg-yellow-50 transition">미배정</button>
                 </div>
             </div>
-            
+
             <div class="mb-6 bg-white p-4 rounded-lg shadow">
                 <h2 id="student-select-title" class="text-lg font-bold mb-3 text-gray-700">학생 선택</h2>
                  <select id="student-dropdown" class="w-full p-2 border border-gray-300 rounded-lg">
@@ -110,10 +110,10 @@
                 </div>
             </div>
         </div>
-        
+
         <div id="refresh-confirm-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
             <div class="bg-white p-6 rounded-lg shadow-xl text-center w-11/12 max-w-sm">
-                <p class="mb-4 text-lg">Google Sheets에서 학생 명단을 새로 불러옵니다. 캐시가 삭제됩니다. 계속하시겠습니까?</p>
+                <p class="mb-4 text-lg">Google Sheets에서 학생 명단을 새로 불러옵니다. Firebase 통계 캐시도 삭제됩니다. 계속하시겠습니까?</p>
                 <div class="flex justify-center gap-4">
                     <button id="confirm-yes-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg">예</button>
                     <button id="confirm-no-btn" class="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-6 rounded-lg">아니오</button>
@@ -135,7 +135,7 @@
             projectId: "wordapp-91c0a",
             storageBucket: "wordapp-91c0a.firebasestorage.app",
             messagingSenderId: "213863780677",
-            appId: "1:213863780677:web:78d6_b8755866a0c5ddee2c",
+            appId: "1:213863780677:web:78d6b8755866a0c5ddee2c",
             databaseURL: "https://wordapp-91c0a-default-rtdb.asia-southeast1.firebasedatabase.app/"
         };
 
@@ -154,6 +154,11 @@
                 gradeStudentMap: {},
                 selectedGrade: null,
                 studentsForSelectedGrade: [],
+                LOCAL_STORAGE_KEYS: {
+                    RANKING_CACHE: (grade) => `admin_rankingCache_${grade}`,
+                    STUDENT_DETAIL_CACHE: (email) => `admin_studentDetail_${email}`,
+                    ADMIN_CONFIG_CACHE: 'adminConfigCache'
+                }
             },
             elements: {
                 loginScreen: document.getElementById('login-screen'),
@@ -182,10 +187,10 @@
 
             bindAuthEvents() {
                 this.elements.loginBtn.addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()));
-                this.elements.logoutBtn.addEventListener('click', () => { 
+                this.elements.logoutBtn.addEventListener('click', () => {
                     this.state.selectedGrade = null;
-                    location.hash = ''; 
-                    signOut(auth); 
+                    location.hash = '';
+                    signOut(auth);
                 });
 
                 this.elements.refreshDataBtn.addEventListener('click', () => this.elements.refreshConfirmModal.classList.remove('hidden'));
@@ -209,7 +214,7 @@
                         location.hash = `grade=${grade}`;
                     }
                 });
-                
+
                 this.elements.studentDetails.addEventListener('click', (e) => {
                     const target = e.target.closest('[data-email]');
                     if (target) {
@@ -219,7 +224,7 @@
                         location.hash = `grade=${grade}&view=student&email=${email}`;
                     }
                 });
-                
+
                 window.addEventListener('hashchange', () => this.handleHashChange());
 
                 onAuthStateChanged(auth, user => {
@@ -232,13 +237,26 @@
                     }
                 });
             },
-            
+
             async forceRefreshAdminConfig() {
                 this.elements.refreshConfirmModal.classList.add('hidden');
-                this.elements.initialLoaderText.textContent = '최신 학생 명단을 불러오는 중...';
+                this.elements.initialLoaderText.textContent = '최신 학생 명단 및 통계 캐시 삭제 중...';
                 this.elements.initialLoader.classList.remove('hidden');
+
                 await this.loadAdminConfig(true);
-                this.handleHashChange(); // Re-render the current view with new data
+
+                try {
+                    for (let i = 0; i < localStorage.length; i++){
+                        const key = localStorage.key(i);
+                        if (key && (key.startsWith('admin_rankingCache_') || key.startsWith('admin_studentDetail_'))) {
+                            localStorage.removeItem(key);
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error clearing Firebase caches from localStorage", e);
+                }
+
+                this.handleHashChange();
                 this.elements.initialLoader.classList.add('hidden');
             },
 
@@ -270,7 +288,7 @@
                 } else if (view === 'student' && email) {
                      if (this.elements.studentDropdown.value !== email) this.elements.studentDropdown.value = email;
                     const studentData = this.state.studentsForSelectedGrade.find(s => s.email === email);
-                    if(studentData) this.loadAllDetailsForStudent(studentData);
+                    if(studentData) this.loadAndDisplayStudentDetails(studentData);
                 } else {
                     if (this.elements.studentDropdown.value !== '') this.elements.studentDropdown.value = '';
                     this.elements.detailsPrompt.classList.remove('hidden');
@@ -278,42 +296,47 @@
                     this.elements.studentDetails.innerHTML = '';
                 }
             },
-            
+
             async showDashboard(user) {
                 this.elements.loginScreen.classList.add('hidden');
                 this.elements.adminInfo.textContent = `관리자: ${user.displayName} (${user.email})`;
-                
+
                 this.elements.initialLoader.classList.remove('hidden');
                 this.elements.dashboard.classList.add('hidden');
 
                 await Promise.all([this.loadAdminConfig(), this.cacheAllUsers()]);
-                
+
                 this.elements.initialLoader.classList.add('hidden');
                 this.elements.dashboard.classList.remove('hidden');
 
                 this.handleHashChange();
             },
-            
+
             async loadAdminConfig(forceRefresh = false) {
-                const cacheKey = 'adminConfigCache';
-                const cacheDuration = 24 * 60 * 60 * 1000; // 24 hours
+                const cacheKey = this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE;
+                const cacheDuration = 24 * 60 * 60 * 1000;
 
                 if (!forceRefresh) {
-                    const cachedItem = localStorage.getItem(cacheKey);
-                    if (cachedItem) {
-                        const { timestamp, data } = JSON.parse(cachedItem);
-                        if (Date.now() - timestamp < cacheDuration) {
-                            this.state.studentNameMap = data.studentNameMap;
-                            this.state.gradeStudentMap = data.gradeStudentMap;
-                            return; 
+                    try {
+                        const cachedItem = localStorage.getItem(cacheKey);
+                        if (cachedItem) {
+                            const { timestamp, data } = JSON.parse(cachedItem);
+                            if (Date.now() - timestamp < cacheDuration) {
+                                this.state.studentNameMap = data.studentNameMap;
+                                this.state.gradeStudentMap = data.gradeStudentMap;
+                                return;
+                            }
                         }
+                    } catch (e) {
+                         localStorage.removeItem(cacheKey);
                     }
                 }
-                
+
                 try {
                     const url = new URL(this.SCRIPT_URL);
                     url.searchParams.append('action', 'getStudentAdminData');
                     const response = await fetch(url);
+                    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
                     const data = await response.json();
                     if (data.success) {
                         this.state.studentNameMap = data.studentNameMap;
@@ -337,7 +360,7 @@
                 this.elements.authMessage.textContent = '관리자 계정으로 로그인해주세요.';
                 this.elements.authMessage.classList.remove('text-red-500', 'font-bold');
             },
-            
+
             showAccessDenied() {
                 signOut(auth);
                 this.elements.dashboard.classList.add('hidden');
@@ -345,7 +368,7 @@
                 this.elements.authMessage.textContent = '접근 권한이 없습니다. 관리자 계정으로 로그인해주세요.';
                 this.elements.authMessage.classList.add('text-red-500', 'font-bold');
             },
-            
+
             resetViews() {
                  this.elements.detailsPrompt.classList.remove('hidden');
                  this.elements.studentDetails.classList.add('hidden');
@@ -355,17 +378,15 @@
                  this.elements.studentSelectTitle.textContent = '학생 선택';
                  this.state.selectedGrade = null;
             },
-            
+
             async cacheAllUsers() {
-                // This data is small and crucial, so we fetch it every time.
-                // For a larger app, caching this in localStorage would also be an option.
                 try {
                     const usersCollection = collection(db, 'users');
                     const snapshot = await getDocs(usersCollection);
                     snapshot.docs.forEach(doc => { this.state.allUsers[doc.data().email] = { id: doc.id, ...doc.data() }; });
                 } catch(e) { console.error("전체 사용자 정보 캐시 실패:", e); }
             },
-            
+
             displayStudentsForGrade(grade) {
                 this.elements.studentDropdown.innerHTML = '';
 
@@ -397,7 +418,7 @@
                     defaultOption.textContent = '해당하는 학생이 없습니다.';
                     return;
                 }
-                
+
                 studentsToDisplay.forEach(studentData => {
                     const displayName = this.state.studentNameMap[studentData.email] || studentData.displayName;
                     const option = document.createElement('option');
@@ -407,65 +428,112 @@
                 });
             },
 
-            async loadAllDetailsForStudent(student) {
+            async loadAndDisplayStudentDetails(student) {
                 this.elements.detailsPrompt.classList.add('hidden');
                 this.elements.studentDetails.classList.add('hidden');
                 this.elements.studentDetailsLoader.classList.remove('hidden');
                 this.elements.studentDetails.innerHTML = '';
 
+                const cacheKey = this.state.LOCAL_STORAGE_KEYS.STUDENT_DETAIL_CACHE(student.email);
+                let studentDetailsData = null;
+
                 try {
-                    const studyHistoryDoc = await getDoc(doc(db, 'users', student.id, 'history', 'study'));
-                    const quizHistoryDoc = await getDoc(doc(db, 'users', student.id, 'history', 'quiz'));
-                    const studyHistory = studyHistoryDoc.exists() ? studyHistoryDoc.data() : {};
-                    const quizHistory = quizHistoryDoc.exists() ? quizHistoryDoc.data() : {};
-                    
+                    const cachedData = localStorage.getItem(cacheKey);
+                    if (cachedData) {
+                        studentDetailsData = JSON.parse(cachedData);
+                    }
+                } catch (e) {
+                    console.error("Error reading student details cache:", e);
+                    localStorage.removeItem(cacheKey);
+                }
+
+                if (!studentDetailsData) {
+                    try {
+                        const studyHistoryDoc = await getDoc(doc(db, 'users', student.id, 'history', 'study'));
+                        const quizHistoryDoc = await getDoc(doc(db, 'users', student.id, 'history', 'quiz'));
+                        const progress1y = await getDoc(doc(db, 'users', student.id, 'progress', '1y'));
+                        const progress2y = await getDoc(doc(db, 'users', student.id, 'progress', '2y'));
+                        const progress3y = await getDoc(doc(db, 'users', student.id, 'progress', '3y'));
+
+                        studentDetailsData = {
+                            studyHistory: studyHistoryDoc.exists() ? studyHistoryDoc.data() : {},
+                            quizHistory: quizHistoryDoc.exists() ? quizHistoryDoc.data() : {},
+                            progress: {
+                                '1y': progress1y.exists() ? progress1y.data() : {},
+                                '2y': progress2y.exists() ? progress2y.data() : {},
+                                '3y': progress3y.exists() ? progress3y.data() : {}
+                            }
+                        };
+
+                        localStorage.setItem(cacheKey, JSON.stringify(studentDetailsData));
+                    } catch (error) {
+                         this.elements.studentDetails.innerHTML = `<p class="text-red-500 text-center">학생 통계 정보를 불러오는 데 실패했습니다: ${error.message}</p>`;
+                         this.elements.studentDetailsLoader.classList.add('hidden');
+                         this.elements.studentDetails.classList.remove('hidden');
+                         return;
+                    }
+                }
+
+                try {
                     let gradesToShow = ['1y', '2y', '3y'];
                     const selectedGradeFilter = this.state.selectedGrade;
-
-                    if (selectedGradeFilter === '2y') {
-                        gradesToShow = ['2y', '3y', '1y'];
-                    } else if (selectedGradeFilter === '3y') {
-                        gradesToShow = ['3y', '1y', '2y'];
+                    if (selectedGradeFilter && selectedGradeFilter !== 'unassigned') {
+                        gradesToShow = [selectedGradeFilter, ...gradesToShow.filter(g => g !== selectedGradeFilter)];
                     }
-                    
+
                     const gradeColors = { '1y': 'bg-yellow-50', '2y': 'bg-blue-50', '3y': 'bg-red-50' };
 
                     for (const grade of gradesToShow) {
-                        const gradeBlock = await this.createGradeStatisticsBlock(student, grade, studyHistory, quizHistory, gradeColors[grade]);
+                        const gradeBlock = this.createGradeStatisticsBlock(
+                            student,
+                            grade,
+                            studentDetailsData.studyHistory,
+                            studentDetailsData.quizHistory,
+                            studentDetailsData.progress[grade],
+                            gradeColors[grade]
+                        );
                         this.elements.studentDetails.appendChild(gradeBlock);
                     }
-                } catch (error) {
-                    this.elements.studentDetails.innerHTML = `<p class="text-red-500 text-center">전체 통계 정보를 불러오는 데 실패했습니다: ${error.message}</p>`;
+                } catch (renderError) {
+                    this.elements.studentDetails.innerHTML = `<p class="text-red-500 text-center">통계 표시 중 오류 발생: ${renderError.message}</p>`;
                 } finally {
                     this.elements.studentDetailsLoader.classList.add('hidden');
                     this.elements.studentDetails.classList.remove('hidden');
                 }
             },
 
-            async createGradeStatisticsBlock(student, grade, studyHistory, quizHistory, bgColor) {
+
+            createGradeStatisticsBlock(student, grade, studyHistory, quizHistory, progressData, bgColor) {
                 const block = document.createElement('div');
                 block.className = `p-6 rounded-lg shadow-lg ${bgColor}`;
 
                 if (!this.state.wordLists[grade]) {
                     try {
                         const dbRef = ref(rt_db, `${grade}/vocabulary`);
-                        const snapshot = await get(dbRef);
-                        const data = snapshot.val();
-                        if (!data) throw new Error('단어 데이터 없음');
-                        this.state.wordLists[grade] = Object.values(data).sort((a, b) => a.id - b.id);
+                        const snapshot = get(dbRef).then(snapshot => {
+                            const data = snapshot.val();
+                            if (!data) throw new Error('단어 데이터 없음');
+                            this.state.wordLists[grade] = Object.values(data).sort((a, b) => a.id - b.id);
+                             const progressStats = this.calculateProgressStats(this.state.wordLists[grade], progressData);
+                             block.innerHTML = this.renderProgressBarsHTML(progressStats, grade);
+                             this.appendSummaryCards(block, grade, studyHistory, quizHistory);
+                        });
                     } catch(e) {
                          block.innerHTML = `<h3 class="text-xl font-bold text-gray-700">${grade.replace('y','')}학년 통계</h3><p class="text-red-500 mt-2">단어 목록 로딩 실패</p>`;
                          return block;
                     }
+                     block.innerHTML = `<h3 class="text-xl font-bold text-gray-700">${grade.replace('y','')}학년 통계</h3><div class="loader mx-auto my-4"></div>`;
+                     return block;
                 }
-                const totalWords = this.state.wordLists[grade];
 
-                const progressRef = doc(db, 'users', student.id, 'progress', grade);
-                const progressSnap = await getDoc(progressRef);
-                const progressData = progressSnap.exists() ? progressSnap.data() : {};
-                const progressStats = this.calculateProgressStats(totalWords, progressData);
+                const progressStats = this.calculateProgressStats(this.state.wordLists[grade], progressData);
                 block.innerHTML = this.renderProgressBarsHTML(progressStats, grade);
+                this.appendSummaryCards(block, grade, studyHistory, quizHistory);
 
+                return block;
+            },
+
+            appendSummaryCards(block, grade, studyHistory, quizHistory) {
                 const stats7 = this.getStatsForPeriod(7, grade, studyHistory, quizHistory);
                 const stats30 = this.getStatsForPeriod(30, grade, studyHistory, quizHistory);
                 const totalStats = this.getStatsForPeriod(3650, grade, studyHistory, quizHistory);
@@ -478,10 +546,8 @@
                     ${this.renderSummaryCardHTML('누적 총학습 기록', totalStats)}
                 `;
                 block.appendChild(cardsContainer);
-
-                return block;
             },
-            
+
             calculateProgressStats(totalWords, progressData) {
                 const counts = { learned: 0, learning: 0, review: 0, unseen: 0 };
                 if (!totalWords || !Array.isArray(totalWords) || totalWords.length === 0) {
@@ -528,7 +594,7 @@
                 });
                 return `<h3 class="text-xl font-bold text-gray-700">${grade.replace('y','')}학년 (총 ${stats.total}단어)</h3><div class="space-y-4 mt-4">${itemsHtml}</div>`;
             },
-            
+
             getStatsForPeriod(days, grade, studyHistory, quizHistory) {
                 let totalSeconds = 0;
                 const quizStats = {
@@ -537,12 +603,12 @@
                     'MULTIPLE_CHOICE_DEFINITION': { correct: 0, total: 0, name: '영영 풀이' },
                 };
                 const today = new Date();
-                
+
                 for (let i = 0; i < days; i++) {
                     const d = new Date(today);
                     d.setDate(d.getDate() - i);
                     const dateString = d.toISOString().slice(0, 10);
-                    
+
                     if(studyHistory[dateString] && studyHistory[dateString][grade]) {
                         totalSeconds += studyHistory[dateString][grade];
                     }
@@ -576,7 +642,7 @@
                 return `
                     <div class="bg-gray-100 p-4 rounded-xl shadow-inner">
                         <h4 class="font-bold text-gray-700 mb-4 text-lg text-center">
-                            ${title} 
+                            ${title}
                             <span class="font-normal text-gray-500">(${this.formatSeconds(periodStats.totalSeconds)})</span>
                         </h4>
                         <div class="grid grid-cols-3 gap-2">
@@ -585,7 +651,7 @@
                     </div>
                 `;
             },
-            
+
             formatSeconds(totalSeconds) {
                 if (!totalSeconds || totalSeconds < 60) return `0분`;
                 const d = Math.floor(totalSeconds / 86400);
@@ -603,60 +669,84 @@
                 this.elements.studentDetails.classList.add('hidden');
                 this.elements.studentDetailsLoader.classList.remove('hidden');
                 this.elements.studentDetails.innerHTML = '';
-                
-                const students = this.state.studentsForSelectedGrade;
-                if (students.length === 0) {
-                    this.elements.studentDetails.innerHTML = '<p class="text-center text-gray-500">랭킹을 표시할 학생이 없습니다.</p>';
-                    this.elements.studentDetailsLoader.classList.add('hidden');
-                    this.elements.studentDetails.classList.remove('hidden');
-                    return;
+
+                const grade = this.state.selectedGrade;
+                const cacheKey = this.state.LOCAL_STORAGE_KEYS.RANKING_CACHE(grade);
+                let allStats = null;
+
+                try {
+                    const cachedData = localStorage.getItem(cacheKey);
+                    if (cachedData) {
+                        allStats = JSON.parse(cachedData);
+                    }
+                } catch (e) {
+                    console.error("Error reading ranking cache:", e);
+                    localStorage.removeItem(cacheKey);
+                }
+
+                if (!allStats) {
+                    const students = this.state.studentsForSelectedGrade;
+                    if (students.length === 0) {
+                        this.elements.studentDetails.innerHTML = '<p class="text-center text-gray-500">랭킹을 표시할 학생이 없습니다.</p>';
+                        this.elements.studentDetailsLoader.classList.add('hidden');
+                        this.elements.studentDetails.classList.remove('hidden');
+                        return;
+                    }
+
+                    try {
+                        const studentStatsPromises = students.map(async (student) => {
+                            const studyDoc = await getDoc(doc(db, 'users', student.id, 'history', 'study'));
+                            const quizDoc = await getDoc(doc(db, 'users', student.id, 'history', 'quiz'));
+                            const studyHistory = studyDoc.exists() ? studyDoc.data() : {};
+                            const quizHistory = quizDoc.exists() ? quizDoc.data() : {};
+
+                            let totalSeconds = 0;
+                            let totalCorrect = 0;
+                            let totalQuizzes = 0;
+                            const today = new Date();
+
+                            for (let i = 0; i < 7; i++) {
+                                const d = new Date(today);
+                                d.setDate(d.getDate() - i);
+                                const dateString = d.toISOString().slice(0, 10);
+
+                                if(studyHistory[dateString]) {
+                                    Object.values(studyHistory[dateString]).forEach(seconds => totalSeconds += seconds);
+                                }
+                                if (quizHistory[dateString]) {
+                                    Object.values(quizHistory[dateString]).forEach(gradeData => {
+                                        Object.values(gradeData).forEach(typeStats => {
+                                            totalCorrect += typeStats.correct || 0;
+                                            totalQuizzes += typeStats.total || 0;
+                                        });
+                                    });
+                                }
+                            }
+                            const accuracy = totalQuizzes > 0 ? (totalCorrect / totalQuizzes) * 100 : 0;
+                            const displayName = this.state.studentNameMap[student.email] || student.displayName;
+                            return { name: displayName, email: student.email, time: totalSeconds, accuracy: accuracy, totalQuizzes, totalCorrect };
+                        });
+
+                        allStats = await Promise.all(studentStatsPromises);
+                        localStorage.setItem(cacheKey, JSON.stringify(allStats));
+
+                    } catch (error) {
+                        this.elements.studentDetails.innerHTML = `<p class="text-red-500 text-center">랭킹 정보를 불러오는 데 실패했습니다: ${error.message}</p>`;
+                        this.elements.studentDetailsLoader.classList.add('hidden');
+                        this.elements.studentDetails.classList.remove('hidden');
+                        return;
+                    }
                 }
 
                 try {
-                    const studentStatsPromises = students.map(async (student) => {
-                        const studyDoc = await getDoc(doc(db, 'users', student.id, 'history', 'study'));
-                        const quizDoc = await getDoc(doc(db, 'users', student.id, 'history', 'quiz'));
-                        const studyHistory = studyDoc.exists() ? studyDoc.data() : {};
-                        const quizHistory = quizDoc.exists() ? quizDoc.data() : {};
-                        
-                        let totalSeconds = 0;
-                        let totalCorrect = 0;
-                        let totalQuizzes = 0;
-                        const today = new Date();
-
-                        for (let i = 0; i < 7; i++) {
-                            const d = new Date(today);
-                            d.setDate(d.getDate() - i);
-                            const dateString = d.toISOString().slice(0, 10);
-
-                            if(studyHistory[dateString]) {
-                                Object.values(studyHistory[dateString]).forEach(seconds => totalSeconds += seconds);
-                            }
-                            if (quizHistory[dateString]) {
-                                Object.values(quizHistory[dateString]).forEach(gradeData => {
-                                    Object.values(gradeData).forEach(typeStats => {
-                                        totalCorrect += typeStats.correct || 0;
-                                        totalQuizzes += typeStats.total || 0;
-                                    });
-                                });
-                            }
-                        }
-                        const accuracy = totalQuizzes > 0 ? (totalCorrect / totalQuizzes) * 100 : 0;
-                        const displayName = this.state.studentNameMap[student.email] || student.displayName;
-                        return { name: displayName, email: student.email, time: totalSeconds, accuracy: accuracy, totalQuizzes, totalCorrect };
-                    });
-
-                    const allStats = await Promise.all(studentStatsPromises);
-                    
                     const timeRankingHTML = this.renderRankingBoard('학습 시간 순위 (최근 7일)', allStats, (s) => this.formatSeconds(s.time));
-                    const accuracyRankingHTML = this.renderRankingBoard('퀴즈 정답률 순위 (최근 7일)', allStats, 
+                    const accuracyRankingHTML = this.renderRankingBoard('퀴즈 정답률 순위 (최근 7일)', allStats,
                         (s) => `${s.accuracy.toFixed(1)}% <span class='text-xs text-gray-500'>(${s.totalCorrect}/${s.totalQuizzes})</span>`,
                         true);
-                    
-                    this.elements.studentDetails.innerHTML = timeRankingHTML + accuracyRankingHTML;
 
-                } catch (error) {
-                    this.elements.studentDetails.innerHTML = `<p class="text-red-500 text-center">랭킹 정보를 불러오는 데 실패했습니다: ${error.message}</p>`;
+                    this.elements.studentDetails.innerHTML = timeRankingHTML + accuracyRankingHTML;
+                } catch (renderError) {
+                     this.elements.studentDetails.innerHTML = `<p class="text-red-500 text-center">랭킹 표시 중 오류 발생: ${renderError.message}</p>`;
                 } finally {
                     this.elements.studentDetailsLoader.classList.add('hidden');
                     this.elements.studentDetails.classList.remove('hidden');
@@ -665,7 +755,7 @@
 
             renderRankingBoard(title, data, formatter, isAccuracy = false) {
                 let qualifiedStudents, processedData;
-                
+
                 if (isAccuracy) {
                     processedData = [...data].sort((a, b) => b.accuracy - a.accuracy);
                     qualifiedStudents = processedData.filter(s => s.totalQuizzes >= 50);
@@ -690,7 +780,7 @@
                 });
 
                 const top3 = qualifiedStudents.filter(s => s.rank <= 3);
-                
+
                 const podiumHTML = `
                     <div class="podium">
                         ${[2, 1, 3].map(rankValue => {
@@ -718,7 +808,7 @@
                 const listHTML = processedData.map((student) => {
                     const isQualified = !isAccuracy || student.totalQuizzes >= 50;
                     const rank = isQualified ? (student.rank || '') : '';
-                    
+
                     let itemClass = 'bg-white';
                     if (isQualified && student.rank) {
                         if (student.rank === 1) itemClass = 'bg-yellow-100 font-bold';
@@ -751,5 +841,3 @@
     </script>
 </body>
 </html>
-
-
