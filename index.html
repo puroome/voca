@@ -84,6 +84,7 @@
         </div>
         
         <div id="selection-screen" class="hidden content-panel p-8 rounded-2xl shadow-lg text-center relative">
+             <p id="last-updated-text" class="hidden text-sm text-gray-500 absolute top-6 left-6 text-left">최종 업데이트 : </p>
             <a id="sheet-link" href="#" target="_blank" class="hidden absolute top-6 right-6 z-[110] group">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="24" height="24" class="w-8 h-8 transition-transform duration-300 ease-in-out group-hover:scale-110 group-hover:-rotate-6">
                     <defs><filter id="sheet-icon-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="1" dy="2" stdDeviation="1.5" flood-color="#000" flood-opacity="0.25"/></filter></defs>
@@ -91,7 +92,7 @@
                     <path d="M4.2 8.1 H19.8 V10.6 H4.2 Z M8.1 4.2 H10.6 V19.8 H8.1 Z" fill="white"></path>
                 </svg>
             </a>
-            <h1 id="selection-title" class="text-3xl font-bold text-gray-800 mb-2"></h1>
+            <h1 id="selection-title" class="text-3xl font-bold text-gray-800 mb-2 mt-4"></h1>
             <p class="text-gray-600 mb-8">원하는 학습 방식을 선택하세요.</p>
             
             <div class="inline-block">
@@ -339,5 +340,3 @@
     <script src="script.js"></script>
 </body>
 </html>
-
-
