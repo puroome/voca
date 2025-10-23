@@ -20,12 +20,11 @@
             100% { transform: rotate(360deg); }
         }
         .grade-btn.active-grade-btn {
-            background-color: #dcfce7; /* bg-green-100 */
-            border-color: #22c55e; /* border-green-500 */
+            background-color: #dcfce7;
+            border-color: #22c55e;
             font-weight: bold;
-            color: #1f2937; /* text-gray-800, keep text dark */
+            color: #1f2937;
         }
-        /* 시상대 스타일 */
         .podium { display: flex; align-items: flex-end; justify-content: center; gap: 0.5rem; height: 12rem; }
         .podium-step { display: flex; flex-direction: column; align-items: center; text-align: center; width: 33.333%; }
         .podium-step .student-name { font-weight: bold; font-size: 1rem; }
@@ -39,7 +38,7 @@
         .podium .podium-base { width: 100%; border-radius: 0.5rem 0.5rem 0 0; display: flex; align-items: center; justify-content: center; }
         .ranking-option {
             font-weight: bold;
-            color: #2563eb; /* text-blue-600 */
+            color: #2563eb;
         }
     </style>
 </head>
@@ -68,17 +67,20 @@
                     <h1 class="text-3xl font-bold text-gray-800">학생 학습 현황</h1>
                     <p id="admin-info" class="text-sm text-gray-500"></p>
                 </div>
-                <div class="flex items-center space-x-2">
-                    <button id="refresh-data-btn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold p-2 rounded-lg shadow-md transition-transform transform hover:scale-105" title="학생 명단 새로고침">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <polyline points="23 4 23 10 17 10"></polyline>
-                            <polyline points="1 20 1 14 7 14"></polyline>
-                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                        </svg>
-                    </button>
-                    <button id="logout-btn" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
-                        로그아웃
-                    </button>
+                <div class="flex flex-col items-end space-y-1">
+                    <div class="flex items-center space-x-2">
+                         <button id="refresh-data-btn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold p-2 rounded-lg shadow-md transition-transform transform hover:scale-105" title="학생 명단 새로고침">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <polyline points="1 20 1 14 7 14"></polyline>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                            </svg>
+                        </button>
+                        <button id="logout-btn" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                            로그아웃
+                        </button>
+                    </div>
+                    <p id="last-updated-admin-text" class="hidden text-sm text-gray-500">최종 업데이트 : </p>
                 </div>
             </div>
 
@@ -157,7 +159,8 @@
                 LOCAL_STORAGE_KEYS: {
                     RANKING_CACHE: (grade) => `admin_rankingCache_${grade}`,
                     STUDENT_DETAIL_CACHE: (email) => `admin_studentDetail_${email}`,
-                    ADMIN_CONFIG_CACHE: 'adminConfigCache'
+                    ADMIN_CONFIG_CACHE: 'adminConfigCache',
+                    ADMIN_LAST_UPDATE_TIME: 'adminLastUpdateTime'
                 }
             },
             elements: {
@@ -173,6 +176,7 @@
                 confirmNoBtn: document.getElementById('confirm-no-btn'),
                 dashboard: document.getElementById('dashboard'),
                 adminInfo: document.getElementById('admin-info'),
+                lastUpdatedAdminText: document.getElementById('last-updated-admin-text'),
                 gradeSelection: document.getElementById('grade-selection'),
                 studentSelectTitle: document.getElementById('student-select-title'),
                 studentDropdown: document.getElementById('student-dropdown'),
@@ -243,6 +247,9 @@
                 this.elements.initialLoaderText.textContent = '최신 학생 명단 및 통계 캐시 삭제 중...';
                 this.elements.initialLoader.classList.remove('hidden');
 
+                const cacheKey = this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE;
+                localStorage.removeItem(cacheKey);
+
                 await this.loadAdminConfig(true);
 
                 try {
@@ -250,8 +257,13 @@
                         const key = localStorage.key(i);
                         if (key && (key.startsWith('admin_rankingCache_') || key.startsWith('admin_studentDetail_'))) {
                             localStorage.removeItem(key);
+                            i--;
                         }
                     }
+                    const updateTime = Date.now();
+                    localStorage.setItem(this.state.LOCAL_STORAGE_KEYS.ADMIN_LAST_UPDATE_TIME, updateTime.toString());
+                    this.updateLastUpdatedAdminText(updateTime);
+
                 } catch (e) {
                     console.error("Error clearing Firebase caches from localStorage", e);
                 }
@@ -304,6 +316,9 @@
                 this.elements.initialLoader.classList.remove('hidden');
                 this.elements.dashboard.classList.add('hidden');
 
+                const lastUpdateTime = localStorage.getItem(this.state.LOCAL_STORAGE_KEYS.ADMIN_LAST_UPDATE_TIME);
+                this.updateLastUpdatedAdminText(lastUpdateTime ? parseInt(lastUpdateTime) : null);
+
                 await Promise.all([this.loadAdminConfig(), this.cacheAllUsers()]);
 
                 this.elements.initialLoader.classList.add('hidden');
@@ -314,18 +329,15 @@
 
             async loadAdminConfig(forceRefresh = false) {
                 const cacheKey = this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE;
-                const cacheDuration = 24 * 60 * 60 * 1000;
 
                 if (!forceRefresh) {
                     try {
                         const cachedItem = localStorage.getItem(cacheKey);
                         if (cachedItem) {
-                            const { timestamp, data } = JSON.parse(cachedItem);
-                            if (Date.now() - timestamp < cacheDuration) {
-                                this.state.studentNameMap = data.studentNameMap;
-                                this.state.gradeStudentMap = data.gradeStudentMap;
-                                return;
-                            }
+                            const data = JSON.parse(cachedItem);
+                            this.state.studentNameMap = data.studentNameMap;
+                            this.state.gradeStudentMap = data.gradeStudentMap;
+                            return;
                         }
                     } catch (e) {
                          localStorage.removeItem(cacheKey);
@@ -342,11 +354,8 @@
                         this.state.studentNameMap = data.studentNameMap;
                         this.state.gradeStudentMap = data.gradeStudentMap;
                         localStorage.setItem(cacheKey, JSON.stringify({
-                            timestamp: Date.now(),
-                            data: {
-                                studentNameMap: data.studentNameMap,
-                                gradeStudentMap: data.gradeStudentMap
-                            }
+                            studentNameMap: data.studentNameMap,
+                            gradeStudentMap: data.gradeStudentMap
                         }));
                     } else { throw new Error(data.message); }
                 } catch(e) {
@@ -834,6 +843,19 @@
                         ${podiumHTML}
                         <ul class="mt-8 space-y-2">${listHTML}</ul>
                     </div>`;
+            },
+            updateLastUpdatedAdminText(timestamp) {
+                if (this.elements.lastUpdatedAdminText) {
+                    if (timestamp) {
+                        const d = new Date(timestamp);
+                        const dateString = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                        this.elements.lastUpdatedAdminText.textContent = `최종 업데이트 : ${dateString}`;
+                        this.elements.lastUpdatedAdminText.classList.remove('hidden');
+                    } else {
+                        this.elements.lastUpdatedAdminText.textContent = '업데이트 정보 없음';
+                        this.elements.lastUpdatedAdminText.classList.remove('hidden');
+                    }
+                }
             }
         };
 
