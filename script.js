@@ -2,7 +2,7 @@ let firebaseApp, auth, db, rt_db;
 let initializeApp;
 let getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup;
 // ---------------- [수정] ----------------
-// 'set' 변수를 선언합니다.
+// 'set' 변수를 선언합니다. (이미 선언되어 있었음, 확인)
 let getDatabase, ref, get, set;
 // ----------------------------------------
 let getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch;
@@ -12,7 +12,7 @@ document.addEventListener('firebaseSDKLoaded', () => {
         initializeApp,
         getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
         // ---------------- [수정] ----------------
-        // 'set'을 firebaseSDK로부터 받아옵니다.
+        // 'set'을 firebaseSDK로부터 받아옵니다. (이미 받아오고 있었음, 확인)
         getDatabase, ref, get, set,
         // ----------------------------------------
         getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch
@@ -125,8 +125,8 @@ const app = {
             UNSYNCED_QUIZ: (grade) => `student_unsyncedQuizStats_${grade}`,
             UNSYNCED_PROGRESS_UPDATES: (grade) => `student_unsyncedProgress_${grade}`,
             CACHE_TIMESTAMP: (grade) => `wordListCacheTimestamp_${grade}`,
-            // ---------------- [추가] ----------------
-            // 어휘 목록의 버전을 저장할 새 키
+            // ---------------- [수정] ----------------
+            // 어휘 목록의 버전을 저장할 새 키 (이미 존재함)
             CACHE_VERSION: (grade) => `wordListVersion_${grade}`
             // ----------------------------------------
         }
@@ -519,24 +519,32 @@ const app = {
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
         try {
-            // ---------------- [수정] ----------------
-            // 관리자 기능: 로컬 캐시 지우기 -> Firebase 버전 번호 업데이트
+            // ---------------- [수정 시작] ----------------
+            // 관리자 기능: Firebase 버전 번호 및 타임스탬프 업데이트
             
             // 1. 현재 버전 번호를 가져옵니다.
             const versionRef = ref(rt_db, `app_config/vocab_version_${sheet}`);
             const snapshot = await get(versionRef);
             const currentVersion = snapshot.val() || 0;
             
-            // 2. 버전 번호를 1 증가시켜 RTDB에 씁니다.
+            // 2. 새 버전 번호와 현재 타임스탬프를 생성합니다.
             const newVersion = currentVersion + 1;
+            const newTimestamp = Date.now(); // 관리자가 배포한 시점
+            
+            // 3. 버전 번호를 RTDB에 씁니다.
             await set(versionRef, newVersion);
 
-            // 3. (선택적) 관리자 본인의 캐시도 즉시 업데이트합니다.
+            // 4. 배포 타임스탬프를 RTDB에 씁니다.
+            const timestampRef = ref(rt_db, `app_config/vocab_timestamp_${sheet}`);
+            await set(timestampRef, newTimestamp);
+
+            // 5. (선택적) 관리자 본인의 캐시도 즉시 업데이트합니다.
+            //    loadWordList(true)가 이제 새 타임스탬프를 가져와 저장합니다.
             await learningMode.loadWordList(true); 
             
-            this.updateLastUpdatedText();
+            this.updateLastUpdatedText(); // 관리자 본인 화면에도 즉시 반영
             this.showRefreshSuccessMessage();
-            // ----------------------------------------
+            // ---------------- [수정 끝] ----------------
         } catch(err) {
             this.showToast("데이터 새로고침(버전 업데이트)에 실패했습니다: " + err.message, true);
         } finally {
@@ -581,6 +589,8 @@ const app = {
     updateLastUpdatedText() {
         const grade = this.state.selectedSheet;
         if (this.elements.lastUpdatedText && grade) {
+            // app.state.lastCacheTimestamp는 loadWordList에서 로컬 캐시 또는
+            // Firebase에서 가져온 공통 타임스탬프로 채워집니다.
             const timestamp = this.state.lastCacheTimestamp[grade];
             if (timestamp) {
                 const d = new Date(timestamp);
@@ -2151,57 +2161,47 @@ const learningMode = {
 
         const cacheKey = `wordListCache_${grade}`;
         const timestampKey = app.state.LOCAL_STORAGE_KEYS.CACHE_TIMESTAMP(grade);
-        // ---------------- [추가] ----------------
-        // 버전 키를 가져옵니다.
         const versionKey = app.state.LOCAL_STORAGE_KEYS.CACHE_VERSION(grade);
-        // ----------------------------------------
 
-        // ---------------- [수정] ----------------
-        // 학생 기능: Firebase 버전과 로컬 버전 비교
         let forceRefreshDueToVersion = false;
         if (!force) {
             try {
-                // 1. Firebase에서 원격 버전 가져오기
                 const versionRef = ref(rt_db, `app_config/vocab_version_${grade}`);
                 const snapshot = await get(versionRef);
                 const remoteVersion = snapshot.val() || 0;
-
-                // 2. 로컬에 저장된 버전 가져오기
                 const localVersion = parseInt(localStorage.getItem(versionKey) || '0');
 
-                // 3. 버전 비교
                 if (remoteVersion > localVersion) {
                     console.log(`[${grade}] 새 버전 감지 (Remote: ${remoteVersion} > Local: ${localVersion}). 캐시를 강제 새로고침합니다.`);
                     forceRefreshDueToVersion = true;
                 }
             } catch (e) {
                 console.error("버전 확인 중 오류 발생:", e);
-                // 버전 확인에 실패하면 안전하게 캐시를 사용하지 않도록 강제 새로고침
                 forceRefreshDueToVersion = true; 
             }
         }
         
-        // 'force' 파라미터 또는 버전 불일치로 인해 강제 새로고침 결정
         const shouldForceRefresh = force || forceRefreshDueToVersion;
 
         if (shouldForceRefresh) {
             try { 
                 localStorage.removeItem(cacheKey); 
                 localStorage.removeItem(timestampKey);
-                localStorage.removeItem(versionKey); // 버전 키도 삭제
+                localStorage.removeItem(versionKey);
             } catch(e) {}
             this.state.isWordListReady[grade] = false;
         }
-        // ----------------------------------------
 
         try {
+            // 캐시가 유효하고, 강제 새로고침이 아닌 경우 캐시 사용
             const cachedData = localStorage.getItem(cacheKey);
             const savedTimestamp = localStorage.getItem(timestampKey);
-            if (cachedData && savedTimestamp) {
+            if (!shouldForceRefresh && cachedData && savedTimestamp) {
                 const { words } = JSON.parse(cachedData);
                 this.state.wordList[grade] = words.sort((a, b) => a.id - b.id);
                 this.state.isWordListReady[grade] = true;
                 app.state.lastCacheTimestamp[grade] = parseInt(savedTimestamp);
+                app.updateLastUpdatedText(); // UI 업데이트
                 return;
             }
         } catch (e) {
@@ -2209,10 +2209,11 @@ const learningMode = {
             try {
                 localStorage.removeItem(cacheKey);
                 localStorage.removeItem(timestampKey);
-                localStorage.removeItem(versionKey); // 오류 발생 시 버전 키도 삭제
+                localStorage.removeItem(versionKey);
             } catch(e2) {}
         }
 
+        // 캐시가 없거나, 강제 새로고침이 필요한 경우 Firebase에서 데이터 로드
         try {
             const dbRef = ref(rt_db, `${grade}/vocabulary`);
             const snapshot = await get(dbRef);
@@ -2223,21 +2224,33 @@ const learningMode = {
             this.state.wordList[grade] = wordsArray;
             this.state.isWordListReady[grade] = true;
 
-            const newTimestamp = Date.now();
+            // ---------------- [수정 시작] ----------------
+            // 로컬 Date.now() 대신 Firebase에 저장된 공통 타임스탬프를 가져옵니다.
+            const timestampRef = ref(rt_db, `app_config/vocab_timestamp_${grade}`);
+            const timestampSnapshot = await get(timestampRef);
+            // Firebase에 타임스탬프가 없으면 (이전 버전 등) Date.now()를 대체 사용
+            const newTimestamp = timestampSnapshot.val() || Date.now(); 
+
+            // 현재 최신 버전 번호를 가져옵니다.
+            const versionRef = ref(rt_db, `app_config/vocab_version_${grade}`);
+            const versionSnapshot = await get(versionRef);
+            const currentRemoteVersion = versionSnapshot.val() || 1;
+            // ---------------- [수정 끝] ----------------
+
             const cachePayload = { words: wordsArray };
              try {
                 localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
+                
+                // ---------------- [수정 시작] ----------------
+                // 로컬의 newTimestamp 대신 가져온 공통 newTimestamp를 저장합니다.
                 localStorage.setItem(timestampKey, newTimestamp.toString());
                 app.state.lastCacheTimestamp[grade] = newTimestamp;
-
-                // ---------------- [추가] ----------------
-                // 새 데이터를 받았으므로, 현재 최신 버전을 로컬에 저장합니다.
-                // (shouldForceRefresh일 때만 이 코드가 실행되므로 안전합니다)
-                const versionRef = ref(rt_db, `app_config/vocab_version_${grade}`);
-                const versionSnapshot = await get(versionRef);
-                const currentRemoteVersion = versionSnapshot.val() || 1; // 0보다는 1이 낫습니다.
+                
+                // 최신 버전 번호를 로컬에 저장합니다.
                 localStorage.setItem(versionKey, currentRemoteVersion.toString());
-                // ----------------------------------------
+                // ---------------- [수정 끝] ----------------
+
+                app.updateLastUpdatedText(); // UI 업데이트
 
              } catch(e) { console.error("Error saving word list cache:", e); }
         } catch (error) {
