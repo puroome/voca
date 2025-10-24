@@ -324,13 +324,19 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
-        import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+        // ---------------- [수정] ----------------
+        // RTDB에 버전 번호를 쓰기 위해 'set'을 추가합니다.
+        import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+        // ----------------------------------------
         import { getFirestore, doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
         
         window.firebaseSDK = {
             initializeApp,
             getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
-            getDatabase, ref, get,
+            // ---------------- [수정] ----------------
+            // 'set'을 window.firebaseSDK 객체에 추가합니다.
+            getDatabase, ref, get, set,
+            // ----------------------------------------
             getFirestore, doc, getDoc, setDoc, updateDoc,
         };
 
