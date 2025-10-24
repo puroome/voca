@@ -1731,6 +1731,10 @@ const quizMode = {
         this.state.sessionCorrectInSet = 0;
         this.state.sessionMistakes = [];
 
+        if (showSelection) {
+        this.state.currentQuizType = null;
+        }
+        
         this.elements.loader.querySelector('.loader').style.display = 'block';
         this.elements.loaderText.textContent = "퀴즈 데이터를 불러오는 중...";
         if (showSelection) {
@@ -2605,3 +2609,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
