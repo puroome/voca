@@ -445,7 +445,7 @@ const app = {
             this.state.currentProgress = {};
         }
 
-        const startModes = ['quiz', 'learning', 'mistakeReview', 'favoriteReview'];
+        const startModes = ['quiz-play', 'learning', 'mistakeReview', 'favoriteReview'];
         if (startModes.includes(view)) {
              activityTracker.start();
         }
@@ -456,7 +456,23 @@ const app = {
                 this.elements.homeBtn.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
                 this.elements.practiceModeControl.classList.remove('hidden');
-                quizMode.reset();
+                
+                quizMode.reset(); 
+                
+                break;
+            
+            case 'quiz-play':
+                this.elements.quizModeContainer.classList.remove('hidden');
+                this.elements.homeBtn.classList.remove('hidden');
+                this.elements.backToGradeSelectionBtn.classList.remove('hidden');
+                this.elements.practiceModeControl.classList.remove('hidden');
+                
+                quizMode.reset(false);
+                
+                if (!learningMode.state.isWordListReady[app.state.selectedSheet]) {
+                    await learningMode.loadWordList();
+                }
+                quizMode.displayNextQuiz();
                 break;
             case 'learning':
                 this.elements.learningModeContainer.classList.remove('hidden');
@@ -1717,12 +1733,7 @@ const quizMode = {
     },
     async start(quizType) {
         this.state.currentQuizType = quizType;
-        this.elements.quizSelectionScreen.classList.add('hidden');
-        this.reset(false);
-        if (!learningMode.state.isWordListReady[app.state.selectedSheet]) {
-            await learningMode.loadWordList();
-        }
-        this.displayNextQuiz();
+        app.navigateTo('quiz-play', app.state.selectedSheet);
     },
     reset(showSelection = true) {
         this.state.currentQuiz = {};
@@ -2609,4 +2620,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
