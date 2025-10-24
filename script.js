@@ -114,6 +114,9 @@ const app = {
         translateDebounceTimeout: null,
         longPressTimer: null,
         lastCacheTimestamp: { '1y': null, '2y': null, '3y': null },
+        // --- [추가] 비프음 재생용 오디오 컨텍스트 상태 추가 ---
+        audioContext: null, 
+        // --- [추가] 끝 ---
         LOCAL_STORAGE_KEYS: {
             LAST_GRADE: 'student_lastGrade',
             PRACTICE_MODE: 'student_practiceMode',
@@ -350,6 +353,23 @@ const app = {
             activityTracker.stopAndSave();
             this.syncOfflineDataSync();
         });
+
+        // --- [추가] 비프음 재생을 위한 오디오 컨텍스트 초기화 이벤트 ---
+        const initAudioForBeep = () => {
+            if (!this.state.audioContext) {
+                 try {
+                     this.state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                 } catch (e) {
+                     console.error("Web Audio API is not supported in this browser", e);
+                 }
+            }
+            // 초기화 후 이벤트 리스너 제거
+            document.body.removeEventListener('click', initAudioForBeep, { capture: true });
+            document.body.removeEventListener('touchstart', initAudioForBeep, { capture: true, passive: true });
+        };
+        document.body.addEventListener('click', initAudioForBeep, { capture: true, once: true });
+        document.body.addEventListener('touchstart', initAudioForBeep, { capture: true, passive: true, once: true });
+        // --- [추가] 끝 ---
     },
      syncOfflineDataSync() {
          if (!app.state.user) return;
@@ -621,6 +641,59 @@ const app = {
     }
 };
 
+// --- [추가] 비프음 재생 관련 함수 (word 앱과 동일) ---
+function playSingleBeep({ frequency, duration = 0.1, type = 'sine', gain = 0.3, endFrequency }) {
+    if (!app.state.audioContext) {
+        console.warn("AudioContext not initialized. Cannot play beep.");
+        return;
+    }
+    const oscillator = app.state.audioContext.createOscillator();
+    const gainNode = app.state.audioContext.createGain();
+    const now = app.state.audioContext.currentTime;
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, now);
+    if (endFrequency) {
+        oscillator.frequency.linearRampToValueAtTime(endFrequency, now + duration);
+    }
+    gainNode.gain.setValueAtTime(0, now);
+    gainNode.gain.linearRampToValueAtTime(gain, now + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + duration + 0.01);
+    oscillator.connect(gainNode);
+    gainNode.connect(app.state.audioContext.destination);
+    oscillator.start(now);
+    oscillator.stop(now + duration + 0.01);
+}
+function playSequence(soundDefinition) {
+    if (soundDefinition.sequence && Array.isArray(soundDefinition.sequence)) {
+        soundDefinition.sequence.forEach(note => {
+            if (note.delay) {
+                setTimeout(() => { playSingleBeep(note); }, note.delay);
+            } else {
+                playSingleBeep(note);
+            }
+        });
+    } else {
+        playSingleBeep(soundDefinition);
+    }
+}
+const correctBeep = { 
+    name: '또로롱 (물방울)', 
+    sequence: [
+        { frequency: 523, duration: 0.07, type: 'triangle', gain: 0.25 },
+        { delay: 80, frequency: 659, duration: 0.07, type: 'triangle', gain: 0.25 },
+        { delay: 160, frequency: 783, duration: 0.07, type: 'triangle', gain: 0.25 }
+    ]
+};
+const incorrectBeep = { 
+    name: '삐빅 (경고)', 
+    sequence: [
+        { frequency: 400, duration: 0.07, type: 'square', gain: 0.15 },
+        { delay: 90, frequency: 400, duration: 0.07, type: 'square', gain: 0.15 }
+    ]
+};
+// --- [추가] 끝 ---
+
+
 const imageDBCache = {
     db: null, dbName: 'imageCacheDB', storeName: 'imageStore',
     init() {
@@ -782,11 +855,20 @@ const api = {
         }
 
         const cacheKey = processedText;
+        let ttsAudioContext = null; // TTS용 임시 컨텍스트
         try {
             const cachedAudio = await audioDBCache.getAudio(cacheKey);
             if (cachedAudio) {
-                const audio = new Audio(URL.createObjectURL(new Blob([cachedAudio], { type: 'audio/mp3' })));
-                audio.play();
+                // --- [수정] 비프음 컨텍스트와 분리 ---
+                ttsAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                if(ttsAudioContext.state === 'suspended') await ttsAudioContext.resume();
+                const audioBuffer = await ttsAudioContext.decodeAudioData(cachedAudio.slice(0)); // copy buffer
+                const source = ttsAudioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(ttsAudioContext.destination);
+                source.start(0);
+                source.onended = () => ttsAudioContext.close();
+                // --- [수정] 끝 ---
                 return;
             }
 
@@ -812,14 +894,28 @@ const api = {
             if (data.audioContent) {
                 const audioBlob = new Blob([Uint8Array.from(atob(data.audioContent), c => c.charCodeAt(0))], { type: 'audio/mp3' });
                 const arrayBuffer = await audioBlob.arrayBuffer();
-                audioDBCache.saveAudio(cacheKey, arrayBuffer);
-                const audio = new Audio(URL.createObjectURL(audioBlob));
-                audio.play();
+                audioDBCache.saveAudio(cacheKey, arrayBuffer.slice(0)); // Save a copy
+
+                // --- [수정] 비프음 컨텍스트와 분리 ---
+                ttsAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                if(ttsAudioContext.state === 'suspended') await ttsAudioContext.resume();
+                const audioBuffer = await ttsAudioContext.decodeAudioData(arrayBuffer);
+                const source = ttsAudioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(ttsAudioContext.destination);
+                source.start(0);
+                source.onended = () => ttsAudioContext.close();
+                // --- [수정] 끝 ---
             } else {
                  throw new Error("No audio content received from Google TTS API");
             }
         } catch (error) {
             console.error('Error fetching/playing TTS audio:', error);
+             // --- [추가] 에러 시에도 컨텍스트 닫기 ---
+             if (ttsAudioContext && ttsAudioContext.state !== 'closed') {
+                 ttsAudioContext.close();
+             }
+             // --- [추가] 끝 ---
         }
     },
     async copyToClipboard(text) {
@@ -1779,6 +1875,15 @@ const quizMode = {
         const quizType = this.state.currentQuiz.type;
 
         selectedLi.classList.add(isCorrect ? 'correct' : 'incorrect');
+
+        // --- [추가] 비프음 재생 ---
+        if (isCorrect && !isPass) {
+            playSequence(correctBeep);
+        } else {
+            playSequence(incorrectBeep); // 오답 또는 PASS
+        }
+        // --- [추가] 끝 ---
+
 
         this.state.sessionAnsweredInSet++;
         if (isCorrect) {
