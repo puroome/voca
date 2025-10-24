@@ -1,14 +1,20 @@
 let firebaseApp, auth, db, rt_db;
 let initializeApp;
 let getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup;
-let getDatabase, ref, get;
+// ---------------- [수정] ----------------
+// 'set' 변수를 선언합니다.
+let getDatabase, ref, get, set;
+// ----------------------------------------
 let getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch;
 
 document.addEventListener('firebaseSDKLoaded', () => {
     ({
         initializeApp,
         getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
-        getDatabase, ref, get,
+        // ---------------- [수정] ----------------
+        // 'set'을 firebaseSDK로부터 받아옵니다.
+        getDatabase, ref, get, set,
+        // ----------------------------------------
         getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch
     } = window.firebaseSDK);
     window.firebaseSDK.writeBatch = writeBatch;
@@ -115,7 +121,11 @@ const app = {
             UNSYNCED_TIME: (grade) => `student_unsyncedTime_${grade}`,
             UNSYNCED_QUIZ: (grade) => `student_unsyncedQuizStats_${grade}`,
             UNSYNCED_PROGRESS_UPDATES: (grade) => `student_unsyncedProgress_${grade}`,
-            CACHE_TIMESTAMP: (grade) => `wordListCacheTimestamp_${grade}`
+            CACHE_TIMESTAMP: (grade) => `wordListCacheTimestamp_${grade}`,
+            // ---------------- [추가] ----------------
+            // 어휘 목록의 버전을 저장할 새 키
+            CACHE_VERSION: (grade) => `wordListVersion_${grade}`
+            // ----------------------------------------
         }
     },
     elements: {
@@ -489,11 +499,26 @@ const app = {
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
         try {
-            await learningMode.loadWordList(true);
+            // ---------------- [수정] ----------------
+            // 관리자 기능: 로컬 캐시 지우기 -> Firebase 버전 번호 업데이트
+            
+            // 1. 현재 버전 번호를 가져옵니다.
+            const versionRef = ref(rt_db, `app_config/vocab_version_${sheet}`);
+            const snapshot = await get(versionRef);
+            const currentVersion = snapshot.val() || 0;
+            
+            // 2. 버전 번호를 1 증가시켜 RTDB에 씁니다.
+            const newVersion = currentVersion + 1;
+            await set(versionRef, newVersion);
+
+            // 3. (선택적) 관리자 본인의 캐시도 즉시 업데이트합니다.
+            await learningMode.loadWordList(true); 
+            
             this.updateLastUpdatedText();
             this.showRefreshSuccessMessage();
+            // ----------------------------------------
         } catch(err) {
-            this.showToast("데이터 새로고침에 실패했습니다: " + err.message, true);
+            this.showToast("데이터 새로고침(버전 업데이트)에 실패했습니다: " + err.message, true);
         } finally {
             elementsToDisable.forEach(el => el.classList.remove('pointer-events-none', 'opacity-50'));
             this.elements.refreshBtn.innerHTML = refreshIconHTML;
@@ -2021,11 +2046,48 @@ const learningMode = {
 
         const cacheKey = `wordListCache_${grade}`;
         const timestampKey = app.state.LOCAL_STORAGE_KEYS.CACHE_TIMESTAMP(grade);
+        // ---------------- [추가] ----------------
+        // 버전 키를 가져옵니다.
+        const versionKey = app.state.LOCAL_STORAGE_KEYS.CACHE_VERSION(grade);
+        // ----------------------------------------
 
-        if (force) {
-            try { localStorage.removeItem(cacheKey); } catch(e) {}
+        // ---------------- [수정] ----------------
+        // 학생 기능: Firebase 버전과 로컬 버전 비교
+        let forceRefreshDueToVersion = false;
+        if (!force) {
+            try {
+                // 1. Firebase에서 원격 버전 가져오기
+                const versionRef = ref(rt_db, `app_config/vocab_version_${grade}`);
+                const snapshot = await get(versionRef);
+                const remoteVersion = snapshot.val() || 0;
+
+                // 2. 로컬에 저장된 버전 가져오기
+                const localVersion = parseInt(localStorage.getItem(versionKey) || '0');
+
+                // 3. 버전 비교
+                if (remoteVersion > localVersion) {
+                    console.log(`[${grade}] 새 버전 감지 (Remote: ${remoteVersion} > Local: ${localVersion}). 캐시를 강제 새로고침합니다.`);
+                    forceRefreshDueToVersion = true;
+                }
+            } catch (e) {
+                console.error("버전 확인 중 오류 발생:", e);
+                // 버전 확인에 실패하면 안전하게 캐시를 사용하지 않도록 강제 새로고침
+                forceRefreshDueToVersion = true; 
+            }
+        }
+        
+        // 'force' 파라미터 또는 버전 불일치로 인해 강제 새로고침 결정
+        const shouldForceRefresh = force || forceRefreshDueToVersion;
+
+        if (shouldForceRefresh) {
+            try { 
+                localStorage.removeItem(cacheKey); 
+                localStorage.removeItem(timestampKey);
+                localStorage.removeItem(versionKey); // 버전 키도 삭제
+            } catch(e) {}
             this.state.isWordListReady[grade] = false;
         }
+        // ----------------------------------------
 
         try {
             const cachedData = localStorage.getItem(cacheKey);
@@ -2042,6 +2104,7 @@ const learningMode = {
             try {
                 localStorage.removeItem(cacheKey);
                 localStorage.removeItem(timestampKey);
+                localStorage.removeItem(versionKey); // 오류 발생 시 버전 키도 삭제
             } catch(e2) {}
         }
 
@@ -2061,6 +2124,16 @@ const learningMode = {
                 localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
                 localStorage.setItem(timestampKey, newTimestamp.toString());
                 app.state.lastCacheTimestamp[grade] = newTimestamp;
+
+                // ---------------- [추가] ----------------
+                // 새 데이터를 받았으므로, 현재 최신 버전을 로컬에 저장합니다.
+                // (shouldForceRefresh일 때만 이 코드가 실행되므로 안전합니다)
+                const versionRef = ref(rt_db, `app_config/vocab_version_${grade}`);
+                const versionSnapshot = await get(versionRef);
+                const currentRemoteVersion = versionSnapshot.val() || 1; // 0보다는 1이 낫습니다.
+                localStorage.setItem(versionKey, currentRemoteVersion.toString());
+                // ----------------------------------------
+
              } catch(e) { console.error("Error saving word list cache:", e); }
         } catch (error) {
             this.showError(error.message);
