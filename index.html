@@ -12,16 +12,7 @@
         .grade-select-card:hover .grade-tooltip {
             opacity: 1;
         }
-        /* 숫자 입력 필드의 스피너(화살표) 숨기기 */
-        input[type='number'] {
-            -moz-appearance: textfield;
-            appearance: textfield;
-        }
-        input[type='number']::-webkit-inner-spin-button,
-        input[type='number']::-webkit-outer-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-        }
+        /* [삭제] 숫자 입력 필드 스타일 제거 */
     </style>
 </head>
 <body class="bg-gray-100 flex justify-center items-center min-h-screen p-4 pb-24">
@@ -193,20 +184,20 @@
             <div id="quiz-selection-screen" class="text-center p-10">
                 <h1 class="text-2xl font-bold text-gray-800 mb-6">퀴즈 유형</h1>
                 
-                <!-- [수정] 텍스트 변경 및 범위 입력 필드 추가 -->
                 <div class="text-gray-600 mb-8">
                     <p>원하는 퀴즈 유형과 범위를 선택하세요.</p>
-                    <div class="flex justify-center items-center gap-2 mt-3 text-lg font-semibold">
+                    <!-- [수정] input -> button 변경 및 스타일 조정 -->
+                    <div class="flex justify-center items-center gap-2 mt-3 text-base font-semibold">
                         <span>(</span>
-                        <input type="number" id="quiz-range-start" value="1" min="1" 
-                               class="w-20 text-center font-bold border-b-2 border-gray-400 focus:border-blue-500 outline-none p-1 rounded-sm">
+                        <button id="quiz-range-start" data-min="1" data-max="1"
+                                class="w-16 text-center font-bold bg-white bg-opacity-60 hover:bg-opacity-80 rounded-md px-2 py-1 transition-colors">1</button>
                         <span>-</span>
-                        <input type="number" id="quiz-range-end" value="1" min="1"
-                               class="w-20 text-center font-bold border-b-2 border-gray-400 focus:border-blue-500 outline-none p-1 rounded-sm">
+                        <button id="quiz-range-end" data-min="1" data-max="1"
+                                class="w-16 text-center font-bold bg-white bg-opacity-60 hover:bg-opacity-80 rounded-md px-2 py-1 transition-colors">1</button>
                         <span>)</span>
                     </div>
+                    <!-- [수정] 끝 -->
                 </div>
-                <!-- [수정] 끝 -->
                 
                 <div class="flex flex-col sm:flex-row justify-center items-center sm:gap-x-6 gap-y-4">
                     <div id="start-meaning-quiz-btn" class="relative cursor-pointer overflow-hidden rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:-rotate-2 w-40 h-40">
@@ -352,19 +343,13 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
-        // ---------------- [수정] ----------------
-        // RTDB에 버전 번호를 쓰기 위해 'set'을 추가합니다.
         import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
-        // ----------------------------------------
         import { getFirestore, doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
         
         window.firebaseSDK = {
             initializeApp,
             getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
-            // ---------------- [수정] ----------------
-            // 'set'을 window.firebaseSDK 객체에 추가합니다.
             getDatabase, ref, get, set,
-            // ----------------------------------------
             getFirestore, doc, getDoc, setDoc, updateDoc,
         };
 
@@ -374,3 +359,4 @@
     <script src="script.js"></script>
 </body>
 </html>
+
