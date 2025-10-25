@@ -1665,6 +1665,7 @@ const quizMode = {
             quizResultContinueBtn: document.getElementById('quiz-result-continue-btn'),
             rangeInputModal: document.getElementById('range-input-modal'),
             rangeInputLabel: document.getElementById('range-input-label'),
+            quizRangeLabel: document.getElementById('quiz-range-label'),
             rangeInputField: document.getElementById('range-input-field'),
             rangeInputCancelBtn: document.getElementById('range-input-cancel-btn'),
             rangeInputConfirmBtn: document.getElementById('range-input-confirm-btn'),
@@ -1686,7 +1687,7 @@ const quizMode = {
             if (e.key === 'Enter') this.confirmRangeInput();
             if (e.key === 'Escape') this.hideRangeInput();
         });
-
+        this.elements.quizRangeLabel.addEventListener('click', () => this.resetQuizRange());
         this.elements.quizResultContinueBtn.addEventListener('click', () => this.continueAfterResult());
         this.elements.quizResultMistakesBtn.addEventListener('click', () => this.reviewSessionMistakes());
 
@@ -1766,6 +1767,30 @@ const quizMode = {
         }
         this.hideRangeInput();
     },
+        resetQuizRange() {
+        const grade = app.state.selectedSheet;
+        if (!grade) return;
+
+        // 전체 단어 목록에서 마지막 번호를 가져옵니다.
+        const allWords = learningMode.state.wordList[grade] || [];
+        const totalWords = allWords.length > 0 ? allWords.length : 1;
+
+        // 1. UI 텍스트 업데이트
+        this.elements.quizRangeStart.textContent = 1;
+        this.elements.quizRangeEnd.textContent = totalWords;
+
+        // 2. localStorage에 초기화된 값 저장
+        try {
+            localStorage.setItem(app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_START(grade), 1);
+            localStorage.setItem(app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_END(grade), totalWords);
+        } catch (e) {
+            console.error("Error saving reset quiz range to localStorage", e);
+        }
+        
+        // 사용자에게 초기화되었음을 알림
+        app.showToast("퀴즈 범위가 1 - " + totalWords + "로 초기화되었습니다.", false);
+    },
+    
     async start(quizType) {
         this.state.currentQuizType = quizType;
         app.navigateTo('quiz-play', app.state.selectedSheet);
@@ -2770,3 +2795,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
