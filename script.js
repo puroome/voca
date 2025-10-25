@@ -2124,6 +2124,7 @@ const learningMode = {
             progressBarTrack: document.getElementById('progress-bar-track'),
             progressBarFill: document.getElementById('progress-bar-fill'),
             progressBarHandle: document.getElementById('progress-bar-handle'),
+            progressBarNumber: document.getElementById('progress-bar-number'),
             favoriteBtn: document.getElementById('favorite-btn'),
             favoriteIcon: document.getElementById('favorite-icon'),
         };
@@ -2552,11 +2553,19 @@ const learningMode = {
         if (total <= 1) {
             this.elements.progressBarFill.style.width = '100%';
             this.elements.progressBarHandle.style.left = '100%';
+            if (this.elements.progressBarNumber) {
+                this.elements.progressBarNumber.textContent = total > 0 ? '1' : '';
+                this.elements.progressBarNumber.style.left = '100%';
+            }
             return;
         }
         const percentage = (index / (total - 1)) * 100;
         this.elements.progressBarFill.style.width = `${percentage}%`;
         this.elements.progressBarHandle.style.left = `calc(${percentage}% - ${this.elements.progressBarHandle.offsetWidth / 2}px)`;
+        if (this.elements.progressBarNumber) {
+            this.elements.progressBarNumber.textContent = index + 1; 
+            this.elements.progressBarNumber.style.left = `${percentage}%`;
+        }       
     },
     handleProgressBarInteraction(e) {
         if (!this.isLearningModeActive()) return;
@@ -2620,5 +2629,6 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
