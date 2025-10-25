@@ -1641,6 +1641,7 @@ const quizMode = {
         isPreloading: {
             '1y': {}, '2y': {}, '3y': {}
         },
+        currentRangeInputTarget: null,
     },
     elements: {},
     init() {
@@ -1662,6 +1663,11 @@ const quizMode = {
             quizResultScore: document.getElementById('quiz-result-score'),
             quizResultMistakesBtn: document.getElementById('quiz-result-mistakes-btn'),
             quizResultContinueBtn: document.getElementById('quiz-result-continue-btn'),
+            rangeInputModal: document.getElementById('range-input-modal'),
+            rangeInputLabel: document.getElementById('range-input-label'),
+            rangeInputField: document.getElementById('range-input-field'),
+            rangeInputCancelBtn: document.getElementById('range-input-cancel-btn'),
+            rangeInputConfirmBtn: document.getElementById('range-input-confirm-btn'),
         };
         this.bindEvents();
     },
@@ -1670,8 +1676,16 @@ const quizMode = {
         this.elements.startBlankQuizBtn.addEventListener('click', () => this.start('FILL_IN_THE_BLANK'));
         this.elements.startDefinitionQuizBtn.addEventListener('click', () => this.start('MULTIPLE_CHOICE_DEFINITION'));
 
-        this.elements.quizRangeStart.addEventListener('click', (e) => this.promptForRangeValue(e.target, '시작 어휘의 숫자를 입력하세요'));
-        this.elements.quizRangeEnd.addEventListener('click', (e) => this.promptForRangeValue(e.target, '마지막 어휘의 숫자를 입력하세요'));
+        this.elements.quizRangeStart.addEventListener('click', (e) => this.promptForRangeValue(e.target));
+        this.elements.quizRangeEnd.addEventListener('click', (e) => this.promptForRangeValue(e.target));
+
+        this.elements.rangeInputConfirmBtn.addEventListener('click', () => this.confirmRangeInput());
+        this.elements.rangeInputCancelBtn.addEventListener('click', () => this.hideRangeInput());
+        this.elements.rangeInputModal.addEventListener('click', () => this.hideRangeInput());
+        this.elements.rangeInputField.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.confirmRangeInput();
+            if (e.key === 'Escape') this.hideRangeInput();
+        });
 
         this.elements.quizResultContinueBtn.addEventListener('click', () => this.continueAfterResult());
         this.elements.quizResultMistakesBtn.addEventListener('click', () => this.reviewSessionMistakes());
@@ -1699,13 +1713,35 @@ const quizMode = {
             }
         });
     },
-    promptForRangeValue(targetButton, promptMessage) {
+    promptForRangeValue(targetButton) {
         if (!targetButton) return;
-        const currentValue = targetButton.textContent;
+        this.state.currentRangeInputTarget = targetButton;
+        const isStart = targetButton.id === 'quiz-range-start';
         const min = parseInt(targetButton.dataset.min) || 1;
         const max = parseInt(targetButton.dataset.max) || 1;
+        
+        const labelText = isStart ? `시작번호 (1-${max}) :` : `마지막번호 (1-${max}) :`;
+        this.elements.rangeInputLabel.textContent = labelText;
+        this.elements.rangeInputField.value = targetButton.textContent;
+        this.elements.rangeInputField.min = min;
+        this.elements.rangeInputField.max = max;
+        
+        this.elements.rangeInputModal.classList.remove('hidden');
+        this.elements.rangeInputField.focus();
+        this.elements.rangeInputField.select();
+    },
+    hideRangeInput() {
+        this.elements.rangeInputModal.classList.add('hidden');
+        this.state.currentRangeInputTarget = null;
+    },
+    confirmRangeInput() {
+        const targetButton = this.state.currentRangeInputTarget;
+        if (!targetButton) return;
 
-        const newValueStr = window.prompt(promptMessage + `\n(범위: ${min} ~ ${max})`, currentValue);
+        const min = parseInt(targetButton.dataset.min) || 1;
+        const max = parseInt(targetButton.dataset.max) || 1;
+        const currentValue = targetButton.textContent;
+        const newValueStr = this.elements.rangeInputField.value;
 
         if (newValueStr !== null && newValueStr.trim() !== '') {
             let newValue = parseInt(newValueStr);
@@ -1728,6 +1764,7 @@ const quizMode = {
                 app.showToast("숫자만 입력 가능합니다.", true);
             }
         }
+        this.hideRangeInput();
     },
     async start(quizType) {
         this.state.currentQuizType = quizType;
@@ -1816,7 +1853,34 @@ const quizMode = {
         const grade = app.state.selectedSheet;
         const type = this.state.currentQuizType;
 
-        const preloaded = this.state.preloadedQuizzes[grade]?.[type];
+        let preloaded = this.state.preloadedQuizzes[grade]?.[type];
+        
+        if (preloaded) {
+            const allWords = learningMode.state.wordList[grade] || [];
+            const startVal = parseInt(this.elements.quizRangeStart.textContent) || 1;
+            const endVal = parseInt(this.elements.quizRangeEnd.textContent) || allWords.length;
+            const startNum = Math.min(startVal, endVal);
+            const endNum = Math.max(startVal, endVal);
+            const startIndex = Math.max(0, startNum - 1); 
+            const endIndex = Math.min(allWords.length - 1, endNum - 1); 
+
+            const wordIndex = allWords.findIndex(w => w.word === preloaded.question.word);
+            
+            if (wordIndex < startIndex || wordIndex > endIndex) {
+                preloaded = null; 
+            }
+            
+            if (preloaded) {
+                const learnedWordsInType = this.state.isPracticeMode ?
+                    this.state.practiceLearnedWords :
+                    utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
+                
+                if (learnedWordsInType.includes(preloaded.question.word)) {
+                    preloaded = null; 
+                }
+            }
+        }
+
         if (preloaded) {
             nextQuiz = preloaded;
             this.state.preloadedQuizzes[grade][type] = null;
@@ -1825,6 +1889,9 @@ const quizMode = {
 
         if (!nextQuiz) {
             nextQuiz = await this.generateSingleQuiz();
+            if (nextQuiz) {
+                this.preloadNextQuiz(grade, type); 
+            }
         }
 
         if (nextQuiz) {
@@ -2055,7 +2122,6 @@ const quizMode = {
             const learnedWordsInType = utils.getCorrectlyAnsweredWords(type);
             
             let candidates;
-            // 만약 퀴즈 화면 요소가 로드된 상태라면 (즉, 퀴즈 선택 화면에 있다면) 현재 설정된 범위를 사용
             if(quizMode.elements.quizRangeStart && quizMode.elements.quizRangeEnd) {
                  const startVal = parseInt(quizMode.elements.quizRangeStart.textContent) || 1;
                  const endVal = parseInt(quizMode.elements.quizRangeEnd.textContent) || allWords.length;
@@ -2070,7 +2136,6 @@ const quizMode = {
                     return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
                  }).sort(() => 0.5 - Math.random());
             } else {
-                // 아직 퀴즈 화면 요소가 로드되지 않았다면 (앱 초기 로딩 시) 전체 범위 사용
                  candidates = allWords.filter(wordObj => {
                      const status = utils.getWordStatus(wordObj.word);
                      return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
