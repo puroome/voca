@@ -2088,7 +2088,7 @@ const quizMode = {
     showSessionResultModal(isFinal = false) {
         this.elements.quizResultScore.textContent = `${this.state.sessionAnsweredInSet}문제 중 ${this.state.sessionCorrectInSet}개 정답!`;
         this.elements.quizResultMistakesBtn.classList.toggle('hidden', this.state.sessionMistakes.length === 0);
-        this.elements.quizResultContinueBtn.textContent = isFinal ? "퀴 선택으로" : "다음 퀴즈 계속";
+        this.elements.quizResultContinueBtn.textContent = isFinal ? "퀴즈 유형으로" : "다음 퀴즈 계속";
         this.elements.quizResultModal.classList.remove('hidden');
     },
     continueAfterResult() {
@@ -2785,6 +2785,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
