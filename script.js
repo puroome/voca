@@ -2093,7 +2093,7 @@ const quizMode = {
     },
     continueAfterResult() {
         this.elements.quizResultModal.classList.add('hidden');
-        if (this.elements.quizResultContinueBtn.textContent === "퀴즈 선택으로") {
+        if (this.elements.quizResultContinueBtn.textContent === "퀴즈 유형으로") {
             app.syncOfflineData();
             app.navigateTo('quiz', app.state.selectedSheet);
             return;
@@ -2785,6 +2785,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
