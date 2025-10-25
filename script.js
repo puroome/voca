@@ -1633,6 +1633,7 @@ const quizMode = {
         sessionAnsweredInSet: 0,
         sessionCorrectInSet: 0,
         sessionMistakes: [],
+        answeredWords: new Set(),
         preloadedQuizzes: {
             '1y': { 'MULTIPLE_CHOICE_MEANING': null, 'FILL_IN_THE_BLANK': null, 'MULTIPLE_CHOICE_DEFINITION': null },
             '2y': { 'MULTIPLE_CHOICE_MEANING': null, 'FILL_IN_THE_BLANK': null, 'MULTIPLE_CHOICE_DEFINITION': null },
@@ -1794,6 +1795,7 @@ const quizMode = {
 
         if (showSelection) {
             this.state.currentQuizType = null;
+            this.state.answeredWords.clear();
         }
         
         this.elements.loader.querySelector('.loader').style.display = 'block';
@@ -1885,13 +1887,14 @@ const quizMode = {
                 preloaded = null; 
             }
             
-            if (preloaded) {
-                const learnedWordsInType = this.state.isPracticeMode ?
-                    this.state.practiceLearnedWords :
-                    utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
-                
+            if (preloaded && this.state.answeredWords.has(preloaded.question.word)) {
+                preloaded = null;
+            }
+
+            if (preloaded && !this.state.isPracticeMode) {
+                const learnedWordsInType = utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
                 if (learnedWordsInType.includes(preloaded.question.word)) {
-                    preloaded = null; 
+                    preloaded = null;
                 }
             }
         }
@@ -1945,6 +1948,12 @@ const quizMode = {
             utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
 
         let candidates = wordsInRange.filter(wordObj => {
+             if (this.state.answeredWords.has(wordObj.word)) {
+                 return false;
+             }
+             if (this.state.isPracticeMode) {
+                 return !this.state.practiceLearnedWords.includes(wordObj.word);
+             }
              const status = utils.getWordStatus(wordObj.word);
              return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
         });
@@ -2047,6 +2056,8 @@ const quizMode = {
         const isPass = selectedChoice === 'USER_PASSED';
         const word = this.state.currentQuiz.question.word;
         const quizType = this.state.currentQuiz.type;
+        
+        this.state.answeredWords.add(word);
 
         selectedLi.classList.add(isCorrect ? 'correct' : 'incorrect');
 
@@ -2147,11 +2158,13 @@ const quizMode = {
                  const wordsInRange = allWords.slice(startIndex, endIndex + 1);
 
                  candidates = wordsInRange.filter(wordObj => {
+                    if (this.state.answeredWords.has(wordObj.word)) return false;
                     const status = utils.getWordStatus(wordObj.word);
                     return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
                  }).sort(() => 0.5 - Math.random());
             } else {
                  candidates = allWords.filter(wordObj => {
+                     if (this.state.answeredWords.has(wordObj.word)) return false;
                      const status = utils.getWordStatus(wordObj.word);
                      return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
                  }).sort(() => 0.5 - Math.random());
@@ -2221,7 +2234,7 @@ const quizMode = {
         const choices = [correctWordData.word, ...Array.from(wrongAnswers)].sort(() => 0.5 - Math.random());
         return { type: 'FILL_IN_THE_BLANK', question: { sentence_with_blank: sentenceWithBlank, word: correctWordData.word }, choices, answer: correctWordData.word };
     },
-    createDefinitionQuiz(correctWordData, allWordsData, definition) {
+    async createDefinitionQuiz(correctWordData, allWordsData, definition) {
         if (!definition) return null;
         const wrongAnswers = new Set();
         let candidates = allWordsData.filter(w => w.word !== correctWordData.word);
@@ -2785,8 +2798,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
-
-
-
