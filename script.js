@@ -2088,14 +2088,14 @@ const quizMode = {
     showSessionResultModal(isFinal = false) {
         this.elements.quizResultScore.textContent = `${this.state.sessionAnsweredInSet}문제 중 ${this.state.sessionCorrectInSet}개 정답!`;
         this.elements.quizResultMistakesBtn.classList.toggle('hidden', this.state.sessionMistakes.length === 0);
-        this.elements.quizResultContinueBtn.textContent = isFinal ? "모드 선택으로" : "다음 퀴즈 계속";
+        this.elements.quizResultContinueBtn.textContent = isFinal ? "퀴 선택으로" : "다음 퀴즈 계속";
         this.elements.quizResultModal.classList.remove('hidden');
     },
     continueAfterResult() {
         this.elements.quizResultModal.classList.add('hidden');
-        if (this.elements.quizResultContinueBtn.textContent === "모드 선택으로") {
+        if (this.elements.quizResultContinueBtn.textContent === "퀴즈 선택으로") {
             app.syncOfflineData();
-            app.navigateTo('mode', app.state.selectedSheet);
+            app.navigateTo('quiz', app.state.selectedSheet);
             return;
         }
         this.state.sessionAnsweredInSet = 0;
@@ -2785,5 +2785,6 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
