@@ -173,7 +173,6 @@ const app = {
         learningMode.init();
         dashboard.init();
 
-        /*
         try {
             const savedPracticeMode = localStorage.getItem(this.state.LOCAL_STORAGE_KEYS.PRACTICE_MODE);
             if (savedPracticeMode === 'true') {
@@ -184,7 +183,6 @@ const app = {
             console.error("Error reading practice mode from localStorage", e);
         }
 
-        */
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 this.state.user = user;
@@ -316,13 +314,11 @@ const app = {
         this.elements.practiceModeCheckbox.addEventListener('change', (e) => {
             quizMode.state.isPracticeMode = e.target.checked;
 
-            /*
             try {
                 localStorage.setItem(this.state.LOCAL_STORAGE_KEYS.PRACTICE_MODE, quizMode.state.isPracticeMode);
             } catch (err) {
                 console.error("Error saving practice mode state:", err);
             }
-            */
             
             if (quizMode.state.currentQuizType) {
                  quizMode.start(quizMode.state.currentQuizType);
@@ -1798,13 +1794,6 @@ const quizMode = {
         this.state.sessionAnsweredInSet = 0;
         this.state.sessionCorrectInSet = 0;
         this.state.sessionMistakes = [];
-
-        // --- [추가된 코드] ---
-        this.state.isPracticeMode = false;
-        if (app.elements.practiceModeCheckbox) {
-            app.elements.practiceModeCheckbox.checked = false;
-        }
-        // --- [여기까지] ---
         
         if (showSelection) {
             this.state.currentQuizType = null;
@@ -2813,6 +2802,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
