@@ -9,11 +9,10 @@ body {
     -webkit-tap-highlight-color: transparent;
     background-color: #f1f5f9;
 
-    /* 텍스트/이미지 드래그 선택 방지 */
-    -webkit-user-select: none; /* Safari, Chrome */
-    -moz-user-select: none;    /* Firefox */
-    -ms-user-select: none;     /* IE/Edge */
-    user-select: none;         /* Standard */
+    -webkit-user-select: none; 
+    -moz-user-select: none;    
+    -ms-user-select: none;     
+    user-select: none;         
 }
 
 body::before {
@@ -87,7 +86,7 @@ body::before {
 .incorrect { background-color: #dc3545 !important; color: white !important; border-color: #dc3545; }
 .disabled { pointer-events: none; opacity: 0.7; }
 
-/* 요청 사항 1: 어휘 카드(word) 영역 커서를 손가락 모양으로 변경 */
+
 #word-display {
     cursor: pointer;
     white-space: nowrap;
@@ -115,13 +114,13 @@ body::before {
     border-radius: 0.375rem;
 }
 
-/* 요청 사항 2: 예문 카드 전체 듣기 영역 hover 시 배경색 진하게 변경 */
+
 .sample-sentence:hover { 
-    background-color: #e5e7eb; /* gray-200 */
+    background-color: #e5e7eb; 
     cursor: pointer; 
 }
 
-/* 추가된 요청 사항: 발음 안되는 단어는 텍스트 커서로 변경 */
+
 .sample-sentence span:not(.interactive-word) {
     cursor: text;
 }
@@ -168,4 +167,13 @@ body::before {
 
 #favorite-icon {
     transition: color 0.2s, fill 0.2s;
+}
+
+#range-input-modal input[type="number"]::-webkit-outer-spin-button,
+#range-input-modal input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+#range-input-modal input[type="number"] {
+    -moz-appearance: textfield;
 }
