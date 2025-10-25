@@ -1920,8 +1920,8 @@ const quizMode = {
             if (this.state.sessionAnsweredInSet > 0) {
                 this.showSessionResultModal(true);
             } else {
-                this.showFinishedScreen("더 이상 만들 퀴즈가 없지롱!");
-                setTimeout(() => app.navigateTo('quiz'), 500);
+                this.showFinishedScreen("No more quizzes!");
+                setTimeout(() => app.navigateTo('quiz'), 800);
 
             }
         }
@@ -2800,6 +2800,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
