@@ -458,6 +458,8 @@ const app = {
                 this.elements.practiceModeControl.classList.remove('hidden');
                 
                 quizMode.reset(); 
+                // [추가] 퀴즈 범위 입력 필드를 업데이트하기 위해 await 추가
+                await quizMode.updateRangeInputs();
                 
                 break;
             
@@ -1686,6 +1688,10 @@ const quizMode = {
             startMeaningQuizBtn: document.getElementById('start-meaning-quiz-btn'),
             startBlankQuizBtn: document.getElementById('start-blank-quiz-btn'),
             startDefinitionQuizBtn: document.getElementById('start-definition-quiz-btn'),
+            // [추가] 범위 입력 필드 element 추가
+            quizRangeStart: document.getElementById('quiz-range-start'),
+            quizRangeEnd: document.getElementById('quiz-range-end'),
+            // [추가] 끝
             loader: document.getElementById('quiz-loader'),
             loaderText: document.getElementById('quiz-loader-text'),
             contentContainer: document.getElementById('quiz-content-container'),
@@ -1704,6 +1710,11 @@ const quizMode = {
         this.elements.startMeaningQuizBtn.addEventListener('click', () => this.start('MULTIPLE_CHOICE_MEANING'));
         this.elements.startBlankQuizBtn.addEventListener('click', () => this.start('FILL_IN_THE_BLANK'));
         this.elements.startDefinitionQuizBtn.addEventListener('click', () => this.start('MULTIPLE_CHOICE_DEFINITION'));
+
+        // [추가] 범위 입력 필드에 대한 유효성 검사 이벤트 리스너
+        this.elements.quizRangeStart.addEventListener('change', (e) => this.validateRangeInput(e.target));
+        this.elements.quizRangeEnd.addEventListener('change', (e) => this.validateRangeInput(e.target));
+        // [추가] 끝
 
         this.elements.quizResultContinueBtn.addEventListener('click', () => this.continueAfterResult());
         this.elements.quizResultMistakesBtn.addEventListener('click', () => this.reviewSessionMistakes());
@@ -1758,6 +1769,59 @@ const quizMode = {
         this.elements.finishedScreen.classList.add('hidden');
         if (this.elements.quizResultModal) this.elements.quizResultModal.classList.add('hidden');
     },
+    // [추가] 퀴즈 범위 입력 필드를 초기화하고 최대값을 설정하는 함수
+    async updateRangeInputs() {
+        const grade = app.state.selectedSheet;
+        if (!grade) return;
+
+        try {
+            // 단어 목록이 로드되었는지 확인, 안됐으면 로드
+            if (!learningMode.state.isWordListReady[grade]) {
+                await learningMode.loadWordList();
+            }
+            
+            const totalWords = learningMode.state.wordList[grade]?.length || 1;
+
+            this.elements.quizRangeStart.value = 1;
+            this.elements.quizRangeStart.min = 1;
+            this.elements.quizRangeStart.max = totalWords;
+
+            this.elements.quizRangeEnd.value = totalWords;
+            this.elements.quizRangeEnd.min = 1;
+            this.elements.quizRangeEnd.max = totalWords;
+
+        } catch (error) {
+            console.error("Error updating quiz range inputs:", error);
+            // 오류 발생 시 기본값으로 설정
+            this.elements.quizRangeStart.value = 1;
+            this.elements.quizRangeStart.min = 1;
+            this.elements.quizRangeStart.max = 1;
+            this.elements.quizRangeEnd.value = 1;
+            this.elements.quizRangeEnd.min = 1;
+            this.elements.quizRangeEnd.max = 1;
+        }
+    },
+    // [추가] 입력값이 min/max 범위를 벗어나지 않도록 보정하는 함수
+    validateRangeInput(inputElement) {
+        if (!inputElement) return;
+        try {
+            const min = parseInt(inputElement.min);
+            const max = parseInt(inputElement.max);
+            let value = parseInt(inputElement.value);
+
+            if (isNaN(value) || value < min) {
+                value = min;
+            }
+            if (value > max) {
+                value = max;
+            }
+            inputElement.value = value;
+        } catch (e) {
+            console.error("Failed to validate range input:", e);
+            inputElement.value = inputElement.min || 1;
+        }
+    },
+    // [추가] 끝
     async displayNextQuiz() {
         this.showLoader(true, '다음 문제 생성 중...');
         let nextQuiz = null;
@@ -1794,11 +1858,29 @@ const quizMode = {
         const allWords = learningMode.state.wordList[grade] || [];
         if (allWords.length < 5) return null;
 
+        // [추가] 사용자가 입력한 퀴즈 범위 가져오기
+        const startVal = parseInt(this.elements.quizRangeStart.value) || 1;
+        const endVal = parseInt(this.elements.quizRangeEnd.value) || allWords.length;
+
+        // 두 숫자 중 작은 값을 시작, 큰 값을 끝으로 설정
+        const startNum = Math.min(startVal, endVal);
+        const endNum = Math.max(startVal, endVal);
+
+        // 1기반 숫자를 0기반 인덱스로 변환
+        const startIndex = Math.max(0, startNum - 1); // 1번 단어 -> 0번 인덱스
+        const endIndex = Math.min(allWords.length - 1, endNum - 1); // 
+
+        // 설정된 범위의 단어 목록만 추출
+        const wordsInRange = allWords.slice(startIndex, endIndex + 1);
+        if (wordsInRange.length === 0) return null;
+        // [추가] 끝
+
         const learnedWordsInType = this.state.isPracticeMode ?
             this.state.practiceLearnedWords :
             utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
 
-        let candidates = allWords.filter(wordObj => {
+        // [수정] allWords 대신 wordsInRange를 기준으로 문제 후보를 필터링
+        let candidates = wordsInRange.filter(wordObj => {
              const status = utils.getWordStatus(wordObj.word);
              return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
         });
@@ -2629,6 +2711,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
 
