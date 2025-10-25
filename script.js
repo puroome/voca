@@ -1,20 +1,14 @@
 let firebaseApp, auth, db, rt_db;
 let initializeApp;
 let getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup;
-// ---------------- [수정] ----------------
-// 'set' 변수를 선언합니다. (이미 선언되어 있었음, 확인)
 let getDatabase, ref, get, set;
-// ----------------------------------------
 let getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch;
 
 document.addEventListener('firebaseSDKLoaded', () => {
     ({
         initializeApp,
         getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
-        // ---------------- [수정] ----------------
-        // 'set'을 firebaseSDK로부터 받아옵니다. (이미 받아오고 있었음, 확인)
         getDatabase, ref, get, set,
-        // ----------------------------------------
         getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch
     } = window.firebaseSDK);
     window.firebaseSDK.writeBatch = writeBatch;
@@ -114,9 +108,7 @@ const app = {
         translateDebounceTimeout: null,
         longPressTimer: null,
         lastCacheTimestamp: { '1y': null, '2y': null, '3y': null },
-        // --- [추가] 비프음 재생용 오디오 컨텍스트 상태 추가 ---
-        audioContext: null, 
-        // --- [추가] 끝 ---
+        audioContext: null,
         LOCAL_STORAGE_KEYS: {
             LAST_GRADE: 'student_lastGrade',
             PRACTICE_MODE: 'student_practiceMode',
@@ -125,10 +117,9 @@ const app = {
             UNSYNCED_QUIZ: (grade) => `student_unsyncedQuizStats_${grade}`,
             UNSYNCED_PROGRESS_UPDATES: (grade) => `student_unsyncedProgress_${grade}`,
             CACHE_TIMESTAMP: (grade) => `wordListCacheTimestamp_${grade}`,
-            // ---------------- [수정] ----------------
-            // 어휘 목록의 버전을 저장할 새 키 (이미 존재함)
-            CACHE_VERSION: (grade) => `wordListVersion_${grade}`
-            // ----------------------------------------
+            CACHE_VERSION: (grade) => `wordListVersion_${grade}`,
+            QUIZ_RANGE_START: (grade) => `student_quizRangeStart_${grade}`,
+            QUIZ_RANGE_END: (grade) => `student_quizRangeEnd_${grade}`
         }
     },
     elements: {
@@ -354,7 +345,6 @@ const app = {
             this.syncOfflineDataSync();
         });
 
-        // --- [추가] 비프음 재생을 위한 오디오 컨텍스트 초기화 이벤트 ---
         const initAudioForBeep = () => {
             if (!this.state.audioContext) {
                  try {
@@ -363,13 +353,11 @@ const app = {
                      console.error("Web Audio API is not supported in this browser", e);
                  }
             }
-            // 초기화 후 이벤트 리스너 제거
             document.body.removeEventListener('click', initAudioForBeep, { capture: true });
             document.body.removeEventListener('touchstart', initAudioForBeep, { capture: true, passive: true });
         };
         document.body.addEventListener('click', initAudioForBeep, { capture: true, once: true });
         document.body.addEventListener('touchstart', initAudioForBeep, { capture: true, passive: true, once: true });
-        // --- [추가] 끝 ---
     },
      syncOfflineDataSync() {
          if (!app.state.user) return;
@@ -456,19 +444,15 @@ const app = {
                 this.elements.homeBtn.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
                 this.elements.practiceModeControl.classList.remove('hidden');
-                
-                quizMode.reset(); 
-                
+                quizMode.reset();
+                await quizMode.updateRangeInputs();
                 break;
-            
             case 'quiz-play':
                 this.elements.quizModeContainer.classList.remove('hidden');
                 this.elements.homeBtn.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
                 this.elements.practiceModeControl.classList.remove('hidden');
-                
                 quizMode.reset(false);
-                
                 if (!learningMode.state.isWordListReady[app.state.selectedSheet]) {
                     await learningMode.loadWordList();
                 }
@@ -528,39 +512,28 @@ const app = {
             document.getElementById('select-dashboard-btn'), document.getElementById('select-mistakes-btn'),
             this.elements.selectFavoritesBtn
         ].filter(el => el);
-
         elementsToDisable.forEach(el => el.classList.add('pointer-events-none', 'opacity-50'));
 
         const refreshIconHTML = this.elements.refreshBtn.innerHTML;
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
 
         try {
-            // ---------------- [수정 시작] ----------------
-            // 관리자 기능: Firebase 버전 번호 및 타임스탬프 업데이트
-            
-            // 1. 현재 버전 번호를 가져옵니다.
             const versionRef = ref(rt_db, `app_config/vocab_version_${sheet}`);
             const snapshot = await get(versionRef);
             const currentVersion = snapshot.val() || 0;
             
-            // 2. 새 버전 번호와 현재 타임스탬프를 생성합니다.
             const newVersion = currentVersion + 1;
-            const newTimestamp = Date.now(); // 관리자가 배포한 시점
+            const newTimestamp = Date.now();
             
-            // 3. 버전 번호를 RTDB에 씁니다.
             await set(versionRef, newVersion);
 
-            // 4. 배포 타임스탬프를 RTDB에 씁니다.
             const timestampRef = ref(rt_db, `app_config/vocab_timestamp_${sheet}`);
             await set(timestampRef, newTimestamp);
 
-            // 5. (선택적) 관리자 본인의 캐시도 즉시 업데이트합니다.
-            //    loadWordList(true)가 이제 새 타임스탬프를 가져와 저장합니다.
             await learningMode.loadWordList(true); 
             
-            this.updateLastUpdatedText(); // 관리자 본인 화면에도 즉시 반영
+            this.updateLastUpdatedText();
             this.showRefreshSuccessMessage();
-            // ---------------- [수정 끝] ----------------
         } catch(err) {
             this.showToast("데이터 새로고침(버전 업데이트)에 실패했습니다: " + err.message, true);
         } finally {
@@ -605,8 +578,6 @@ const app = {
     updateLastUpdatedText() {
         const grade = this.state.selectedSheet;
         if (this.elements.lastUpdatedText && grade) {
-            // app.state.lastCacheTimestamp는 loadWordList에서 로컬 캐시 또는
-            // Firebase에서 가져온 공통 타임스탬프로 채워집니다.
             const timestamp = this.state.lastCacheTimestamp[grade];
             if (timestamp) {
                 const d = new Date(timestamp);
@@ -667,7 +638,6 @@ const app = {
     }
 };
 
-// --- [추가] 비프음 재생 관련 함수 (word 앱과 동일) ---
 function playSingleBeep({ frequency, duration = 0.1, type = 'sine', gain = 0.3, endFrequency }) {
     if (!app.state.audioContext) {
         console.warn("AudioContext not initialized. Cannot play beep.");
@@ -717,7 +687,6 @@ const incorrectBeep = {
         { delay: 90, frequency: 400, duration: 0.07, type: 'square', gain: 0.15 }
     ]
 };
-// --- [추가] 끝 ---
 
 
 const imageDBCache = {
@@ -881,20 +850,18 @@ const api = {
         }
 
         const cacheKey = processedText;
-        let ttsAudioContext = null; // TTS용 임시 컨텍스트
+        let ttsAudioContext = null;
         try {
             const cachedAudio = await audioDBCache.getAudio(cacheKey);
             if (cachedAudio) {
-                // --- [수정] 비프음 컨텍스트와 분리 ---
                 ttsAudioContext = new (window.AudioContext || window.webkitAudioContext)();
                 if(ttsAudioContext.state === 'suspended') await ttsAudioContext.resume();
-                const audioBuffer = await ttsAudioContext.decodeAudioData(cachedAudio.slice(0)); // copy buffer
+                const audioBuffer = await ttsAudioContext.decodeAudioData(cachedAudio.slice(0));
                 const source = ttsAudioContext.createBufferSource();
                 source.buffer = audioBuffer;
                 source.connect(ttsAudioContext.destination);
                 source.start(0);
                 source.onended = () => ttsAudioContext.close();
-                // --- [수정] 끝 ---
                 return;
             }
 
@@ -920,9 +887,8 @@ const api = {
             if (data.audioContent) {
                 const audioBlob = new Blob([Uint8Array.from(atob(data.audioContent), c => c.charCodeAt(0))], { type: 'audio/mp3' });
                 const arrayBuffer = await audioBlob.arrayBuffer();
-                audioDBCache.saveAudio(cacheKey, arrayBuffer.slice(0)); // Save a copy
+                audioDBCache.saveAudio(cacheKey, arrayBuffer.slice(0));
 
-                // --- [수정] 비프음 컨텍스트와 분리 ---
                 ttsAudioContext = new (window.AudioContext || window.webkitAudioContext)();
                 if(ttsAudioContext.state === 'suspended') await ttsAudioContext.resume();
                 const audioBuffer = await ttsAudioContext.decodeAudioData(arrayBuffer);
@@ -931,17 +897,14 @@ const api = {
                 source.connect(ttsAudioContext.destination);
                 source.start(0);
                 source.onended = () => ttsAudioContext.close();
-                // --- [수정] 끝 ---
             } else {
                  throw new Error("No audio content received from Google TTS API");
             }
         } catch (error) {
             console.error('Error fetching/playing TTS audio:', error);
-             // --- [추가] 에러 시에도 컨텍스트 닫기 ---
              if (ttsAudioContext && ttsAudioContext.state !== 'closed') {
                  ttsAudioContext.close();
              }
-             // --- [추가] 끝 ---
         }
     },
     async copyToClipboard(text) {
@@ -1670,6 +1633,7 @@ const quizMode = {
         sessionAnsweredInSet: 0,
         sessionCorrectInSet: 0,
         sessionMistakes: [],
+        answeredWords: new Set(),
         preloadedQuizzes: {
             '1y': { 'MULTIPLE_CHOICE_MEANING': null, 'FILL_IN_THE_BLANK': null, 'MULTIPLE_CHOICE_DEFINITION': null },
             '2y': { 'MULTIPLE_CHOICE_MEANING': null, 'FILL_IN_THE_BLANK': null, 'MULTIPLE_CHOICE_DEFINITION': null },
@@ -1678,6 +1642,7 @@ const quizMode = {
         isPreloading: {
             '1y': {}, '2y': {}, '3y': {}
         },
+        currentRangeInputTarget: null,
     },
     elements: {},
     init() {
@@ -1686,6 +1651,8 @@ const quizMode = {
             startMeaningQuizBtn: document.getElementById('start-meaning-quiz-btn'),
             startBlankQuizBtn: document.getElementById('start-blank-quiz-btn'),
             startDefinitionQuizBtn: document.getElementById('start-definition-quiz-btn'),
+            quizRangeStart: document.getElementById('quiz-range-start'),
+            quizRangeEnd: document.getElementById('quiz-range-end'),
             loader: document.getElementById('quiz-loader'),
             loaderText: document.getElementById('quiz-loader-text'),
             contentContainer: document.getElementById('quiz-content-container'),
@@ -1697,6 +1664,12 @@ const quizMode = {
             quizResultScore: document.getElementById('quiz-result-score'),
             quizResultMistakesBtn: document.getElementById('quiz-result-mistakes-btn'),
             quizResultContinueBtn: document.getElementById('quiz-result-continue-btn'),
+            rangeInputModal: document.getElementById('range-input-modal'),
+            rangeInputLabel: document.getElementById('range-input-label'),
+            quizRangeLabel: document.getElementById('quiz-range-label'),
+            rangeInputField: document.getElementById('range-input-field'),
+            rangeInputCancelBtn: document.getElementById('range-input-cancel-btn'),
+            rangeInputConfirmBtn: document.getElementById('range-input-confirm-btn'),
         };
         this.bindEvents();
     },
@@ -1705,6 +1678,17 @@ const quizMode = {
         this.elements.startBlankQuizBtn.addEventListener('click', () => this.start('FILL_IN_THE_BLANK'));
         this.elements.startDefinitionQuizBtn.addEventListener('click', () => this.start('MULTIPLE_CHOICE_DEFINITION'));
 
+        this.elements.quizRangeStart.addEventListener('click', (e) => this.promptForRangeValue(e.target));
+        this.elements.quizRangeEnd.addEventListener('click', (e) => this.promptForRangeValue(e.target));
+
+        this.elements.rangeInputConfirmBtn.addEventListener('click', () => this.confirmRangeInput());
+        this.elements.rangeInputCancelBtn.addEventListener('click', () => this.hideRangeInput());
+        this.elements.rangeInputModal.addEventListener('click', () => this.hideRangeInput());
+        this.elements.rangeInputField.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.confirmRangeInput();
+            if (e.key === 'Escape') this.hideRangeInput();
+        });
+        this.elements.quizRangeLabel.addEventListener('click', () => this.resetQuizRange());
         this.elements.quizResultContinueBtn.addEventListener('click', () => this.continueAfterResult());
         this.elements.quizResultMistakesBtn.addEventListener('click', () => this.reviewSessionMistakes());
 
@@ -1731,6 +1715,73 @@ const quizMode = {
             }
         });
     },
+    promptForRangeValue(targetButton) {
+        if (!targetButton) return;
+        this.state.currentRangeInputTarget = targetButton;
+        const isStart = targetButton.id === 'quiz-range-start';
+        const min = parseInt(targetButton.dataset.min) || 1;
+        const max = parseInt(targetButton.dataset.max) || 1;
+        
+        const labelText = isStart ? `시작번호 (1-${max}) :` : `마지막번호 (1-${max}) :`;
+        this.elements.rangeInputLabel.textContent = labelText;
+        this.elements.rangeInputField.value = targetButton.textContent;
+        this.elements.rangeInputField.min = min;
+        this.elements.rangeInputField.max = max;
+        
+        this.elements.rangeInputModal.classList.remove('hidden');
+        this.elements.rangeInputField.focus();
+        this.elements.rangeInputField.select();
+    },
+    hideRangeInput() {
+        this.elements.rangeInputModal.classList.add('hidden');
+        this.state.currentRangeInputTarget = null;
+    },
+    confirmRangeInput() {
+        const targetButton = this.state.currentRangeInputTarget;
+        if (!targetButton) return;
+
+        const min = parseInt(targetButton.dataset.min) || 1;
+        const max = parseInt(targetButton.dataset.max) || 1;
+        const currentValue = targetButton.textContent;
+        const newValueStr = this.elements.rangeInputField.value;
+
+        if (newValueStr !== null && newValueStr.trim() !== '') {
+            let newValue = parseInt(newValueStr);
+            if (!isNaN(newValue)) {
+                newValue = Math.max(min, Math.min(max, newValue));
+                targetButton.textContent = newValue;
+
+                const grade = app.state.selectedSheet;
+                if (grade) {
+                    const storageKey = targetButton.id === 'quiz-range-start' 
+                                       ? app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_START(grade) 
+                                       : app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_END(grade);
+                    try {
+                        localStorage.setItem(storageKey, newValue);
+                    } catch (e) {
+                        console.error("Error saving quiz range to localStorage", e);
+                    }
+                }
+            } else {
+                app.showToast("숫자만 입력 가능합니다.", true);
+            }
+        }
+        this.hideRangeInput();
+    },
+        resetQuizRange() {
+        const grade = app.state.selectedSheet;
+        if (!grade) return;
+        const allWords = learningMode.state.wordList[grade] || [];
+        const totalWords = allWords.length > 0 ? allWords.length : 1;
+        this.elements.quizRangeStart.textContent = 1;
+        this.elements.quizRangeEnd.textContent = totalWords;
+        try {
+            localStorage.setItem(app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_START(grade), 1);
+            localStorage.setItem(app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_END(grade), totalWords);
+        } catch (e) {
+            console.error("Error saving reset quiz range to localStorage", e);
+        }        
+    },    
     async start(quizType) {
         this.state.currentQuizType = quizType;
         app.navigateTo('quiz-play', app.state.selectedSheet);
@@ -1743,7 +1794,8 @@ const quizMode = {
         this.state.sessionMistakes = [];
 
         if (showSelection) {
-        this.state.currentQuizType = null;
+            this.state.currentQuizType = null;
+            this.state.answeredWords.clear();
         }
         
         this.elements.loader.querySelector('.loader').style.display = 'block';
@@ -1758,13 +1810,95 @@ const quizMode = {
         this.elements.finishedScreen.classList.add('hidden');
         if (this.elements.quizResultModal) this.elements.quizResultModal.classList.add('hidden');
     },
+    async updateRangeInputs() {
+        const grade = app.state.selectedSheet;
+        if (!grade) return;
+
+        let startValue = 1;
+        let endValue = 1;
+        let totalWords = 1;
+
+        try {
+            if (!learningMode.state.isWordListReady[grade]) {
+                await learningMode.loadWordList();
+            }
+            
+            totalWords = learningMode.state.wordList[grade]?.length || 1;
+            endValue = totalWords;
+
+            const startStorageKey = app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_START(grade);
+            const endStorageKey = app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_END(grade);
+
+            const savedStart = localStorage.getItem(startStorageKey);
+            const savedEnd = localStorage.getItem(endStorageKey);
+
+            if (savedStart !== null) {
+                const parsedStart = parseInt(savedStart);
+                if (!isNaN(parsedStart) && parsedStart >= 1 && parsedStart <= totalWords) {
+                    startValue = parsedStart;
+                } else {
+                    localStorage.removeItem(startStorageKey); 
+                }
+            }
+            if (savedEnd !== null) {
+                const parsedEnd = parseInt(savedEnd);
+                if (!isNaN(parsedEnd) && parsedEnd >= 1 && parsedEnd <= totalWords) {
+                    endValue = parsedEnd;
+                } else {
+                     localStorage.removeItem(endStorageKey); 
+                }
+            }
+
+        } catch (error) {
+            console.error("Error updating quiz range inputs:", error);
+            startValue = 1;
+            endValue = 1;
+            totalWords = 1;
+        } finally {
+            this.elements.quizRangeStart.textContent = startValue;
+            this.elements.quizRangeStart.dataset.min = 1;
+            this.elements.quizRangeStart.dataset.max = totalWords;
+
+            this.elements.quizRangeEnd.textContent = endValue;
+            this.elements.quizRangeEnd.dataset.min = 1;
+            this.elements.quizRangeEnd.dataset.max = totalWords;
+        }
+    },
     async displayNextQuiz() {
         this.showLoader(true, '다음 문제 생성 중...');
         let nextQuiz = null;
         const grade = app.state.selectedSheet;
         const type = this.state.currentQuizType;
 
-        const preloaded = this.state.preloadedQuizzes[grade]?.[type];
+        let preloaded = this.state.preloadedQuizzes[grade]?.[type];
+        
+        if (preloaded) {
+            const allWords = learningMode.state.wordList[grade] || [];
+            const startVal = parseInt(this.elements.quizRangeStart.textContent) || 1;
+            const endVal = parseInt(this.elements.quizRangeEnd.textContent) || allWords.length;
+            const startNum = Math.min(startVal, endVal);
+            const endNum = Math.max(startVal, endVal);
+            const startIndex = Math.max(0, startNum - 1); 
+            const endIndex = Math.min(allWords.length - 1, endNum - 1); 
+
+            const wordIndex = allWords.findIndex(w => w.word === preloaded.question.word);
+            
+            if (wordIndex < startIndex || wordIndex > endIndex) {
+                preloaded = null; 
+            }
+            
+            if (preloaded && this.state.answeredWords.has(preloaded.question.word)) {
+                preloaded = null;
+            }
+
+            if (preloaded && !this.state.isPracticeMode) {
+                const learnedWordsInType = utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
+                if (learnedWordsInType.includes(preloaded.question.word)) {
+                    preloaded = null;
+                }
+            }
+        }
+
         if (preloaded) {
             nextQuiz = preloaded;
             this.state.preloadedQuizzes[grade][type] = null;
@@ -1773,6 +1907,9 @@ const quizMode = {
 
         if (!nextQuiz) {
             nextQuiz = await this.generateSingleQuiz();
+            if (nextQuiz) {
+                this.preloadNextQuiz(grade, type); 
+            }
         }
 
         if (nextQuiz) {
@@ -1783,7 +1920,9 @@ const quizMode = {
             if (this.state.sessionAnsweredInSet > 0) {
                 this.showSessionResultModal(true);
             } else {
-                this.showFinishedScreen("모든 단어 학습을 완료했거나, 더 이상 만들 퀴즈가 없습니다!");
+                this.showFinishedScreen("No more quizzes!");
+                setTimeout(() => app.navigateTo('quiz'), 800);
+
             }
         }
     },
@@ -1792,13 +1931,31 @@ const quizMode = {
         if (!grade || !learningMode.state.wordList[grade]) return null;
 
         const allWords = learningMode.state.wordList[grade] || [];
-        if (allWords.length < 5) return null;
+        if (allWords.length === 0) return null;
+
+        const startVal = parseInt(this.elements.quizRangeStart.textContent) || 1;
+        const endVal = parseInt(this.elements.quizRangeEnd.textContent) || allWords.length;
+
+        const startNum = Math.min(startVal, endVal);
+        const endNum = Math.max(startVal, endVal);
+
+        const startIndex = Math.max(0, startNum - 1); 
+        const endIndex = Math.min(allWords.length - 1, endNum - 1); 
+
+        const wordsInRange = allWords.slice(startIndex, endIndex + 1);
+        if (wordsInRange.length === 0) return null;
 
         const learnedWordsInType = this.state.isPracticeMode ?
             this.state.practiceLearnedWords :
             utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
 
-        let candidates = allWords.filter(wordObj => {
+        let candidates = wordsInRange.filter(wordObj => {
+             if (this.state.answeredWords.has(wordObj.word)) {
+                 return false;
+             }
+             if (this.state.isPracticeMode) {
+                 return !this.state.practiceLearnedWords.includes(wordObj.word);
+             }
              const status = utils.getWordStatus(wordObj.word);
              return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
         });
@@ -1816,17 +1973,20 @@ const quizMode = {
         if (candidates.length === 0) return null;
 
         candidates.sort(() => 0.5 - Math.random());
+        
+        const usableAllWordsForChoices = allWords.length >= 4 ? allWords : [...allWords, {word: 'dummy1', meaning: '오답1'}, {word: 'dummy2', meaning: '오답2'}, {word: 'dummy3', meaning: '오답3'}];
+
 
         for (const wordData of candidates) {
             let quiz = null;
             if (this.state.currentQuizType === 'MULTIPLE_CHOICE_MEANING') {
-                quiz = this.createMeaningQuiz(wordData, allWords);
+                quiz = this.createMeaningQuiz(wordData, usableAllWordsForChoices);
             } else if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
-                quiz = this.createBlankQuiz(wordData, allWords);
+                quiz = this.createBlankQuiz(wordData, usableAllWordsForChoices);
             } else if (this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION') {
                 const definition = await api.fetchDefinition(wordData.word);
                 if (definition) {
-                    quiz = this.createDefinitionQuiz(wordData, allWords, definition);
+                    quiz = this.createDefinitionQuiz(wordData, usableAllWordsForChoices, definition);
                 }
             }
             if (quiz) return quiz;
@@ -1877,7 +2037,7 @@ const quizMode = {
         this.elements.choices.innerHTML = '';
         choices.forEach((choice, index) => {
             const li = document.createElement('li');
-            li.className = 'choice-item border-2 border-gray-300 p-4 rounded-lg cursor-pointer flex items-start transition-all';
+            li.className = 'choice-item border-2 border-gray-300 py-3 px-4 rounded-lg cursor-pointer flex items-start transition-all text-lg hover:bg-blue-50';
             li.innerHTML = `<span class="font-bold mr-3">${index + 1}.</span> <span>${choice}</span>`;
             li.onclick = () => this.checkAnswer(li, choice);
             this.elements.choices.appendChild(li);
@@ -1898,17 +2058,16 @@ const quizMode = {
         const isPass = selectedChoice === 'USER_PASSED';
         const word = this.state.currentQuiz.question.word;
         const quizType = this.state.currentQuiz.type;
+        
+        this.state.answeredWords.add(word);
 
         selectedLi.classList.add(isCorrect ? 'correct' : 'incorrect');
 
-        // --- [추가] 비프음 재생 ---
         if (isCorrect && !isPass) {
             playSequence(correctBeep);
         } else {
-            playSequence(incorrectBeep); // 오답 또는 PASS
+            playSequence(incorrectBeep);
         }
-        // --- [추가] 끝 ---
-
 
         this.state.sessionAnsweredInSet++;
         if (isCorrect) {
@@ -1942,14 +2101,14 @@ const quizMode = {
     showSessionResultModal(isFinal = false) {
         this.elements.quizResultScore.textContent = `${this.state.sessionAnsweredInSet}문제 중 ${this.state.sessionCorrectInSet}개 정답!`;
         this.elements.quizResultMistakesBtn.classList.toggle('hidden', this.state.sessionMistakes.length === 0);
-        this.elements.quizResultContinueBtn.textContent = isFinal ? "모드 선택으로" : "다음 퀴즈 계속";
+        this.elements.quizResultContinueBtn.textContent = isFinal ? "퀴즈 유형으로" : "다음 퀴즈 계속";
         this.elements.quizResultModal.classList.remove('hidden');
     },
     continueAfterResult() {
         this.elements.quizResultModal.classList.add('hidden');
-        if (this.elements.quizResultContinueBtn.textContent === "모드 선택으로") {
+        if (this.elements.quizResultContinueBtn.textContent === "퀴즈 유형으로") {
             app.syncOfflineData();
-            app.navigateTo('mode', app.state.selectedSheet);
+            app.navigateTo('quiz', app.state.selectedSheet);
             return;
         }
         this.state.sessionAnsweredInSet = 0;
@@ -1986,22 +2145,42 @@ const quizMode = {
 
         try {
             const allWords = learningMode.state.wordList[grade] || [];
-            if (allWords.length < 5) return;
+            if (allWords.length === 0) return;
 
             const learnedWordsInType = utils.getCorrectlyAnsweredWords(type);
+            
+            let candidates;
+            if(quizMode.elements.quizRangeStart && quizMode.elements.quizRangeEnd) {
+                 const startVal = parseInt(quizMode.elements.quizRangeStart.textContent) || 1;
+                 const endVal = parseInt(quizMode.elements.quizRangeEnd.textContent) || allWords.length;
+                 const startNum = Math.min(startVal, endVal);
+                 const endNum = Math.max(startVal, endVal);
+                 const startIndex = Math.max(0, startNum - 1);
+                 const endIndex = Math.min(allWords.length - 1, endNum - 1);
+                 const wordsInRange = allWords.slice(startIndex, endIndex + 1);
 
-            const candidates = allWords.filter(wordObj => {
-                 const status = utils.getWordStatus(wordObj.word);
-                 return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
-            }).sort(() => 0.5 - Math.random());
+                 candidates = wordsInRange.filter(wordObj => {
+                    if (this.state.answeredWords.has(wordObj.word)) return false;
+                    const status = utils.getWordStatus(wordObj.word);
+                    return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
+                 }).sort(() => 0.5 - Math.random());
+            } else {
+                 candidates = allWords.filter(wordObj => {
+                     if (this.state.answeredWords.has(wordObj.word)) return false;
+                     const status = utils.getWordStatus(wordObj.word);
+                     return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
+                 }).sort(() => 0.5 - Math.random());
+            }
+
+            const usableAllWordsForChoices = allWords.length >= 4 ? allWords : [...allWords, {word: 'dummy1', meaning: '오답1'}, {word: 'dummy2', meaning: '오답2'}, {word: 'dummy3', meaning: '오답3'}];
 
             for (const wordData of candidates) {
                  let quiz = null;
-                 if (type === 'MULTIPLE_CHOICE_MEANING') quiz = this.createMeaningQuiz(wordData, allWords);
-                 else if (type === 'FILL_IN_THE_BLANK') quiz = this.createBlankQuiz(wordData, allWords);
+                 if (type === 'MULTIPLE_CHOICE_MEANING') quiz = this.createMeaningQuiz(wordData, usableAllWordsForChoices);
+                 else if (type === 'FILL_IN_THE_BLANK') quiz = this.createBlankQuiz(wordData, usableAllWordsForChoices);
                  else if (type === 'MULTIPLE_CHOICE_DEFINITION') {
                      const definition = await api.fetchDefinition(wordData.word);
-                     if (definition) quiz = this.createDefinitionQuiz(wordData, allWords, definition);
+                     if (definition) quiz = this.createDefinitionQuiz(wordData, usableAllWordsForChoices, definition);
                  }
                  if (quiz) {
                      if (!this.state.preloadedQuizzes[grade]) this.state.preloadedQuizzes[grade] = {};
@@ -2017,13 +2196,14 @@ const quizMode = {
     },
     createMeaningQuiz(correctWordData, allWordsData) {
         const wrongAnswers = new Set();
-        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.meaning !== correctWordData.meaning);
+        let candidates = allWordsData.filter(w => w.word !== correctWordData.word && w.meaning !== correctWordData.meaning);
         candidates.sort(() => 0.5 - Math.random());
         candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.meaning));
         while (wrongAnswers.size < 3 && allWordsData.length > 4) {
             const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
-            if (randomWord.meaning !== correctWordData.meaning) wrongAnswers.add(randomWord.meaning);
+            if (randomWord.word !== correctWordData.word && randomWord.meaning !== correctWordData.meaning) wrongAnswers.add(randomWord.meaning);
         }
+        if(wrongAnswers.size < 3) return null;
         const choices = [correctWordData.meaning, ...Array.from(wrongAnswers)].sort(() => 0.5 - Math.random());
         return { type: 'MULTIPLE_CHOICE_MEANING', question: { word: correctWordData.word }, choices, answer: correctWordData.meaning };
     },
@@ -2045,26 +2225,28 @@ const quizMode = {
         }
 
         const wrongAnswers = new Set();
-        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.word !== correctWordData.word);
+        let candidates = allWordsData.filter(w => w.word !== correctWordData.word);
         candidates.sort(() => 0.5 - Math.random());
         candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.word));
         while (wrongAnswers.size < 3 && allWordsData.length > 4) {
             const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
             if (randomWord.word !== correctWordData.word) wrongAnswers.add(randomWord.word);
         }
+        if(wrongAnswers.size < 3) return null;
         const choices = [correctWordData.word, ...Array.from(wrongAnswers)].sort(() => 0.5 - Math.random());
         return { type: 'FILL_IN_THE_BLANK', question: { sentence_with_blank: sentenceWithBlank, word: correctWordData.word }, choices, answer: correctWordData.word };
     },
     createDefinitionQuiz(correctWordData, allWordsData, definition) {
         if (!definition) return null;
         const wrongAnswers = new Set();
-        let candidates = allWordsData.filter(w => w.pos === correctWordData.pos && w.word !== correctWordData.word);
+        let candidates = allWordsData.filter(w => w.word !== correctWordData.word);
         candidates.sort(() => 0.5 - Math.random());
         candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.word));
         while (wrongAnswers.size < 3 && allWordsData.length > 4) {
             const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
             if (randomWord.word !== correctWordData.word) wrongAnswers.add(randomWord.word);
         }
+        if(wrongAnswers.size < 3) return null;
         const choices = [correctWordData.word, ...Array.from(wrongAnswers)].sort(() => 0.5 - Math.random());
         return { type: 'MULTIPLE_CHOICE_DEFINITION', question: { definition, word: correctWordData.word }, choices, answer: correctWordData.word };
     },
@@ -2124,6 +2306,7 @@ const learningMode = {
             progressBarTrack: document.getElementById('progress-bar-track'),
             progressBarFill: document.getElementById('progress-bar-fill'),
             progressBarHandle: document.getElementById('progress-bar-handle'),
+            progressBarNumber: document.getElementById('progress-bar-number'),
             favoriteBtn: document.getElementById('favorite-btn'),
             favoriteIcon: document.getElementById('favorite-icon'),
         };
@@ -2208,7 +2391,6 @@ const learningMode = {
         }
 
         try {
-            // 캐시가 유효하고, 강제 새로고침이 아닌 경우 캐시 사용
             const cachedData = localStorage.getItem(cacheKey);
             const savedTimestamp = localStorage.getItem(timestampKey);
             if (!shouldForceRefresh && cachedData && savedTimestamp) {
@@ -2216,7 +2398,7 @@ const learningMode = {
                 this.state.wordList[grade] = words.sort((a, b) => a.id - b.id);
                 this.state.isWordListReady[grade] = true;
                 app.state.lastCacheTimestamp[grade] = parseInt(savedTimestamp);
-                app.updateLastUpdatedText(); // UI 업데이트
+                app.updateLastUpdatedText();
                 return;
             }
         } catch (e) {
@@ -2228,7 +2410,6 @@ const learningMode = {
             } catch(e2) {}
         }
 
-        // 캐시가 없거나, 강제 새로고침이 필요한 경우 Firebase에서 데이터 로드
         try {
             const dbRef = ref(rt_db, `${grade}/vocabulary`);
             const snapshot = await get(dbRef);
@@ -2239,33 +2420,24 @@ const learningMode = {
             this.state.wordList[grade] = wordsArray;
             this.state.isWordListReady[grade] = true;
 
-            // ---------------- [수정 시작] ----------------
-            // 로컬 Date.now() 대신 Firebase에 저장된 공통 타임스탬프를 가져옵니다.
             const timestampRef = ref(rt_db, `app_config/vocab_timestamp_${grade}`);
             const timestampSnapshot = await get(timestampRef);
-            // Firebase에 타임스탬프가 없으면 (이전 버전 등) Date.now()를 대체 사용
             const newTimestamp = timestampSnapshot.val() || Date.now(); 
 
-            // 현재 최신 버전 번호를 가져옵니다.
             const versionRef = ref(rt_db, `app_config/vocab_version_${grade}`);
             const versionSnapshot = await get(versionRef);
             const currentRemoteVersion = versionSnapshot.val() || 1;
-            // ---------------- [수정 끝] ----------------
 
             const cachePayload = { words: wordsArray };
              try {
                 localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
                 
-                // ---------------- [수정 시작] ----------------
-                // 로컬의 newTimestamp 대신 가져온 공통 newTimestamp를 저장합니다.
                 localStorage.setItem(timestampKey, newTimestamp.toString());
                 app.state.lastCacheTimestamp[grade] = newTimestamp;
                 
-                // 최신 버전 번호를 로컬에 저장합니다.
                 localStorage.setItem(versionKey, currentRemoteVersion.toString());
-                // ---------------- [수정 끝] ----------------
 
-                app.updateLastUpdatedText(); // UI 업데이트
+                app.updateLastUpdatedText();
 
              } catch(e) { console.error("Error saving word list cache:", e); }
         } catch (error) {
@@ -2552,11 +2724,19 @@ const learningMode = {
         if (total <= 1) {
             this.elements.progressBarFill.style.width = '100%';
             this.elements.progressBarHandle.style.left = '100%';
+            if (this.elements.progressBarNumber) {
+                this.elements.progressBarNumber.textContent = total > 0 ? '1' : '';
+                this.elements.progressBarNumber.style.left = '100%';
+            }
             return;
         }
         const percentage = (index / (total - 1)) * 100;
         this.elements.progressBarFill.style.width = `${percentage}%`;
         this.elements.progressBarHandle.style.left = `calc(${percentage}% - ${this.elements.progressBarHandle.offsetWidth / 2}px)`;
+        if (this.elements.progressBarNumber) {
+            this.elements.progressBarNumber.textContent = index + 1; 
+            this.elements.progressBarNumber.style.left = `${percentage}%`;
+        }       
     },
     handleProgressBarInteraction(e) {
         if (!this.isLearningModeActive()) return;
@@ -2620,5 +2800,10 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
+
+
+
+
 
 
