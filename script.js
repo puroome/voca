@@ -201,7 +201,7 @@ const app = {
 
                 if (!this.state.isAppReady) {
                     this.state.isAppReady = true;
-                    await quizMode.preloadInitialQuizzes();
+                    await quizMode.preloadInitialQuizzesBasedOnSavedRange();
                 }
 
                 const hash = window.location.hash.substring(1);
@@ -318,8 +318,9 @@ const app = {
             } catch (err) {
                 console.error("Error saving practice mode state:", err);
             }
-            if (quizMode.state.currentQuizType) {
-                 quizMode.start(quizMode.state.currentQuizType);
+            if (history.state?.view === 'quiz-play') {
+                 quizMode.reset(false);
+                 quizMode.displayNextQuiz();
             }
         });
 
@@ -521,17 +522,17 @@ const app = {
             const versionRef = ref(rt_db, `app_config/vocab_version_${sheet}`);
             const snapshot = await get(versionRef);
             const currentVersion = snapshot.val() || 0;
-            
+
             const newVersion = currentVersion + 1;
             const newTimestamp = Date.now();
-            
+
             await set(versionRef, newVersion);
 
             const timestampRef = ref(rt_db, `app_config/vocab_timestamp_${sheet}`);
             await set(timestampRef, newTimestamp);
 
-            await learningMode.loadWordList(true); 
-            
+            await learningMode.loadWordList(true);
+
             this.updateLastUpdatedText();
             this.showRefreshSuccessMessage();
         } catch(err) {
@@ -672,16 +673,16 @@ function playSequence(soundDefinition) {
         playSingleBeep(soundDefinition);
     }
 }
-const correctBeep = { 
-    name: '또로롱 (물방울)', 
+const correctBeep = {
+    name: '또로롱 (물방울)',
     sequence: [
         { frequency: 523, duration: 0.07, type: 'triangle', gain: 0.25 },
         { delay: 80, frequency: 659, duration: 0.07, type: 'triangle', gain: 0.25 },
         { delay: 160, frequency: 783, duration: 0.07, type: 'triangle', gain: 0.25 }
     ]
 };
-const incorrectBeep = { 
-    name: '삐빅 (경고)', 
+const incorrectBeep = {
+    name: '삐빅 (경고)',
     sequence: [
         { frequency: 400, duration: 0.07, type: 'square', gain: 0.15 },
         { delay: 90, frequency: 400, duration: 0.07, type: 'square', gain: 0.15 }
@@ -1180,11 +1181,28 @@ const utils = {
         this.saveQuizHistoryToLocal(quizType, isCorrect, grade);
     },
 
-    getCorrectlyAnsweredWords(quizType) {
-        if (!quizType) return [];
+    getCorrectlyAnsweredWords(quizType, grade = app.state.selectedSheet) {
+        if (!quizType || !grade) return [];
+
+        let localUpdates = {};
+         try {
+             const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_PROGRESS_UPDATES(grade);
+             localUpdates = JSON.parse(localStorage.getItem(key) || '{}');
+         } catch(e) { console.warn("Error reading local progress for correct words check:", e); }
+
         const allProgress = app.state.currentProgress;
-        return Object.keys(allProgress)
-            .filter(word => allProgress[word] && allProgress[word][quizType] === 'correct');
+        const combinedKeys = new Set([...Object.keys(allProgress), ...Object.keys(localUpdates)]);
+
+        const correctWords = [];
+        combinedKeys.forEach(word => {
+            const serverState = allProgress[word]?.[quizType];
+            const localState = localUpdates[word]?.[quizType];
+            const finalStatus = localState !== undefined ? localState : serverState;
+            if (finalStatus === 'correct') {
+                correctWords.push(word);
+            }
+        });
+        return correctWords;
     },
 
     getIncorrectWords() {
@@ -1324,7 +1342,14 @@ const utils = {
              console.error("Firebase progress sync (setDoc merge) failed:", error);
              throw error;
          }
-     }
+     },
+    shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+    }
 };
 
 const dashboard = {
@@ -1719,15 +1744,16 @@ const quizMode = {
         if (!targetButton) return;
         this.state.currentRangeInputTarget = targetButton;
         const isStart = targetButton.id === 'quiz-range-start';
+        const grade = app.state.selectedSheet;
         const min = parseInt(targetButton.dataset.min) || 1;
-        const max = parseInt(targetButton.dataset.max) || 1;
-        
+        const max = parseInt(targetButton.dataset.max) || (learningMode.state.wordList[grade]?.length || 1);
+
         const labelText = isStart ? `시작번호 (1-${max}) :` : `마지막번호 (1-${max}) :`;
         this.elements.rangeInputLabel.textContent = labelText;
         this.elements.rangeInputField.value = targetButton.textContent;
         this.elements.rangeInputField.min = min;
         this.elements.rangeInputField.max = max;
-        
+
         this.elements.rangeInputModal.classList.remove('hidden');
         this.elements.rangeInputField.focus();
         this.elements.rangeInputField.select();
@@ -1740,9 +1766,9 @@ const quizMode = {
         const targetButton = this.state.currentRangeInputTarget;
         if (!targetButton) return;
 
+        const grade = app.state.selectedSheet;
         const min = parseInt(targetButton.dataset.min) || 1;
-        const max = parseInt(targetButton.dataset.max) || 1;
-        const currentValue = targetButton.textContent;
+        const max = parseInt(targetButton.dataset.max) || (learningMode.state.wordList[grade]?.length || 1);
         const newValueStr = this.elements.rangeInputField.value;
 
         if (newValueStr !== null && newValueStr.trim() !== '') {
@@ -1751,13 +1777,13 @@ const quizMode = {
                 newValue = Math.max(min, Math.min(max, newValue));
                 targetButton.textContent = newValue;
 
-                const grade = app.state.selectedSheet;
                 if (grade) {
-                    const storageKey = targetButton.id === 'quiz-range-start' 
-                                       ? app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_START(grade) 
+                    const storageKey = targetButton.id === 'quiz-range-start'
+                                       ? app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_START(grade)
                                        : app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_END(grade);
                     try {
                         localStorage.setItem(storageKey, newValue);
+                        this.clearAndPreloadQuizzesForNewRange(grade);
                     } catch (e) {
                         console.error("Error saving quiz range to localStorage", e);
                     }
@@ -1768,7 +1794,7 @@ const quizMode = {
         }
         this.hideRangeInput();
     },
-        resetQuizRange() {
+    resetQuizRange() {
         const grade = app.state.selectedSheet;
         if (!grade) return;
         const allWords = learningMode.state.wordList[grade] || [];
@@ -1778,10 +1804,20 @@ const quizMode = {
         try {
             localStorage.setItem(app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_START(grade), 1);
             localStorage.setItem(app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_END(grade), totalWords);
+            this.clearAndPreloadQuizzesForNewRange(grade);
         } catch (e) {
             console.error("Error saving reset quiz range to localStorage", e);
-        }        
-    },    
+        }
+    },
+    clearAndPreloadQuizzesForNewRange(grade) {
+        if (!grade || !this.state.preloadedQuizzes[grade]) return;
+        const quizTypes = Object.keys(this.state.preloadedQuizzes[grade]);
+        quizTypes.forEach(type => {
+            this.state.preloadedQuizzes[grade][type] = null;
+            if (this.state.isPreloading[grade]) this.state.isPreloading[grade][type] = false;
+            this.preloadNextQuiz(grade, type);
+        });
+    },
     async start(quizType) {
         this.state.currentQuizType = quizType;
         app.navigateTo('quiz-play', app.state.selectedSheet);
@@ -1797,7 +1833,7 @@ const quizMode = {
             this.state.currentQuizType = null;
             this.state.answeredWords.clear();
         }
-        
+
         this.elements.loader.querySelector('.loader').style.display = 'block';
         this.elements.loaderText.textContent = "퀴즈 데이터를 불러오는 중...";
         if (showSelection) {
@@ -1822,7 +1858,7 @@ const quizMode = {
             if (!learningMode.state.isWordListReady[grade]) {
                 await learningMode.loadWordList();
             }
-            
+
             totalWords = learningMode.state.wordList[grade]?.length || 1;
             endValue = totalWords;
 
@@ -1837,16 +1873,20 @@ const quizMode = {
                 if (!isNaN(parsedStart) && parsedStart >= 1 && parsedStart <= totalWords) {
                     startValue = parsedStart;
                 } else {
-                    localStorage.removeItem(startStorageKey); 
+                    localStorage.removeItem(startStorageKey);
                 }
+            } else {
+                localStorage.setItem(startStorageKey, '1');
             }
             if (savedEnd !== null) {
                 const parsedEnd = parseInt(savedEnd);
                 if (!isNaN(parsedEnd) && parsedEnd >= 1 && parsedEnd <= totalWords) {
                     endValue = parsedEnd;
                 } else {
-                     localStorage.removeItem(endStorageKey); 
+                     localStorage.removeItem(endStorageKey);
                 }
+            } else {
+                 localStorage.setItem(endStorageKey, totalWords.toString());
             }
 
         } catch (error) {
@@ -1871,22 +1911,22 @@ const quizMode = {
         const type = this.state.currentQuizType;
 
         let preloaded = this.state.preloadedQuizzes[grade]?.[type];
-        
+
         if (preloaded) {
             const allWords = learningMode.state.wordList[grade] || [];
             const startVal = parseInt(this.elements.quizRangeStart.textContent) || 1;
             const endVal = parseInt(this.elements.quizRangeEnd.textContent) || allWords.length;
             const startNum = Math.min(startVal, endVal);
             const endNum = Math.max(startVal, endVal);
-            const startIndex = Math.max(0, startNum - 1); 
-            const endIndex = Math.min(allWords.length - 1, endNum - 1); 
+            const startIndex = Math.max(0, startNum - 1);
+            const endIndex = Math.min(allWords.length - 1, endNum - 1);
 
             const wordIndex = allWords.findIndex(w => w.word === preloaded.question.word);
-            
+
             if (wordIndex < startIndex || wordIndex > endIndex) {
-                preloaded = null; 
+                preloaded = null;
             }
-            
+
             if (preloaded && this.state.answeredWords.has(preloaded.question.word)) {
                 preloaded = null;
             }
@@ -1902,13 +1942,13 @@ const quizMode = {
         if (preloaded) {
             nextQuiz = preloaded;
             this.state.preloadedQuizzes[grade][type] = null;
-            this.preloadNextQuiz(grade, type);
+            this.preloadNextQuiz(grade, type, nextQuiz.question.word);
         }
 
         if (!nextQuiz) {
             nextQuiz = await this.generateSingleQuiz();
             if (nextQuiz) {
-                this.preloadNextQuiz(grade, type); 
+                this.preloadNextQuiz(grade, type, nextQuiz.question.word);
             }
         }
 
@@ -1921,7 +1961,7 @@ const quizMode = {
                 this.showSessionResultModal(true);
             } else {
                 this.showFinishedScreen("No more quizzes!");
-                setTimeout(() => app.navigateTo('quiz'), 800);
+                setTimeout(() => app.navigateTo('quiz', grade), 800);
 
             }
         }
@@ -1939,8 +1979,8 @@ const quizMode = {
         const startNum = Math.min(startVal, endVal);
         const endNum = Math.max(startVal, endVal);
 
-        const startIndex = Math.max(0, startNum - 1); 
-        const endIndex = Math.min(allWords.length - 1, endNum - 1); 
+        const startIndex = Math.max(0, startNum - 1);
+        const endIndex = Math.min(allWords.length - 1, endNum - 1);
 
         const wordsInRange = allWords.slice(startIndex, endIndex + 1);
         if (wordsInRange.length === 0) return null;
@@ -1954,7 +1994,7 @@ const quizMode = {
                  return false;
              }
              if (this.state.isPracticeMode) {
-                 return !this.state.practiceLearnedWords.includes(wordObj.word);
+                 return true;
              }
              const status = utils.getWordStatus(wordObj.word);
              return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
@@ -1973,7 +2013,7 @@ const quizMode = {
         if (candidates.length === 0) return null;
 
         candidates.sort(() => 0.5 - Math.random());
-        
+
         const usableAllWordsForChoices = allWords.length >= 4 ? allWords : [...allWords, {word: 'dummy1', meaning: '오답1'}, {word: 'dummy2', meaning: '오답2'}, {word: 'dummy3', meaning: '오답3'}];
 
 
@@ -2058,7 +2098,7 @@ const quizMode = {
         const isPass = selectedChoice === 'USER_PASSED';
         const word = this.state.currentQuiz.question.word;
         const quizType = this.state.currentQuiz.type;
-        
+
         this.state.answeredWords.add(word);
 
         selectedLi.classList.add(isCorrect ? 'correct' : 'incorrect');
@@ -2125,17 +2165,36 @@ const quizMode = {
         app.syncOfflineData();
         app.navigateTo('mistakeReview', app.state.selectedSheet, { mistakeWords: mistakes });
     },
-    async preloadInitialQuizzes() {
+    async preloadInitialQuizzesBasedOnSavedRange() {
         for (const grade of ['1y', '2y', '3y']) {
             if (!learningMode.state.isWordListReady[grade]) {
-                await learningMode.loadWordList(false, grade);
+                try { await learningMode.loadWordList(false, grade); } catch(e) { continue; }
             }
+            if (!learningMode.state.isWordListReady[grade]) continue;
+
+            let startValue = 1;
+            let endValue = learningMode.state.wordList[grade]?.length || 1;
+             try {
+                 const savedStart = localStorage.getItem(app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_START(grade));
+                 const savedEnd = localStorage.getItem(app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_END(grade));
+                 const totalWords = learningMode.state.wordList[grade]?.length || 1;
+
+                 if (savedStart !== null) {
+                     const parsedStart = parseInt(savedStart);
+                     if (!isNaN(parsedStart) && parsedStart >= 1 && parsedStart <= totalWords) startValue = parsedStart;
+                 }
+                 if (savedEnd !== null) {
+                     const parsedEnd = parseInt(savedEnd);
+                     if (!isNaN(parsedEnd) && parsedEnd >= 1 && parsedEnd <= totalWords) endValue = parsedEnd;
+                 }
+             } catch(e) { console.warn(`Error reading saved range for ${grade} initial preload:`, e); }
+
             for (const type of ['MULTIPLE_CHOICE_MEANING', 'FILL_IN_THE_BLANK', 'MULTIPLE_CHOICE_DEFINITION']) {
-                this.preloadNextQuiz(grade, type);
+                this.preloadNextQuiz(grade, type, null, { start: startValue, end: endValue });
             }
         }
     },
-    async preloadNextQuiz(grade, type) {
+    async preloadNextQuiz(grade, type, wordToExclude = null, rangeOverride = null) {
         if (!grade || !type || this.state.isPreloading[grade]?.[type] || this.state.preloadedQuizzes[grade]?.[type]) {
             return;
         }
@@ -2144,49 +2203,10 @@ const quizMode = {
         this.state.isPreloading[grade][type] = true;
 
         try {
-            const allWords = learningMode.state.wordList[grade] || [];
-            if (allWords.length === 0) return;
-
-            const learnedWordsInType = utils.getCorrectlyAnsweredWords(type);
-            
-            let candidates;
-            if(quizMode.elements.quizRangeStart && quizMode.elements.quizRangeEnd) {
-                 const startVal = parseInt(quizMode.elements.quizRangeStart.textContent) || 1;
-                 const endVal = parseInt(quizMode.elements.quizRangeEnd.textContent) || allWords.length;
-                 const startNum = Math.min(startVal, endVal);
-                 const endNum = Math.max(startVal, endVal);
-                 const startIndex = Math.max(0, startNum - 1);
-                 const endIndex = Math.min(allWords.length - 1, endNum - 1);
-                 const wordsInRange = allWords.slice(startIndex, endIndex + 1);
-
-                 candidates = wordsInRange.filter(wordObj => {
-                    if (this.state.answeredWords.has(wordObj.word)) return false;
-                    const status = utils.getWordStatus(wordObj.word);
-                    return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
-                 }).sort(() => 0.5 - Math.random());
-            } else {
-                 candidates = allWords.filter(wordObj => {
-                     if (this.state.answeredWords.has(wordObj.word)) return false;
-                     const status = utils.getWordStatus(wordObj.word);
-                     return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
-                 }).sort(() => 0.5 - Math.random());
-            }
-
-            const usableAllWordsForChoices = allWords.length >= 4 ? allWords : [...allWords, {word: 'dummy1', meaning: '오답1'}, {word: 'dummy2', meaning: '오답2'}, {word: 'dummy3', meaning: '오답3'}];
-
-            for (const wordData of candidates) {
-                 let quiz = null;
-                 if (type === 'MULTIPLE_CHOICE_MEANING') quiz = this.createMeaningQuiz(wordData, usableAllWordsForChoices);
-                 else if (type === 'FILL_IN_THE_BLANK') quiz = this.createBlankQuiz(wordData, usableAllWordsForChoices);
-                 else if (type === 'MULTIPLE_CHOICE_DEFINITION') {
-                     const definition = await api.fetchDefinition(wordData.word);
-                     if (definition) quiz = this.createDefinitionQuiz(wordData, usableAllWordsForChoices, definition);
-                 }
-                 if (quiz) {
-                     if (!this.state.preloadedQuizzes[grade]) this.state.preloadedQuizzes[grade] = {};
-                     this.state.preloadedQuizzes[grade][type] = quiz;
-                     return;
-                 }
+            const quiz = await this._generateSingleQuizForPreload(grade, type, wordToExclude, rangeOverride);
+            if (quiz) {
+                if (!this.state.preloadedQuizzes[grade]) this.state.preloadedQuizzes[grade] = {};
+                 this.state.preloadedQuizzes[grade][type] = quiz;
             }
         } catch(e) {
             console.error(`Preloading ${grade}-${type} failed:`, e);
@@ -2194,17 +2214,87 @@ const quizMode = {
             if (this.state.isPreloading[grade]) this.state.isPreloading[grade][type] = false;
         }
     },
+    async _generateSingleQuizForPreload(grade, quizType, wordToExclude = null, rangeOverride = null) {
+        const allWords = learningMode.state.wordList[grade] || [];
+        if (allWords.length === 0) return null;
+
+        let startVal, endVal;
+        if (rangeOverride) {
+            startVal = rangeOverride.start;
+            endVal = rangeOverride.end;
+        } else {
+             startVal = parseInt(this.elements.quizRangeStart.textContent) || 1;
+             endVal = parseInt(this.elements.quizRangeEnd.textContent) || allWords.length;
+        }
+
+        const startNum = Math.min(startVal, endVal);
+        const endNum = Math.max(startVal, endVal);
+        const startIndex = Math.max(0, startNum - 1);
+        const endIndex = Math.min(allWords.length - 1, endNum - 1);
+        const wordsInRange = allWords.slice(startIndex, endIndex + 1);
+
+        if (wordsInRange.length === 0) return null;
+
+        let localUpdates = {};
+        try {
+            const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_PROGRESS_UPDATES(grade);
+            localUpdates = JSON.parse(localStorage.getItem(key) || '{}');
+        } catch(e) { console.warn(`Error reading local progress for ${grade} preload:`, e); }
+
+        const learnedWordsInType = utils.getCorrectlyAnsweredWords(quizType, grade);
+
+        let candidates = wordsInRange.filter(wordObj => {
+            const word = wordObj.word;
+            if (word === wordToExclude) return false;
+            if (this.state.answeredWords.has(word)) return false;
+            if (this.state.isPracticeMode) return true;
+
+            const serverStatus = app.state.currentProgress[word]?.[quizType];
+            const localStatus = localUpdates[word]?.[quizType];
+            const finalStatus = localStatus !== undefined ? localStatus : serverStatus;
+
+            return finalStatus !== 'correct';
+        });
+
+        if (quizType === 'FILL_IN_THE_BLANK') {
+            candidates = candidates.filter(word => {
+                if (!word.sample || word.sample.trim() === '') return false;
+                const firstLine = word.sample.split('\n')[0];
+                const placeholderRegex = /\*(.*?)\*/;
+                const wordRegex = new RegExp(`\\b${word.word}\\b`, 'i');
+                return placeholderRegex.test(firstLine) || wordRegex.test(firstLine);
+            });
+        }
+
+        if (candidates.length === 0) return null;
+
+        candidates.sort(() => 0.5 - Math.random());
+
+        const usableAllWordsForChoices = allWords.length >= 4 ? allWords : [...allWords, {word: 'dummy1', meaning: '오답1'}, {word: 'dummy2', meaning: '오답2'}, {word: 'dummy3', meaning: '오답3'}];
+
+        const wordData = candidates[0];
+        let quiz = null;
+        if (quizType === 'MULTIPLE_CHOICE_MEANING') quiz = this.createMeaningQuiz(wordData, usableAllWordsForChoices);
+        else if (quizType === 'FILL_IN_THE_BLANK') quiz = this.createBlankQuiz(wordData, usableAllWordsForChoices);
+        else if (quizType === 'MULTIPLE_CHOICE_DEFINITION') {
+             const definition = await api.fetchDefinition(wordData.word);
+             if (definition) quiz = this.createDefinitionQuiz(wordData, usableAllWordsForChoices, definition);
+        }
+
+        return quiz;
+    },
     createMeaningQuiz(correctWordData, allWordsData) {
         const wrongAnswers = new Set();
         let candidates = allWordsData.filter(w => w.word !== correctWordData.word && w.meaning !== correctWordData.meaning);
-        candidates.sort(() => 0.5 - Math.random());
+        utils.shuffleArray(candidates);
         candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.meaning));
         while (wrongAnswers.size < 3 && allWordsData.length > 4) {
             const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
-            if (randomWord.word !== correctWordData.word && randomWord.meaning !== correctWordData.meaning) wrongAnswers.add(randomWord.meaning);
+            if (randomWord.word !== correctWordData.word && randomWord.meaning !== correctWordData.meaning && !wrongAnswers.has(randomWord.meaning)) wrongAnswers.add(randomWord.meaning);
         }
         if(wrongAnswers.size < 3) return null;
-        const choices = [correctWordData.meaning, ...Array.from(wrongAnswers)].sort(() => 0.5 - Math.random());
+        const choices = [correctWordData.meaning, ...Array.from(wrongAnswers)];
+        utils.shuffleArray(choices);
         return { type: 'MULTIPLE_CHOICE_MEANING', question: { word: correctWordData.word }, choices, answer: correctWordData.meaning };
     },
     createBlankQuiz(correctWordData, allWordsData) {
@@ -2226,28 +2316,30 @@ const quizMode = {
 
         const wrongAnswers = new Set();
         let candidates = allWordsData.filter(w => w.word !== correctWordData.word);
-        candidates.sort(() => 0.5 - Math.random());
+        utils.shuffleArray(candidates);
         candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.word));
         while (wrongAnswers.size < 3 && allWordsData.length > 4) {
             const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
-            if (randomWord.word !== correctWordData.word) wrongAnswers.add(randomWord.word);
+            if (randomWord.word !== correctWordData.word && !wrongAnswers.has(randomWord.word)) wrongAnswers.add(randomWord.word);
         }
         if(wrongAnswers.size < 3) return null;
-        const choices = [correctWordData.word, ...Array.from(wrongAnswers)].sort(() => 0.5 - Math.random());
+        const choices = [correctWordData.word, ...Array.from(wrongAnswers)];
+        utils.shuffleArray(choices);
         return { type: 'FILL_IN_THE_BLANK', question: { sentence_with_blank: sentenceWithBlank, word: correctWordData.word }, choices, answer: correctWordData.word };
     },
     createDefinitionQuiz(correctWordData, allWordsData, definition) {
         if (!definition) return null;
         const wrongAnswers = new Set();
         let candidates = allWordsData.filter(w => w.word !== correctWordData.word);
-        candidates.sort(() => 0.5 - Math.random());
+        utils.shuffleArray(candidates);
         candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.word));
         while (wrongAnswers.size < 3 && allWordsData.length > 4) {
             const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
-            if (randomWord.word !== correctWordData.word) wrongAnswers.add(randomWord.word);
+            if (randomWord.word !== correctWordData.word && !wrongAnswers.has(randomWord.word)) wrongAnswers.add(randomWord.word);
         }
         if(wrongAnswers.size < 3) return null;
-        const choices = [correctWordData.word, ...Array.from(wrongAnswers)].sort(() => 0.5 - Math.random());
+        const choices = [correctWordData.word, ...Array.from(wrongAnswers)];
+        utils.shuffleArray(choices);
         return { type: 'MULTIPLE_CHOICE_DEFINITION', question: { definition, word: correctWordData.word }, choices, answer: correctWordData.word };
     },
     showLoader(isLoading, message = "퀴즈 데이터를 불러오는 중...") {
@@ -2370,20 +2462,19 @@ const learningMode = {
                 const localVersion = parseInt(localStorage.getItem(versionKey) || '0');
 
                 if (remoteVersion > localVersion) {
-                    console.log(`[${grade}] 새 버전 감지 (Remote: ${remoteVersion} > Local: ${localVersion}). 캐시를 강제 새로고침합니다.`);
                     forceRefreshDueToVersion = true;
                 }
             } catch (e) {
                 console.error("버전 확인 중 오류 발생:", e);
-                forceRefreshDueToVersion = true; 
+                forceRefreshDueToVersion = true;
             }
         }
-        
+
         const shouldForceRefresh = force || forceRefreshDueToVersion;
 
         if (shouldForceRefresh) {
-            try { 
-                localStorage.removeItem(cacheKey); 
+            try {
+                localStorage.removeItem(cacheKey);
                 localStorage.removeItem(timestampKey);
                 localStorage.removeItem(versionKey);
             } catch(e) {}
@@ -2422,7 +2513,7 @@ const learningMode = {
 
             const timestampRef = ref(rt_db, `app_config/vocab_timestamp_${grade}`);
             const timestampSnapshot = await get(timestampRef);
-            const newTimestamp = timestampSnapshot.val() || Date.now(); 
+            const newTimestamp = timestampSnapshot.val() || Date.now();
 
             const versionRef = ref(rt_db, `app_config/vocab_version_${grade}`);
             const versionSnapshot = await get(versionRef);
@@ -2431,10 +2522,10 @@ const learningMode = {
             const cachePayload = { words: wordsArray };
              try {
                 localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
-                
+
                 localStorage.setItem(timestampKey, newTimestamp.toString());
                 app.state.lastCacheTimestamp[grade] = newTimestamp;
-                
+
                 localStorage.setItem(versionKey, currentRemoteVersion.toString());
 
                 app.updateLastUpdatedText();
@@ -2734,9 +2825,9 @@ const learningMode = {
         this.elements.progressBarFill.style.width = `${percentage}%`;
         this.elements.progressBarHandle.style.left = `calc(${percentage}% - ${this.elements.progressBarHandle.offsetWidth / 2}px)`;
         if (this.elements.progressBarNumber) {
-            this.elements.progressBarNumber.textContent = index + 1; 
+            this.elements.progressBarNumber.textContent = index + 1;
             this.elements.progressBarNumber.style.left = `${percentage}%`;
-        }       
+        }
     },
     handleProgressBarInteraction(e) {
         if (!this.isLearningModeActive()) return;
@@ -2759,24 +2850,19 @@ const learningMode = {
 
         switch (e.type) {
             case 'mousedown':
-                this.state.isDragging = true;
-                handleInteraction(e.clientX);
-                break;
-            case 'mousemove':
-                if (this.state.isDragging) handleInteraction(e.clientX);
-                break;
-            case 'mouseup':
-            case 'mouseleave':
-                this.state.isDragging = false;
-                break;
             case 'touchstart':
                 e.preventDefault();
                 this.state.isDragging = true;
-                handleInteraction(e.touches[0].clientX);
+                handleInteraction(e.type === 'touchstart' ? e.touches[0].clientX : e.clientX);
                 break;
+            case 'mousemove':
             case 'touchmove':
-                if (this.state.isDragging) handleInteraction(e.touches[0].clientX);
+                if (this.state.isDragging) {
+                    handleInteraction(e.type === 'touchmove' ? e.touches[0].clientX : e.clientX);
+                }
                 break;
+            case 'mouseup':
+            case 'mouseleave':
             case 'touchend':
                 this.state.isDragging = false;
                 break;
