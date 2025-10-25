@@ -1921,7 +1921,7 @@ const quizMode = {
                 this.showSessionResultModal(true);
             } else {
                 this.showFinishedScreen("더 이상 만들 퀴즈가 없습니다!");
-                setTimeout(() => app.navigateTo('quiz'), 1000);
+                setTimeout(() => app.navigateTo('quiz'), 500);
 
             }
         }
@@ -2800,4 +2800,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
