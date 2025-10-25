@@ -313,13 +313,11 @@ const app = {
 
         this.elements.practiceModeCheckbox.addEventListener('change', (e) => {
             quizMode.state.isPracticeMode = e.target.checked;
-
             try {
                 localStorage.setItem(this.state.LOCAL_STORAGE_KEYS.PRACTICE_MODE, quizMode.state.isPracticeMode);
             } catch (err) {
                 console.error("Error saving practice mode state:", err);
             }
-            
             if (quizMode.state.currentQuizType) {
                  quizMode.start(quizMode.state.currentQuizType);
             }
@@ -1794,7 +1792,7 @@ const quizMode = {
         this.state.sessionAnsweredInSet = 0;
         this.state.sessionCorrectInSet = 0;
         this.state.sessionMistakes = [];
-        
+
         if (showSelection) {
             this.state.currentQuizType = null;
             this.state.answeredWords.clear();
@@ -2802,12 +2800,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
-
-
-
-
-
-
-
