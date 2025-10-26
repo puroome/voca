@@ -837,12 +837,23 @@ const api = {
         activityTracker.recordActivity();
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
 
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         if (!isIOS && 'speechSynthesis' in window) {
             try {
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(processedText);
-                utterance.lang = 'en-US';
+                utterance.lang = 'en-US'; // 기본 언어 설정 유지
+
+                // **[추가 로직]** 특정 음성 검색 및 설정
+                const TARGET_VOICE_NAME = "Microsoft Ana Online (Natural) - English (United States)";
+                const voices = window.speechSynthesis.getVoices();
+                const selectedVoice = voices.find(v => v.name === TARGET_VOICE_NAME);
+
+                if (selectedVoice) {
+                    utterance.voice = selectedVoice;
+                }
+                // 특정 음성을 찾지 못하면 lang='en-US'에 해당하는 기본 음성 사용
+
                 window.speechSynthesis.speak(utterance);
                 return;
             } catch (error) {
@@ -2886,3 +2897,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
