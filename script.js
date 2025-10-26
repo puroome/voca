@@ -838,39 +838,11 @@ const api = {
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
 
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-
         if (!isIOS && 'speechSynthesis' in window) {
             try {
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(processedText);
                 utterance.lang = 'en-US';
-
-                const isWindows = navigator.userAgent.includes('Windows');
-                const TARGET_VOICE_NAME = "Microsoft Ana Online (Natural) - English (United States) (en-US) (Online)";
-                let foundVoice = null;
-
-                const getVoices = () => {
-                    return new Promise(resolve => {
-                        let voices = window.speechSynthesis.getVoices();
-                        if (voices.length) {
-                            resolve(voices);
-                            return;
-                        }
-                        window.speechSynthesis.onvoiceschanged = () => {
-                            resolve(window.speechSynthesis.getVoices());
-                        };
-                    });
-                };
-
-                if (isWindows) {
-                    const voices = await getVoices();
-                    foundVoice = voices.find(voice => voice.name === TARGET_VOICE_NAME);
-                }
-
-                if (foundVoice) {
-                    utterance.voice = foundVoice;
-                }
-
                 window.speechSynthesis.speak(utterance);
                 return;
             } catch (error) {
@@ -936,36 +908,6 @@ const api = {
              }
         }
     },
-    async copyToClipboard(text) {
-        if (navigator.clipboard && text) {
-            try { await navigator.clipboard.writeText(text); }
-            catch (err) { console.warn("Clipboard write failed:", err); }
-        }
-    },
-    async fetchDefinition(word) {
-        if (!word) return null;
-        const apiKey = app.config.MERRIAM_WEBSTER_API_KEY;
-        const url = `https://dictionaryapi.com/api/v3/references/learners/json/${encodeURIComponent(word)}?key=${apiKey}`;
-        try {
-            const response = await fetch(url);
-            if (!response.ok) {
-                console.warn(`Definition fetch failed for ${word}: Status ${response.status}`);
-                return null;
-            }
-            const data = await response.json();
-            if (Array.isArray(data) && data.length > 0) {
-                const firstResult = data[0];
-                if (typeof firstResult === 'object' && firstResult !== null && firstResult.shortdef && Array.isArray(firstResult.shortdef) && firstResult.shortdef.length > 0) {
-                    return firstResult.shortdef[0].split(';')[0].trim();
-                }
-            }
-            return null;
-        } catch (e) {
-            console.error(`Error fetching definition for ${word}:`, e);
-            return null;
-        }
-    }
-};
     async copyToClipboard(text) {
         if (navigator.clipboard && text) {
             try { await navigator.clipboard.writeText(text); }
@@ -2944,4 +2886,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
