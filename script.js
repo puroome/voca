@@ -843,35 +843,6 @@ const api = {
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(processedText);
                 utterance.lang = 'en-US';
-
-                // --- [고품질 음성 우선 선택 로직] ---
-                const TARGET_VOICE_NAME = 'Microsoft Ana Online (Natural) - English (United States) (en-US) (Online)';
-                let selectedVoice = null;
-                
-                // 음성 목록을 가져옵니다.
-                let voices = window.speechSynthesis.getVoices();
-
-                // 음성 목록이 비어있다면 onvoiceschanged 이벤트를 기다립니다.
-                if (voices.length === 0) {
-                    await new Promise(resolve => {
-                        window.speechSynthesis.onvoiceschanged = () => {
-                            voices = window.speechSynthesis.getVoices();
-                            resolve();
-                        };
-                        // 혹시 이벤트가 이미 발생했는데, onvoiceschanged에 등록하는 시점 때문에 놓쳤을 경우를 대비하여
-                        // 짧은 타임아웃을 주어 resolve 시킵니다. (안전 장치)
-                        setTimeout(resolve, 1000);
-                    });
-                }
-                
-                // 특정 음성을 찾아 지정합니다.
-                // onvoiceschanged를 통해 음성 목록이 로드된 후 다시 탐색합니다.
-                selectedVoice = voices.find(voice => voice.name === TARGET_VOICE_NAME);
-                if (selectedVoice) {
-                    utterance.voice = selectedVoice;
-                }
-                // --- [로직 끝] ---
-
                 window.speechSynthesis.speak(utterance);
                 return;
             } catch (error) {
@@ -2915,5 +2886,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
