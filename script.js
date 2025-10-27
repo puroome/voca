@@ -97,7 +97,10 @@ const app = {
             '2y': 'https://docs.google.com/spreadsheets/d/1Xydj0im3Cqq9JhjN8IezZ-7DBp1-DV703cCIb3ORdc8/edit?usp=sharing',
             '3y': 'https://docs.google.com/spreadsheets/d/1Z_n9IshFSC5cBBW6IkZNfQsLb2BBrp9QeOlsGsCkn2Y/edit?usp=sharing'
         },
-        backgroundImages: [],
+        backgroundImages: [
+            'https://res.cloudinary.com/dx07dymqs/image/upload/v1761528368/bg1_mpvyd4.webp',
+            'https://res.cloudinary.com/dx07dymqs/image/upload/v1761528368/bg2_e90yys.webp'
+        ],
         adminEmail: 'puroome@gmail.com'
     },
     state: {
@@ -164,7 +167,6 @@ const app = {
         await Promise.all([
             translationDBCache.init(),
             audioDBCache.init(),
-            imageDBCache.init(),
             this.fetchAndSetBackgroundImages()
         ]).catch(e => console.error("Cache or image init failed", e));
 
@@ -496,7 +498,7 @@ const app = {
             case 'grade':
             default:
                 this.elements.gradeSelectionScreen.classList.remove('hidden');
-                this.setBackgroundImage();
+                this.fetchAndSetBackgroundImages();
                 this.loadGradeImages();
                 quizMode.reset();
                 learningMode.reset();
@@ -593,48 +595,25 @@ const app = {
              this.elements.lastUpdatedText.classList.add('hidden');
         }
     },
-    async setBackgroundImage() {
-        if (this.config.backgroundImages.length === 0) return;
-        const randomIndex = Math.floor(Math.random() * this.config.backgroundImages.length);
-        const imageUrl = this.config.backgroundImages[randomIndex];
-        const cachedUrl = await imageDBCache.loadImage(imageUrl);
-        document.documentElement.style.setProperty('--bg-image', `url('${cachedUrl}')`);
-    },
     async fetchAndSetBackgroundImages() {
-        const cloudName = 'dx07dymqs';
-        const tagName = 'bgimage';
-        const url = `https://res.cloudinary.com/${cloudName}/image/list/${tagName}.json`;
+        const images = this.config.backgroundImages;
+        if (images.length === 0) return;
+        
+        const randomIndex = Math.floor(Math.random() * images.length);
+        const imageUrl = images[randomIndex];
 
-        try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`Cloudinary API Error: ${response.statusText}`);
-            const data = await response.json();
-
-            this.config.backgroundImages = data.resources.map(img =>
-                `https://res.cloudinary.com/${cloudName}/image/upload/v${img.version}/${img.public_id}.${img.format}`
-            );
-
-        } catch (error) {
-            console.warn("Failed to fetch background images from Cloudinary, using fallback.", error);
-            this.config.backgroundImages = [
-                'https://i.imgur.com/EvyV4x7.jpeg',
-                'https://i.imgur.com/xsnT8kO.jpeg',
-                'https://i.imgur.com/6gZtYDb.jpeg'
-            ];
-        } finally {
-            this.setBackgroundImage();
-        }
+        document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
     },
     async loadGradeImages() {
         document.querySelectorAll('.grade-select-card img').forEach(async (img) => {
-            img.src = await imageDBCache.loadImage(img.src);
+            img.src = img.src;
         });
     },
     async loadModeImages() {
         const ids = ['#select-learning-btn img', '#select-quiz-btn img', '#start-meaning-quiz-btn img', '#start-blank-quiz-btn img', '#start-definition-quiz-btn img'];
         ids.forEach(async (id) => {
             const img = document.querySelector(id);
-            if (img) img.src = await imageDBCache.loadImage(img.src);
+            if (img) img.src = img.src;
         });
     }
 };
@@ -689,57 +668,6 @@ const incorrectBeep = {
     ]
 };
 
-
-const imageDBCache = {
-    db: null, dbName: 'imageCacheDB', storeName: 'imageStore',
-    init() {
-        return new Promise((resolve, reject) => {
-            if (!('indexedDB' in window)) { console.warn('IndexedDB for images not supported.'); return resolve(); }
-            const request = indexedDB.open(this.dbName, 1);
-            request.onupgradeneeded = e => e.target.result.createObjectStore(this.storeName);
-            request.onsuccess = e => { this.db = e.target.result; resolve(); };
-            request.onerror = e => reject(e.target.error);
-        });
-    },
-    async loadImage(url) {
-        if (!this.db || !url) return url;
-        try {
-            const cachedBlob = await this.getImage(url);
-            if (cachedBlob) return URL.createObjectURL(cachedBlob);
-
-            const response = await fetch(url);
-            if (!response.ok) {
-                 console.warn(`Failed to fetch image: ${url}, Status: ${response.status}`);
-                 return url;
-            }
-            const blob = await response.blob();
-            this.saveImage(url, blob);
-            return URL.createObjectURL(blob);
-        } catch (e) {
-            console.error(`Error loading/caching image ${url}:`, e);
-            return url;
-        }
-    },
-    getImage: key => new Promise((resolve) => {
-        if (!imageDBCache.db) return resolve(null);
-        try {
-            const request = imageDBCache.db.transaction([imageDBCache.storeName]).objectStore(imageDBCache.storeName).get(key);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = (e) => { console.error("IndexedDB getImage error:", e.target.error); resolve(null); };
-        } catch (e) {
-             console.error("IndexedDB transaction error (getImage):", e); resolve(null);
-        }
-    }),
-    saveImage: (key, blob) => {
-        if (!imageDBCache.db) return;
-        try {
-             const tx = imageDBCache.db.transaction([imageDBCache.storeName], 'readwrite');
-             tx.objectStore(imageDBCache.storeName).put(blob, key);
-             tx.onerror = (e) => console.error("IndexedDB saveImage transaction error:", e.target.error);
-        }
-        catch (e) { console.error("IndexedDB saveImage error:", e); }
-    }
-};
 
 const audioDBCache = {
     db: null, dbName: 'ttsAudioCacheDB_voca', storeName: 'audioStore',
@@ -842,9 +770,8 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             try {
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(processedText);
-                utterance.lang = 'en-US'; // 기본 언어 설정 유지
+                utterance.lang = 'en-US'; 
 
-                // **[추가 로직]** 특정 음성 검색 및 설정
                 const TARGET_VOICE_NAME = "Microsoft Ana Online (Natural) - English (United States)";
                 const voices = window.speechSynthesis.getVoices();
                 const selectedVoice = voices.find(v => v.name === TARGET_VOICE_NAME);
@@ -852,7 +779,6 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
                 if (selectedVoice) {
                     utterance.voice = selectedVoice;
                 }
-                // 특정 음성을 찾지 못하면 lang='en-US'에 해당하는 기본 음성 사용
 
                 window.speechSynthesis.speak(utterance);
                 return;
@@ -2728,7 +2654,7 @@ const learningMode = {
 
         const defaultImg = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
         const sampleImg = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
-        this.elements.sampleBtnImg.src = await imageDBCache.loadImage(hasSample ? sampleImg : defaultImg);
+        this.elements.sampleBtnImg.src = hasSample ? sampleImg : defaultImg;
 
         const grade = app.state.selectedSheet;
         let isFavorite = app.state.currentProgress[wordData.word]?.favorite || false;
@@ -2794,7 +2720,7 @@ const learningMode = {
             this.elements.backTitle.textContent = wordData.word;
             ui.displaySentences(wordData.sample.split('\n'), this.elements.backContent);
             this.elements.cardBack.classList.add('is-slid-up');
-            this.elements.sampleBtnImg.src = await imageDBCache.loadImage(backImgUrl);
+            this.elements.sampleBtnImg.src = backImgUrl;
         } else {
             this.elements.cardBack.classList.remove('is-slid-up');
             this.displayWord(this.state.currentIndex);
@@ -2897,4 +2823,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
