@@ -3,7 +3,6 @@ let initializeApp;
 let getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup;
 let getDatabase, ref, get, set;
 let getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch;
-
 document.addEventListener('firebaseSDKLoaded', () => {
     ({
         initializeApp,
@@ -12,17 +11,14 @@ document.addEventListener('firebaseSDKLoaded', () => {
         getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch
     } = window.firebaseSDK);
     window.firebaseSDK.writeBatch = writeBatch;
-
     app.init();
 });
-
 const activityTracker = {
     sessionSeconds: 0,
     lastActivityTimestamp: 0,
     timerInterval: null,
     saveInterval: null,
     INACTIVITY_LIMIT: 30000,
-
     start() {
         if (this.timerInterval) return;
         this.lastActivityTimestamp = Date.now();
@@ -34,7 +30,6 @@ const activityTracker = {
                 this.sessionSeconds++;
             }
         }, 1000);
-
         this.saveInterval = setInterval(() => {
             if (this.sessionSeconds > 0 && app.state.selectedSheet) {
                 try {
@@ -47,18 +42,15 @@ const activityTracker = {
                 }
             }
         }, 10000);
-
         ['click', 'keydown', 'touchstart'].forEach(event =>
             document.body.addEventListener(event, this.recordActivity, true));
     },
-
     stopAndSave() {
         if (!this.timerInterval) return;
         clearInterval(this.timerInterval);
         clearInterval(this.saveInterval);
         this.timerInterval = null;
         this.saveInterval = null;
-
         if (this.sessionSeconds > 0 && app.state.selectedSheet) {
              try {
                  const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_TIME(app.state.selectedSheet);
@@ -69,16 +61,13 @@ const activityTracker = {
              }
         }
         this.sessionSeconds = 0;
-
         ['click', 'keydown', 'touchstart'].forEach(event =>
             document.body.removeEventListener(event, this.recordActivity, true));
     },
-
     recordActivity() {
         activityTracker.lastActivityTimestamp = Date.now();
     }
 };
-
 const app = {
     config: {
         firebaseConfig: {
@@ -156,25 +145,30 @@ const app = {
         searchLongmanContextBtn: document.getElementById('search-longman-context-btn'),
         progressBarContainer: document.getElementById('progress-bar-container'),
         selectFavoritesBtn: document.getElementById('select-favorites-btn'),
-        lastUpdatedText: document.getElementById('last-updated-text')
+        lastUpdatedText: document.getElementById('last-updated-text'),
+        permissionRequestModal: document.getElementById('permission-request-modal'),
+        prNameInput: document.getElementById('pr-name-input'),
+        prGradeInput: document.getElementById('pr-grade-input'),
+        prSubmitBtn: document.getElementById('pr-submit-btn'),
+        permissionStatusModal: document.getElementById('permission-status-modal'),
+        psTitle: document.getElementById('ps-title'),
+        psMessage: document.getElementById('ps-message'),
+        psCloseBtn: document.getElementById('ps-close-btn'),
     },
     async init() {
         firebaseApp = initializeApp(this.config.firebaseConfig);
         auth = getAuth(firebaseApp);
         db = getFirestore(firebaseApp);
         rt_db = getDatabase(firebaseApp);
-
         await Promise.all([
             translationDBCache.init(),
             audioDBCache.init(),
             this.fetchAndSetBackgroundImages()
         ]).catch(e => console.error("Cache or image init failed", e));
-
         this.bindGlobalEvents();
         quizMode.init();
         learningMode.init();
         dashboard.init();
-
         try {
             const savedPracticeMode = localStorage.getItem(this.state.LOCAL_STORAGE_KEYS.PRACTICE_MODE);
             if (savedPracticeMode === 'true') {
@@ -184,35 +178,43 @@ const app = {
         } catch (e) {
             console.error("Error reading practice mode from localStorage", e);
         }
-
         onAuthStateChanged(auth, async (user) => {
             if (user) {
+                await this.handlePermissionFlow(user);
+            } else {
+                this.state.user = null;
+                this.state.currentProgress = {};
+                this.elements.loginScreen.classList.remove('hidden');
+                this.elements.mainContainer.classList.add('hidden');
+                document.body.classList.add('items-center');
+                this._renderView(null);
+            }
+        });
+    },
+    async handlePermissionFlow(user) {
+        this.elements.loginScreen.classList.add('hidden');
+        this.elements.mainContainer.classList.add('hidden');
+        document.body.classList.add('items-center');
+        const email = user.email;
+        try {
+            const permissionStatus = await api.checkPermission(email);
+            if (permissionStatus.status === 'approved') {
                 this.state.user = user;
                 const userRef = doc(db, 'users', user.uid);
-                await setDoc(userRef, {
-                    displayName: user.displayName,
-                    email: user.email
-                }, { merge: true });
-
-                this.elements.loginScreen.classList.add('hidden');
+                await setDoc(userRef, { displayName: user.displayName, email: user.email }, { merge: true });
                 this.elements.mainContainer.classList.remove('hidden');
                 document.body.classList.remove('items-center');
-
                 await utils.loadUserProgress();
                 await this.syncOfflineData();
-
                 if (!this.state.isAppReady) {
                     this.state.isAppReady = true;
                     await quizMode.preloadInitialQuizzesBasedOnSavedRange();
                 }
-
                 const hash = window.location.hash.substring(1);
                 const [view, gradeFromHash] = hash.split('-');
-
                 let initialState = { view: 'grade' };
                 try {
                     const lastGrade = localStorage.getItem(this.state.LOCAL_STORAGE_KEYS.LAST_GRADE);
-
                     if (gradeFromHash && ['1y', '2y', '3y'].includes(gradeFromHash)) {
                         if (['mode', 'quiz', 'learning', 'dashboard', 'mistakeReview', 'favoriteReview'].includes(view)) {
                             initialState = { view: view, grade: gradeFromHash };
@@ -226,22 +228,85 @@ const app = {
                     console.error("Error reading last grade from localStorage", e);
                     initialState = { view: 'grade' };
                 }
-
                 history.replaceState(initialState, '');
                 this._renderView(initialState.view, initialState.grade);
+            } else if (permissionStatus.status === 'denied') {
+                this.showStatusModal(
+                    '접근 제한', 
+                    '관리자에 의해 앱 접근이 제한되었습니다.', 
+                    'text-red-500',
+                    () => signOut(auth)
+                );
             } else {
-                this.state.user = null;
-                this.state.currentProgress = {};
-                this.elements.loginScreen.classList.remove('hidden');
-                this.elements.mainContainer.classList.add('hidden');
-                document.body.classList.add('items-center');
-                this._renderView(null);
+                this.state.user = user;
+                this.showRequestModal();
             }
-        });
+        } catch (error) {
+            console.error("Permission Check Error:", error);
+            this.showToast("권한 확인 중 오류가 발생했습니다. 다시 시도해 주세요.", true);
+            signOut(auth);
+        }
+    },
+    async submitPermissionRequest() {
+        if (!this.state.user) return;
+        const name = this.elements.prNameInput.value.trim();
+        const gradeStr = this.elements.prGradeInput.value.trim();
+        const grade = parseInt(gradeStr);
+        if (!name) {
+            this.showToast("이름을 입력해 주세요.", true);
+            this.elements.prNameInput.focus();
+            return;
+        }
+        if (isNaN(grade) || grade <= 0) {
+            this.showToast("유효한 학년(숫자)을 입력해 주세요.", true);
+            this.elements.prGradeInput.focus();
+            return;
+        }
+        this.elements.prSubmitBtn.disabled = true;
+        this.elements.prSubmitBtn.textContent = '요청 중...';
+        try {
+            const result = await api.requestPermission(this.state.user.email, name, grade);
+            this.elements.permissionRequestModal.classList.add('hidden');
+            if (result.success) {
+                this.showStatusModal(
+                    '요청 완료',
+                    '관리자에게 사용권한을 요청하였습니다. 승인을 기다려주세요.',
+                    'text-blue-500',
+                    () => signOut(auth)
+                );
+            } else {
+                this.showToast(result.message || "권한 요청에 실패했습니다. 다시 시도해 주세요.", true);
+                this.elements.prSubmitBtn.disabled = false;
+                this.elements.prSubmitBtn.textContent = '권한 요청';
+            }
+        } catch (error) {
+            console.error("Permission Request API Error:", error);
+            this.elements.permissionRequestModal.classList.add('hidden');
+            this.showToast("서버 오류로 인해 요청에 실패했습니다. 다시 시도해 주세요.", true);
+            signOut(auth);
+        }
+    },
+    showStatusModal(title, message, titleClass = 'text-green-500', onClose = null) {
+        this.elements.psTitle.textContent = title;
+        this.elements.psTitle.className = `text-2xl font-bold mb-4 ${titleClass}`;
+        this.elements.psMessage.textContent = message;
+        this.elements.permissionStatusModal.classList.remove('hidden');
+        const closeHandler = () => {
+             this.elements.permissionStatusModal.classList.add('hidden');
+             this.elements.psCloseBtn.removeEventListener('click', closeHandler);
+             if (onClose) onClose();
+        };
+        this.elements.psCloseBtn.addEventListener('click', closeHandler);
+    },
+    showRequestModal() {
+        this.elements.prNameInput.value = '';
+        this.elements.prGradeInput.value = '';
+        this.elements.prSubmitBtn.disabled = false;
+        this.elements.prSubmitBtn.textContent = '권한 요청';
+        this.elements.permissionRequestModal.classList.remove('hidden');
     },
     async syncOfflineData() {
         if (!app.state.user) return;
-
         for (const grade of ['1y', '2y', '3y']) {
             try {
                 const timeKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_TIME(grade);
@@ -250,21 +315,18 @@ const app = {
                     await utils.saveStudyHistory(timeToSync, grade);
                     localStorage.removeItem(timeKey);
                 }
-
                 const quizKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_QUIZ(grade);
                 const statsToSync = JSON.parse(localStorage.getItem(quizKey) || 'null');
                 if (statsToSync) {
                     await utils.syncQuizHistory(statsToSync, grade);
                     localStorage.removeItem(quizKey);
                 }
-
                  const progressKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_PROGRESS_UPDATES(grade);
                  const progressToSync = JSON.parse(localStorage.getItem(progressKey) || 'null');
                  if (progressToSync && Object.keys(progressToSync).length > 0) {
                      await utils.syncProgressUpdates(progressToSync, grade);
                      localStorage.removeItem(progressKey);
                  }
-
             } catch (error) {
                 console.error(`Offline data sync failed for grade ${grade}:`, error);
             }
@@ -279,9 +341,7 @@ const app = {
                 this.showToast("로그인에 실패했습니다. 다시 시도해 주세요.", true);
             });
         });
-
         this.elements.logoutBtn.addEventListener('click', () => signOut(auth));
-
         document.querySelectorAll('.grade-select-card').forEach(card => {
             card.addEventListener('click', () => {
                 const grade = card.dataset.sheet;
@@ -293,16 +353,13 @@ const app = {
                 this.navigateTo('mode', grade);
             });
         });
-
         document.getElementById('select-quiz-btn').addEventListener('click', () => this.navigateTo('quiz', this.state.selectedSheet));
         document.getElementById('select-learning-btn').addEventListener('click', () => this.navigateTo('learning', this.state.selectedSheet));
         document.getElementById('select-dashboard-btn').addEventListener('click', () => this.navigateTo('dashboard', this.state.selectedSheet));
         document.getElementById('select-mistakes-btn').addEventListener('click', () => this.navigateTo('mistakeReview', this.state.selectedSheet));
         this.elements.selectFavoritesBtn.addEventListener('click', () => this.navigateTo('favoriteReview', this.state.selectedSheet));
-
         this.elements.homeBtn.addEventListener('click', () => this.navigateTo('mode', this.state.selectedSheet));
         this.elements.backToGradeSelectionBtn.addEventListener('click', () => this.navigateTo('grade'));
-
         this.elements.refreshBtn.addEventListener('click', () => {
             if (!this.state.selectedSheet) return;
             this.elements.confirmationModal.classList.remove('hidden');
@@ -312,7 +369,6 @@ const app = {
             this.elements.confirmationModal.classList.add('hidden');
             this.forceRefreshData();
         });
-
         this.elements.practiceModeCheckbox.addEventListener('change', (e) => {
             quizMode.state.isPracticeMode = e.target.checked;
             try {
@@ -325,29 +381,24 @@ const app = {
                  quizMode.displayNextQuiz();
             }
         });
-
         document.addEventListener('click', (e) => {
             if (this.elements.wordContextMenu && !this.elements.wordContextMenu.contains(e.target)) {
                 ui.hideWordContextMenu();
             }
         });
-
         document.addEventListener('contextmenu', (e) => {
             const isWhitelisted = e.target.closest('.interactive-word, #word-display');
             if (!isWhitelisted) e.preventDefault();
         });
-
         window.addEventListener('popstate', (e) => {
             this.syncOfflineData();
             const state = e.state || { view: 'grade' };
             this._renderView(state.view, state.grade);
         });
-
         window.addEventListener('beforeunload', (e) => {
             activityTracker.stopAndSave();
             this.syncOfflineDataSync();
         });
-
         const initAudioForBeep = () => {
             if (!this.state.audioContext) {
                  try {
@@ -361,32 +412,30 @@ const app = {
         };
         document.body.addEventListener('click', initAudioForBeep, { capture: true, once: true });
         document.body.addEventListener('touchstart', initAudioForBeep, { capture: true, passive: true, once: true });
+        this.elements.prSubmitBtn.addEventListener('click', () => this.submitPermissionRequest());
+        this.elements.prGradeInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.submitPermissionRequest();
+        });
     },
      syncOfflineDataSync() {
          if (!app.state.user) return;
          const grade = app.state.selectedSheet;
          if (!grade) return;
-
          const timeKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_TIME(grade);
          const quizKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_QUIZ(grade);
          const progressKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_PROGRESS_UPDATES(grade);
-
          const timeToSync = localStorage.getItem(timeKey);
          const statsToSync = localStorage.getItem(quizKey);
          const progressToSync = localStorage.getItem(progressKey);
-
          if (timeToSync || statsToSync || progressToSync) {
          }
      },
     navigateTo(view, grade, options = {}) {
         const currentState = history.state || {};
-
         if (currentState.view !== view || currentState.grade !== grade) {
             this.syncOfflineData();
         }
-
         if (currentState.view === view && currentState.grade === grade && view !== 'mistakeReview' && view !== 'favoriteReview') return;
-
         let hash = '';
         if (view !== 'grade' && view !== null) {
             hash = grade ? `#${grade}` : '';
@@ -394,13 +443,11 @@ const app = {
                 hash = `#${view}-${grade}`;
             }
         }
-
         history.pushState({ view, grade, options }, '', window.location.pathname + window.location.search + hash);
         this._renderView(view, grade, options);
     },
     async _renderView(view, grade, options = {}) {
         activityTracker.stopAndSave();
-
         this.elements.gradeSelectionScreen.classList.add('hidden');
         this.elements.selectionScreen.classList.add('hidden');
         this.elements.quizModeContainer.classList.add('hidden');
@@ -408,7 +455,6 @@ const app = {
         this.elements.dashboardContainer.classList.add('hidden');
         learningMode.elements.fixedButtons.classList.add('hidden');
         this.elements.progressBarContainer.classList.add('hidden');
-
         this.elements.homeBtn.classList.add('hidden');
         this.elements.backToGradeSelectionBtn.classList.add('hidden');
         this.elements.refreshBtn.classList.add('hidden');
@@ -416,16 +462,14 @@ const app = {
         this.elements.sheetLink.classList.add('hidden');
         this.elements.logoutBtn.classList.add('hidden');
         this.elements.lastUpdatedText.classList.add('hidden');
-
+        this.elements.permissionRequestModal.classList.add('hidden');
+        this.elements.permissionStatusModal.classList.add('hidden');
         if (!this.state.user) return;
-
         this.elements.logoutBtn.classList.remove('hidden');
-
         if (grade) {
             const needsProgressLoad = this.state.selectedSheet !== grade;
             this.state.selectedSheet = grade;
             if (needsProgressLoad) await utils.loadUserProgress();
-
             this.elements.sheetLink.href = this.config.sheetLinks[grade];
             this.elements.sheetLink.classList.remove('hidden');
             const gradeText = grade.replace('y', '학년');
@@ -435,12 +479,10 @@ const app = {
             this.state.selectedSheet = '';
             this.state.currentProgress = {};
         }
-
         const startModes = ['quiz-play', 'learning', 'mistakeReview', 'favoriteReview'];
         if (startModes.includes(view)) {
              activityTracker.start();
         }
-
         switch (view) {
             case 'quiz':
                 this.elements.quizModeContainer.classList.remove('hidden');
@@ -508,7 +550,6 @@ const app = {
     async forceRefreshData() {
         const sheet = this.state.selectedSheet;
         if (!sheet) return;
-
         const elementsToDisable = [
             this.elements.homeBtn, this.elements.refreshBtn, this.elements.backToGradeSelectionBtn,
             document.getElementById('select-learning-btn'), document.getElementById('select-quiz-btn'),
@@ -516,25 +557,18 @@ const app = {
             this.elements.selectFavoritesBtn
         ].filter(el => el);
         elementsToDisable.forEach(el => el.classList.add('pointer-events-none', 'opacity-50'));
-
         const refreshIconHTML = this.elements.refreshBtn.innerHTML;
         this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
-
         try {
             const versionRef = ref(rt_db, `app_config/vocab_version_${sheet}`);
             const snapshot = await get(versionRef);
             const currentVersion = snapshot.val() || 0;
-
             const newVersion = currentVersion + 1;
             const newTimestamp = Date.now();
-
             await set(versionRef, newVersion);
-
             const timestampRef = ref(rt_db, `app_config/vocab_timestamp_${sheet}`);
             await set(timestampRef, newTimestamp);
-
             await learningMode.loadWordList(true);
-
             this.updateLastUpdatedText();
             this.showRefreshSuccessMessage();
         } catch(err) {
@@ -598,10 +632,8 @@ const app = {
     async fetchAndSetBackgroundImages() {
         const images = this.config.backgroundImages;
         if (images.length === 0) return;
-        
         const randomIndex = Math.floor(Math.random() * images.length);
         const imageUrl = images[randomIndex];
-
         document.documentElement.style.setProperty('--bg-image', `url('${imageUrl}')`);
     },
     async loadGradeImages() {
@@ -617,7 +649,6 @@ const app = {
         });
     }
 };
-
 function playSingleBeep({ frequency, duration = 0.1, type = 'sine', gain = 0.3, endFrequency }) {
     if (!app.state.audioContext) {
         console.warn("AudioContext not initialized. Cannot play beep.");
@@ -667,8 +698,6 @@ const incorrectBeep = {
         { delay: 90, frequency: 400, duration: 0.07, type: 'square', gain: 0.15 }
     ]
 };
-
-
 const audioDBCache = {
     db: null, dbName: 'ttsAudioCacheDB_voca', storeName: 'audioStore',
     init() {
@@ -700,7 +729,6 @@ const audioDBCache = {
         catch (e) { console.error("IndexedDB save audio error:", e); }
     }
 };
-
 const translationDBCache = {
     db: null, dbName: 'translationCacheDB_B', storeName: 'translationStore',
     init() {
@@ -732,21 +760,17 @@ const translationDBCache = {
         catch (e) { console.error("IndexedDB save translation error:", e); }
     }
 };
-
 const api = {
     async translateText(text) {
         if (!text || !text.trim()) return '';
         try {
             const cached = await translationDBCache.get(text);
             if (cached) return cached;
-
             const url = new URL(app.config.SCRIPT_URL);
             url.searchParams.append('action', 'translateText');
             url.searchParams.append('text', text);
-
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
             const data = await response.json();
             if (data.success) {
                 translationDBCache.save(text, data.translatedText);
@@ -764,29 +788,24 @@ const api = {
         if (!text || !text.trim()) return;
         activityTracker.recordActivity();
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
-
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         if (!isIOS && 'speechSynthesis' in window) {
             try {
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(processedText);
                 utterance.lang = 'en-US'; 
-
                 const TARGET_VOICE_NAME = "Microsoft Ana Online (Natural) - English (United States)";
                 const voices = window.speechSynthesis.getVoices();
                 const selectedVoice = voices.find(v => v.name === TARGET_VOICE_NAME);
-
                 if (selectedVoice) {
                     utterance.voice = selectedVoice;
                 }
-
                 window.speechSynthesis.speak(utterance);
                 return;
             } catch (error) {
                 console.warn("Native TTS failed, falling back to Google TTS API:", error);
             }
         }
-
         const cacheKey = processedText;
         let ttsAudioContext = null;
         try {
@@ -802,31 +821,26 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
                 source.onended = () => ttsAudioContext.close();
                 return;
             }
-
             const ttsUrl = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${this.googleTtsApiKey}`;
             const requestBody = {
                 input: { text: processedText },
                 voice: { languageCode: 'en-US', name: 'en-US-Standard-C' },
                 audioConfig: { audioEncoding: 'MP3' }
             };
-
             const response = await fetch(ttsUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
             });
-
             if (!response.ok) {
                  const errorData = await response.json();
                  throw new Error(`Google TTS API Error: ${errorData.error?.message || response.statusText}`);
             }
-
             const data = await response.json();
             if (data.audioContent) {
                 const audioBlob = new Blob([Uint8Array.from(atob(data.audioContent), c => c.charCodeAt(0))], { type: 'audio/mp3' });
                 const arrayBuffer = await audioBlob.arrayBuffer();
                 audioDBCache.saveAudio(cacheKey, arrayBuffer.slice(0));
-
                 ttsAudioContext = new (window.AudioContext || window.webkitAudioContext)();
                 if(ttsAudioContext.state === 'suspended') await ttsAudioContext.resume();
                 const audioBuffer = await ttsAudioContext.decodeAudioData(arrayBuffer);
@@ -873,12 +887,28 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             console.error(`Error fetching definition for ${word}:`, e);
             return null;
         }
+    },
+    async checkPermission(email) {
+        const url = new URL(app.config.SCRIPT_URL);
+        url.searchParams.append('action', 'checkPermission');
+        url.searchParams.append('email', email);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        return await response.json();
+    },
+    async requestPermission(email, name, grade) {
+        const url = new URL(app.config.SCRIPT_URL);
+        url.searchParams.append('action', 'requestPermission');
+        url.searchParams.append('email', email);
+        url.searchParams.append('name', name);
+        url.searchParams.append('grade', grade);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        return await response.json();
     }
 };
-
 const ui = {
     nonInteractiveWords: new Set(['a', 'an', 'the', 'I', 'me', 'my', 'mine', 'you', 'your', 'yours', 'he', 'him', 'his', 'she', 'her', 'hers', 'it', 'its', 'we', 'us', 'our', 'ours', 'they', 'them', 'their', 'theirs', 'this', 'that', 'these', 'those', 'myself', 'yourself', 'himself', 'herself', 'itself', 'ourselves', 'yourselves', 'something', 'anybody', 'anyone', 'anything', 'nobody', 'no one', 'nothing', 'everybody', 'everyone', 'everything', 'all', 'any', 'both', 'each', 'either', 'every', 'few', 'little', 'many', 'much', 'neither', 'none', 'one', 'other', 'several', 'some', 'about', 'above', 'across', 'after', 'against', 'along', 'among', 'around', 'at', 'before', 'behind', 'below', 'beneath', 'beside', 'between', 'beyond', 'by', 'down', 'during', 'for', 'from', 'in', 'inside', 'into', 'like', 'near', 'of', 'off', 'on', 'onto', 'out', 'outside', 'over', 'past', 'since', 'through', 'throughout', 'to', 'toward', 'under', 'underneath', 'until', 'unto', 'up', 'upon', 'with', 'within', 'without', 'and', 'but', 'or', 'nor', 'for', 'yet', 'so', 'after', 'although', 'as', 'because', 'before', 'if', 'once', 'since', 'than', 'that', 'though', 'till', 'unless', 'until', 'when', 'whenever', 'where', 'whereas', 'wherever', 'whether', 'while', 'that', 'which', 'who', 'whom', 'whose', 'when', 'where', 'why', 'what', 'whatever', 'whichever', 'whoever', 'whomever', 'who', 'whom', 'whose', 'what', 'which', 'when', 'where', 'why', 'how', 'be', 'am', 'is', 'are', 'was', 'were', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'done', 'can', 'could', 'may', 'might', 'must', 'shall', 'should', 'will', 'would', 'ought', 'not', 'very', 'too', 'so', 'just', 'well', 'often', 'always', 'never', 'sometimes', 'here', 'there', 'now', 'then', 'again', 'also', 'ever', 'even', 'how', 'quite', 'rather', 'soon', 'still', 'more', 'most', 'less', 'least', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'then', 'there', 'here', "don't", "didn't", "can't", "couldn't", "she's", "he's", "i'm", "you're", "they're", "we're", "it's", "that's"]),
-
     adjustFontSize(element) {
         if (!element || !element.parentElement) return;
         element.style.fontSize = '';
@@ -996,14 +1026,12 @@ const ui = {
                 }
             });
             p.addEventListener('mouseout', this.handleSentenceMouseOut);
-
             const sentenceContent = document.createElement('span');
             sentenceContent.className = 'sentence-content-area';
              sentenceContent.addEventListener('mouseenter', () => {
                 clearTimeout(app.state.translateDebounceTimeout);
                 this.handleSentenceMouseOut();
             });
-
             const sentenceParts = sentence.split(/(\*.*?\*)/g);
             sentenceParts.forEach(part => {
                 if (part.startsWith('*') && part.endsWith('*')) {
@@ -1035,13 +1063,11 @@ const ui = {
         if (app.elements.wordContextMenu) app.elements.wordContextMenu.classList.add('hidden');
     }
 };
-
 const utils = {
     _getProgressRef(grade = app.state.selectedSheet) {
         if (!app.state.user || !grade) return null;
         return doc(db, 'users', app.state.user.uid, 'progress', grade);
     },
-
     addProgressUpdateToLocalSync(word, key, value, grade = app.state.selectedSheet) {
         if (!grade) return;
         try {
@@ -1056,7 +1082,6 @@ const utils = {
             console.error("Error adding progress update to localStorage sync", e);
         }
     },
-
     async loadUserProgress() {
         const currentGrade = app.state.selectedSheet;
         if (!currentGrade) {
@@ -1076,10 +1101,8 @@ const utils = {
             app.state.currentProgress = {};
         }
     },
-
     getWordStatus(word) {
         const grade = app.state.selectedSheet;
-
         let localStatus = {};
         if (grade) {
             try {
@@ -1090,46 +1113,33 @@ const utils = {
                 }
             } catch(e) { console.warn("Error reading local progress updates:", e); }
         }
-
         const progress = { ...(app.state.currentProgress[word] || {}), ...localStatus };
-
         const quizTypes = ['MULTIPLE_CHOICE_MEANING', 'FILL_IN_THE_BLANK', 'MULTIPLE_CHOICE_DEFINITION'];
         const statuses = quizTypes.map(type => progress[type] || 'unseen');
-
         if (Object.keys(progress).length === 0 && Object.keys(localStatus).length === 0) return 'unseen';
         if (statuses.includes('incorrect')) return 'review';
         if (statuses.every(s => s === 'correct')) return 'learned';
         if (statuses.some(s => s === 'correct')) return 'learning';
-
         return 'unseen';
     },
-
     async updateWordStatus(word, quizType, result) {
         const grade = app.state.selectedSheet;
         if (!word || !quizType || !app.state.user || !grade) return;
-
         const isCorrect = result === 'correct';
-
         if (!app.state.currentProgress[word]) app.state.currentProgress[word] = {};
         app.state.currentProgress[word][quizType] = result;
-
         this.addProgressUpdateToLocalSync(word, quizType, result, grade);
-
         this.saveQuizHistoryToLocal(quizType, isCorrect, grade);
     },
-
     getCorrectlyAnsweredWords(quizType, grade = app.state.selectedSheet) {
         if (!quizType || !grade) return [];
-
         let localUpdates = {};
          try {
              const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_PROGRESS_UPDATES(grade);
              localUpdates = JSON.parse(localStorage.getItem(key) || '{}');
          } catch(e) { console.warn("Error reading local progress for correct words check:", e); }
-
         const allProgress = app.state.currentProgress;
         const combinedKeys = new Set([...Object.keys(allProgress), ...Object.keys(localUpdates)]);
-
         const correctWords = [];
         combinedKeys.forEach(word => {
             const serverState = allProgress[word]?.[quizType];
@@ -1141,21 +1151,17 @@ const utils = {
         });
         return correctWords;
     },
-
     getIncorrectWords() {
         const grade = app.state.selectedSheet;
         if (!grade || !learningMode.state.wordList[grade]) return [];
-
         const allWords = learningMode.state.wordList[grade];
         return allWords
             .filter(wordObj => this.getWordStatus(wordObj.word) === 'review')
             .map(wordObj => wordObj.word);
     },
-
     async toggleFavorite(word) {
         const grade = app.state.selectedSheet;
         if (!word || !app.state.user || !grade) return false;
-
         let isCurrentlyFavorite = app.state.currentProgress[word]?.favorite || false;
         try {
             const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_PROGRESS_UPDATES(grade);
@@ -1164,17 +1170,12 @@ const utils = {
                 isCurrentlyFavorite = unsynced[word].favorite;
             }
         } catch(e) {}
-
         const newFavoriteStatus = !isCurrentlyFavorite;
-
         if (!app.state.currentProgress[word]) app.state.currentProgress[word] = {};
         app.state.currentProgress[word].favorite = newFavoriteStatus;
-
         this.addProgressUpdateToLocalSync(word, 'favorite', newFavoriteStatus, grade);
-
         return newFavoriteStatus;
     },
-
     getFavoriteWords() {
         const grade = app.state.selectedSheet;
         let localUpdates = {};
@@ -1184,46 +1185,36 @@ const utils = {
                 localUpdates = JSON.parse(localStorage.getItem(key) || '{}');
             } catch (e) { console.warn("Error reading local progress updates for favorites:", e); }
         }
-
         const allProgress = app.state.currentProgress;
         const combinedKeys = new Set([...Object.keys(allProgress), ...Object.keys(localUpdates)]);
-
         const favoriteWords = [];
         combinedKeys.forEach(word => {
             const serverState = allProgress[word] || {};
             const localState = localUpdates[word] || {};
             const combinedState = { ...serverState, ...localState };
-
             if (combinedState.favorite === true) {
                 favoriteWords.push(word);
             }
         });
-
         return favoriteWords;
     },
-
     async saveStudyHistory(seconds, grade) {
         if (!app.state.user || seconds < 1 || !grade) return;
-
         const today = new Date().toISOString().slice(0, 10);
         const historyRef = doc(db, 'users', app.state.user.uid, 'history', 'study');
-
         try {
             const docSnap = await getDoc(historyRef);
             const data = docSnap.exists() ? docSnap.data() : {};
             const dailyData = data[today] || {};
             const currentSeconds = dailyData[grade] || 0;
-
             await setDoc(historyRef, { [today]: { [grade]: currentSeconds + seconds } }, { merge: true });
         } catch(e) {
             console.error("Failed to update study history:", e);
             throw e;
         }
     },
-
     saveQuizHistoryToLocal(quizType, isCorrect, grade) {
         if (!grade || !quizType) return;
-
         try {
             const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_QUIZ(grade);
             const stats = JSON.parse(localStorage.getItem(key) || '{}');
@@ -1239,19 +1230,15 @@ const utils = {
             console.error("Error saving quiz stats to localStorage", e);
         }
     },
-
     async syncQuizHistory(statsToSync, grade) {
         if (!app.state.user || !statsToSync || !grade) return;
         const today = new Date().toISOString().slice(0, 10);
         const historyRef = doc(db, 'users', app.state.user.uid, 'history', 'quiz');
-
         try {
             const docSnap = await getDoc(historyRef);
             const data = docSnap.exists() ? docSnap.data() : {};
-
             const todayData = data[today] || {};
             const gradeData = todayData[grade] || {};
-
             for (const type in statsToSync) {
                 if (statsToSync.hasOwnProperty(type)) {
                     const typeStats = gradeData[type] || { correct: 0, total: 0 };
@@ -1260,19 +1247,16 @@ const utils = {
                     gradeData[type] = typeStats;
                 }
             }
-
             await setDoc(historyRef, { [today]: { [grade]: gradeData } }, { merge: true });
         } catch(e) {
             console.error("Failed to sync quiz history:", e);
             throw e;
         }
     },
-
     async syncProgressUpdates(progressToSync, grade) {
          if (!app.state.user || !progressToSync || Object.keys(progressToSync).length === 0 || !grade) return;
          const progressRef = this._getProgressRef(grade);
          if (!progressRef) return;
-
          try {
              await setDoc(progressRef, progressToSync, { merge: true });
          } catch (error) {
@@ -1288,7 +1272,6 @@ const utils = {
         return array;
     }
 };
-
 const dashboard = {
     elements: {
         container: document.getElementById('dashboard-container'),
@@ -1306,15 +1289,12 @@ const dashboard = {
     init() {},
     async show() {
         this.destroyCharts();
-
         this.elements.content.innerHTML = `<div class="text-center p-4"><div class="loader mx-auto"></div></div>`;
         this.elements.stats30DayContainer.innerHTML = '';
         this.elements.statsTotalContainer.innerHTML = '';
-
         if (!learningMode.state.isWordListReady[app.state.selectedSheet]) {
             await learningMode.loadWordList();
         }
-
         this.renderBaseStats();
         setTimeout(async () => {
             await this.renderAdvancedStats();
@@ -1332,19 +1312,16 @@ const dashboard = {
             this.elements.content.innerHTML = `<p class="text-center text-gray-600">학습할 단어가 없습니다.</p>`;
             return;
         }
-
         const counts = { learned: 0, learning: 0, review: 0, unseen: 0 };
         allWords.forEach(wordObj => {
             counts[utils.getWordStatus(wordObj.word)]++;
         });
-
         const stats = [
             { name: '미학습', description: '아직 어떤 퀴즈도 풀지 않음', count: counts.unseen, color: 'bg-gray-400' },
             { name: '학습 중', description: '최소 1종류의 퀴즈를 풀어서 맞힘, 아직 틀리지 않음', count: counts.learning, color: 'bg-blue-500' },
             { name: '복습 필요', description: '최소 1종류의 퀴즈에서 틀림', count: counts.review, color: 'bg-orange-500' },
             { name: '학습 완료', description: '모든 종류의 퀴즈에서 정답을 맞힘', count: counts.learned, color: 'bg-green-500' }
         ];
-
         let contentHTML = `<div class="bg-gray-50 p-4 rounded-lg shadow-inner text-center"><p class="text-lg text-gray-600">총 단어 수</p><p class="text-4xl font-bold text-gray-800">${totalWords}</p></div><div><h2 class="text-xl font-bold text-gray-700 mb-3 text-center">학습 단계별 분포</h2><div class="space-y-4">`;
         stats.forEach(stat => {
             const percentage = totalWords > 0 ? ((stat.count / totalWords) * 100).toFixed(1) : 0;
@@ -1353,26 +1330,21 @@ const dashboard = {
         contentHTML += `</div></div>`;
         this.elements.content.innerHTML = contentHTML;
     },
-
     async renderAdvancedStats() {
         if (!app.state.user || !app.state.selectedSheet) return;
         const grade = app.state.selectedSheet;
-
         try {
             const studyHistoryDoc = await getDoc(doc(db, 'users', app.state.user.uid, 'history', 'study'));
             const quizHistoryDoc = await getDoc(doc(db, 'users', app.state.user.uid, 'history', 'quiz'));
             const studyHistory = studyHistoryDoc.exists() ? studyHistoryDoc.data() : {};
             const quizHistory = quizHistoryDoc.exists() ? quizHistoryDoc.data() : {};
-
             this.render7DayCharts(studyHistory, quizHistory, grade);
             this.renderSummaryCards(studyHistory, quizHistory, grade);
-
         } catch (e) {
             console.error("Error rendering advanced stats:", e);
             this.elements.content.innerHTML += `<p class="text-red-500 text-center mt-4">추가 통계 정보를 불러오는 데 실패했습니다.</p>`;
         }
     },
-
     destroyCharts() {
         if (this.state.studyTimeChart) this.state.studyTimeChart.destroy();
         if (this.state.quiz1Chart) this.state.quiz1Chart.destroy();
@@ -1380,7 +1352,6 @@ const dashboard = {
         if (this.state.quiz3Chart) this.state.quiz3Chart.destroy();
         this.state.studyTimeChart = this.state.quiz1Chart = this.state.quiz2Chart = this.state.quiz3Chart = null;
     },
-
     render7DayCharts(studyHistory, quizHistory, grade) {
         const today = new Date();
         const labels = [];
@@ -1392,7 +1363,6 @@ const dashboard = {
             labels.push(`${d.getMonth() + 1}/${d.getDate()}`);
             studyData.push(Math.round(((studyHistory[dateString] && studyHistory[dateString][grade]) || 0) / 60));
         }
-
         const studyTimeCtx = document.getElementById('study-time-chart')?.getContext('2d');
         if (studyTimeCtx) {
             this.state.studyTimeChart = new Chart(studyTimeCtx, {
@@ -1414,7 +1384,6 @@ const dashboard = {
                 }
             });
         }
-
         const quizStats7Days = {
             'MULTIPLE_CHOICE_MEANING': { correct: 0, total: 0 },
             'FILL_IN_THE_BLANK': { correct: 0, total: 0 },
@@ -1433,33 +1402,25 @@ const dashboard = {
                 }
             }
         }
-
         this.state.quiz1Chart = this.createDoughnutChart('quiz1-chart', 'quiz1-label', '영한 뜻', quizStats7Days['MULTIPLE_CHOICE_MEANING']);
         this.state.quiz2Chart = this.createDoughnutChart('quiz2-chart', 'quiz2-label', '빈칸 추론', quizStats7Days['FILL_IN_THE_BLANK']);
         this.state.quiz3Chart = this.createDoughnutChart('quiz3-chart', 'quiz3-label', '영영 풀이', quizStats7Days['MULTIPLE_CHOICE_DEFINITION']);
     },
-
     createDoughnutChart(elementId, labelId, labelText, stats) {
         const ctx = document.getElementById(elementId)?.getContext('2d');
         if (!ctx) return null;
-
         const correct = stats.correct || 0;
         const total = stats.total || 0;
         const incorrect = total - correct;
-
         const hasAttempts = total > 0;
         const accuracy = hasAttempts ? Math.round((correct / total) * 100) : 0;
-
         const chartColors = hasAttempts ? ['#34D399', '#F87171'] : ['#E5E7EB', '#E5E7EB'];
         const chartData = hasAttempts ? [correct, incorrect > 0 ? incorrect : 0.0001] : [0, 1];
-
         const centerText = hasAttempts ? `${accuracy}%` : '-';
-
         const labelEl = document.getElementById(labelId);
         if (labelEl) {
             labelEl.textContent = `${labelText} (${correct}/${total})`;
         }
-
         return new Chart(ctx, {
             type: 'doughnut',
             data: {
@@ -1488,7 +1449,6 @@ const dashboard = {
             }]
         });
     },
-
     renderSummaryCards(studyHistory, quizHistory, grade) {
         const today = new Date();
         const quizTypes = [
@@ -1496,7 +1456,6 @@ const dashboard = {
             { id: 'FILL_IN_THE_BLANK', name: '빈칸 추론' },
             { id: 'MULTIPLE_CHOICE_DEFINITION', name: '영영 풀이' }
         ];
-
         const getStatsForPeriod = (days) => {
             let totalSeconds = 0;
             const quizStats = { };
@@ -1505,11 +1464,9 @@ const dashboard = {
                 const d = new Date(today);
                 d.setDate(d.getDate() - i);
                 const dateString = d.toISOString().slice(0, 10);
-
                 if(studyHistory[dateString]){
                     totalSeconds += studyHistory[dateString][grade] || 0;
                 }
-
                 if (quizHistory[dateString] && quizHistory[dateString][grade]) {
                     for(const type in quizStats){
                         if(quizHistory[dateString][grade][type]){
@@ -1521,7 +1478,6 @@ const dashboard = {
             }
             return { totalSeconds, quizStats };
         };
-
         const totalStats = (() => {
             let totalSeconds = 0;
             const quizStats = { };
@@ -1541,9 +1497,7 @@ const dashboard = {
             });
             return { totalSeconds, quizStats };
         })();
-
         const stats30 = getStatsForPeriod(30);
-
         const createCardHTML = (title, time, stats) => {
             let cards = '';
             quizTypes.forEach(type => {
@@ -1557,7 +1511,6 @@ const dashboard = {
                     </div>
                 `;
             });
-
             return `
                 <div class="bg-gray-50 p-4 rounded-xl shadow-inner">
                     <h4 class="font-bold text-gray-700 mb-4 text-lg text-center">
@@ -1570,11 +1523,9 @@ const dashboard = {
                 </div>
             `;
         };
-
         this.elements.stats30DayContainer.innerHTML = createCardHTML('최근 30일 기록', stats30.totalSeconds, stats30.quizStats);
         this.elements.statsTotalContainer.innerHTML = createCardHTML('누적 총학습 기록', totalStats.totalSeconds, totalStats.quizStats);
     },
-
     formatSeconds(totalSeconds) {
         if (!totalSeconds || totalSeconds < 60) return `0분`;
         const h = Math.floor(totalSeconds / 3600);
@@ -1585,7 +1536,6 @@ const dashboard = {
         return result.trim() || '0분';
     },
 };
-
 const quizMode = {
      state: {
         currentQuiz: {},
@@ -1639,10 +1589,8 @@ const quizMode = {
         this.elements.startMeaningQuizBtn.addEventListener('click', () => this.start('MULTIPLE_CHOICE_MEANING'));
         this.elements.startBlankQuizBtn.addEventListener('click', () => this.start('FILL_IN_THE_BLANK'));
         this.elements.startDefinitionQuizBtn.addEventListener('click', () => this.start('MULTIPLE_CHOICE_DEFINITION'));
-
         this.elements.quizRangeStart.addEventListener('click', (e) => this.promptForRangeValue(e.target));
         this.elements.quizRangeEnd.addEventListener('click', (e) => this.promptForRangeValue(e.target));
-
         this.elements.rangeInputConfirmBtn.addEventListener('click', () => this.confirmRangeInput());
         this.elements.rangeInputCancelBtn.addEventListener('click', () => this.hideRangeInput());
         this.elements.rangeInputModal.addEventListener('click', () => this.hideRangeInput());
@@ -1653,14 +1601,11 @@ const quizMode = {
         this.elements.quizRangeLabel.addEventListener('click', () => this.resetQuizRange());
         this.elements.quizResultContinueBtn.addEventListener('click', () => this.continueAfterResult());
         this.elements.quizResultMistakesBtn.addEventListener('click', () => this.reviewSessionMistakes());
-
         document.addEventListener('keydown', (e) => {
             const isQuizModeActive = !this.elements.contentContainer.classList.contains('hidden') && !this.elements.choices.classList.contains('disabled');
             if (!isQuizModeActive) return;
             activityTracker.recordActivity();
-
             const choiceCount = Array.from(this.elements.choices.children).filter(el => !el.textContent.includes('PASS')).length;
-
             if (e.key.toLowerCase() === 'p' || e.key === '0') {
                  e.preventDefault();
                  const passButton = Array.from(this.elements.choices.children).find(el => el.textContent.includes('PASS'));
@@ -1684,13 +1629,11 @@ const quizMode = {
         const grade = app.state.selectedSheet;
         const min = parseInt(targetButton.dataset.min) || 1;
         const max = parseInt(targetButton.dataset.max) || (learningMode.state.wordList[grade]?.length || 1);
-
         const labelText = isStart ? `시작번호 (1-${max}) :` : `마지막번호 (1-${max}) :`;
         this.elements.rangeInputLabel.textContent = labelText;
         this.elements.rangeInputField.value = targetButton.textContent;
         this.elements.rangeInputField.min = min;
         this.elements.rangeInputField.max = max;
-
         this.elements.rangeInputModal.classList.remove('hidden');
         this.elements.rangeInputField.focus();
         this.elements.rangeInputField.select();
@@ -1702,18 +1645,15 @@ const quizMode = {
     confirmRangeInput() {
         const targetButton = this.state.currentRangeInputTarget;
         if (!targetButton) return;
-
         const grade = app.state.selectedSheet;
         const min = parseInt(targetButton.dataset.min) || 1;
         const max = parseInt(targetButton.dataset.max) || (learningMode.state.wordList[grade]?.length || 1);
         const newValueStr = this.elements.rangeInputField.value;
-
         if (newValueStr !== null && newValueStr.trim() !== '') {
             let newValue = parseInt(newValueStr);
             if (!isNaN(newValue)) {
                 newValue = Math.max(min, Math.min(max, newValue));
                 targetButton.textContent = newValue;
-
                 if (grade) {
                     const storageKey = targetButton.id === 'quiz-range-start'
                                        ? app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_START(grade)
@@ -1765,12 +1705,10 @@ const quizMode = {
         this.state.sessionAnsweredInSet = 0;
         this.state.sessionCorrectInSet = 0;
         this.state.sessionMistakes = [];
-
         if (showSelection) {
             this.state.currentQuizType = null;
             this.state.answeredWords.clear();
         }
-
         this.elements.loader.querySelector('.loader').style.display = 'block';
         this.elements.loaderText.textContent = "퀴즈 데이터를 불러오는 중...";
         if (showSelection) {
@@ -1786,25 +1724,19 @@ const quizMode = {
     async updateRangeInputs() {
         const grade = app.state.selectedSheet;
         if (!grade) return;
-
         let startValue = 1;
         let endValue = 1;
         let totalWords = 1;
-
         try {
             if (!learningMode.state.isWordListReady[grade]) {
                 await learningMode.loadWordList();
             }
-
             totalWords = learningMode.state.wordList[grade]?.length || 1;
             endValue = totalWords;
-
             const startStorageKey = app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_START(grade);
             const endStorageKey = app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_END(grade);
-
             const savedStart = localStorage.getItem(startStorageKey);
             const savedEnd = localStorage.getItem(endStorageKey);
-
             if (savedStart !== null) {
                 const parsedStart = parseInt(savedStart);
                 if (!isNaN(parsedStart) && parsedStart >= 1 && parsedStart <= totalWords) {
@@ -1825,7 +1757,6 @@ const quizMode = {
             } else {
                  localStorage.setItem(endStorageKey, totalWords.toString());
             }
-
         } catch (error) {
             console.error("Error updating quiz range inputs:", error);
             startValue = 1;
@@ -1835,7 +1766,6 @@ const quizMode = {
             this.elements.quizRangeStart.textContent = startValue;
             this.elements.quizRangeStart.dataset.min = 1;
             this.elements.quizRangeStart.dataset.max = totalWords;
-
             this.elements.quizRangeEnd.textContent = endValue;
             this.elements.quizRangeEnd.dataset.min = 1;
             this.elements.quizRangeEnd.dataset.max = totalWords;
@@ -1846,9 +1776,7 @@ const quizMode = {
         let nextQuiz = null;
         const grade = app.state.selectedSheet;
         const type = this.state.currentQuizType;
-
         let preloaded = this.state.preloadedQuizzes[grade]?.[type];
-
         if (preloaded) {
             const allWords = learningMode.state.wordList[grade] || [];
             const startVal = parseInt(this.elements.quizRangeStart.textContent) || 1;
@@ -1857,17 +1785,13 @@ const quizMode = {
             const endNum = Math.max(startVal, endVal);
             const startIndex = Math.max(0, startNum - 1);
             const endIndex = Math.min(allWords.length - 1, endNum - 1);
-
             const wordIndex = allWords.findIndex(w => w.word === preloaded.question.word);
-
             if (wordIndex < startIndex || wordIndex > endIndex) {
                 preloaded = null;
             }
-
             if (preloaded && this.state.answeredWords.has(preloaded.question.word)) {
                 preloaded = null;
             }
-
             if (preloaded && !this.state.isPracticeMode) {
                 const learnedWordsInType = utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
                 if (learnedWordsInType.includes(preloaded.question.word)) {
@@ -1875,20 +1799,17 @@ const quizMode = {
                 }
             }
         }
-
         if (preloaded) {
             nextQuiz = preloaded;
             this.state.preloadedQuizzes[grade][type] = null;
             this.preloadNextQuiz(grade, type, nextQuiz.question.word);
         }
-
         if (!nextQuiz) {
             nextQuiz = await this.generateSingleQuiz();
             if (nextQuiz) {
                 this.preloadNextQuiz(grade, type, nextQuiz.question.word);
             }
         }
-
         if (nextQuiz) {
             this.state.currentQuiz = nextQuiz;
             this.showLoader(false);
@@ -1899,33 +1820,25 @@ const quizMode = {
             } else {
                 this.showFinishedScreen("No more quizzes!");
                 setTimeout(() => app.navigateTo('quiz', grade), 800);
-
             }
         }
     },
     async generateSingleQuiz() {
         const grade = app.state.selectedSheet;
         if (!grade || !learningMode.state.wordList[grade]) return null;
-
         const allWords = learningMode.state.wordList[grade] || [];
         if (allWords.length === 0) return null;
-
         const startVal = parseInt(this.elements.quizRangeStart.textContent) || 1;
         const endVal = parseInt(this.elements.quizRangeEnd.textContent) || allWords.length;
-
         const startNum = Math.min(startVal, endVal);
         const endNum = Math.max(startVal, endVal);
-
         const startIndex = Math.max(0, startNum - 1);
         const endIndex = Math.min(allWords.length - 1, endNum - 1);
-
         const wordsInRange = allWords.slice(startIndex, endIndex + 1);
         if (wordsInRange.length === 0) return null;
-
         const learnedWordsInType = this.state.isPracticeMode ?
             this.state.practiceLearnedWords :
             utils.getCorrectlyAnsweredWords(this.state.currentQuizType);
-
         let candidates = wordsInRange.filter(wordObj => {
              if (this.state.answeredWords.has(wordObj.word)) {
                  return false;
@@ -1936,7 +1849,6 @@ const quizMode = {
              const status = utils.getWordStatus(wordObj.word);
              return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
         });
-
         if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
             candidates = candidates.filter(word => {
                 if (!word.sample || word.sample.trim() === '') return false;
@@ -1946,14 +1858,9 @@ const quizMode = {
                 return placeholderRegex.test(firstLine) || wordRegex.test(firstLine);
             });
         }
-
         if (candidates.length === 0) return null;
-
         candidates.sort(() => 0.5 - Math.random());
-
         const usableAllWordsForChoices = allWords.length >= 4 ? allWords : [...allWords, {word: 'dummy1', meaning: '오답1'}, {word: 'dummy2', meaning: '오답2'}, {word: 'dummy3', meaning: '오답3'}];
-
-
         for (const wordData of candidates) {
             let quiz = null;
             if (this.state.currentQuizType === 'MULTIPLE_CHOICE_MEANING') {
@@ -1968,14 +1875,12 @@ const quizMode = {
             }
             if (quiz) return quiz;
         }
-
         return null;
     },
     renderQuiz(quizData) {
         const { type, question, choices } = quizData;
         const questionDisplay = this.elements.questionDisplay;
         questionDisplay.innerHTML = '';
-
         if (type === 'MULTIPLE_CHOICE_DEFINITION') {
             questionDisplay.classList.remove('justify-center', 'items-center');
             ui.displaySentences([question.definition], questionDisplay);
@@ -2010,7 +1915,6 @@ const quizMode = {
             questionDisplay.appendChild(h1);
             ui.adjustFontSize(h1);
         }
-
         this.elements.choices.innerHTML = '';
         choices.forEach((choice, index) => {
             const li = document.createElement('li');
@@ -2019,13 +1923,11 @@ const quizMode = {
             li.onclick = () => this.checkAnswer(li, choice);
             this.elements.choices.appendChild(li);
         });
-
         const passLi = document.createElement('li');
         passLi.className = 'choice-item border-2 border-red-500 bg-red-500 hover:bg-red-600 text-white p-4 rounded-lg cursor-pointer flex items-center justify-center transition-all font-bold text-lg';
         passLi.innerHTML = `<span>PASS</span>`;
         passLi.onclick = () => this.checkAnswer(passLi, 'USER_PASSED');
         this.elements.choices.appendChild(passLi);
-
         this.elements.choices.classList.remove('disabled');
     },
     async checkAnswer(selectedLi, selectedChoice) {
@@ -2035,30 +1937,24 @@ const quizMode = {
         const isPass = selectedChoice === 'USER_PASSED';
         const word = this.state.currentQuiz.question.word;
         const quizType = this.state.currentQuiz.type;
-
         this.state.answeredWords.add(word);
-
         selectedLi.classList.add(isCorrect ? 'correct' : 'incorrect');
-
         if (isCorrect && !isPass) {
             playSequence(correctBeep);
         } else {
             playSequence(incorrectBeep);
         }
-
         this.state.sessionAnsweredInSet++;
         if (isCorrect) {
             this.state.sessionCorrectInSet++;
         } else {
             this.state.sessionMistakes.push(word);
         }
-
         if (!this.state.isPracticeMode) {
             await utils.updateWordStatus(word, quizType, (isCorrect && !isPass) ? 'correct' : 'incorrect');
         } else if (isCorrect) {
              this.state.practiceLearnedWords.push(word);
         }
-
         if (!isCorrect || isPass) {
             const correctAnswerEl = Array.from(this.elements.choices.children).find(li => {
                 const choiceSpan = li.querySelector('span:last-child');
@@ -2066,7 +1962,6 @@ const quizMode = {
             });
             correctAnswerEl?.classList.add('correct');
         }
-
         setTimeout(() => {
             if (this.state.sessionAnsweredInSet >= 10) {
                 this.showSessionResultModal();
@@ -2108,14 +2003,12 @@ const quizMode = {
                 try { await learningMode.loadWordList(false, grade); } catch(e) { continue; }
             }
             if (!learningMode.state.isWordListReady[grade]) continue;
-
             let startValue = 1;
             let endValue = learningMode.state.wordList[grade]?.length || 1;
              try {
                  const savedStart = localStorage.getItem(app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_START(grade));
                  const savedEnd = localStorage.getItem(app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_END(grade));
                  const totalWords = learningMode.state.wordList[grade]?.length || 1;
-
                  if (savedStart !== null) {
                      const parsedStart = parseInt(savedStart);
                      if (!isNaN(parsedStart) && parsedStart >= 1 && parsedStart <= totalWords) startValue = parsedStart;
@@ -2125,7 +2018,6 @@ const quizMode = {
                      if (!isNaN(parsedEnd) && parsedEnd >= 1 && parsedEnd <= totalWords) endValue = parsedEnd;
                  }
              } catch(e) { console.warn(`Error reading saved range for ${grade} initial preload:`, e); }
-
             for (const type of ['MULTIPLE_CHOICE_MEANING', 'FILL_IN_THE_BLANK', 'MULTIPLE_CHOICE_DEFINITION']) {
                 this.preloadNextQuiz(grade, type, null, { start: startValue, end: endValue });
             }
@@ -2135,10 +2027,8 @@ const quizMode = {
         if (!grade || !type || this.state.isPreloading[grade]?.[type] || this.state.preloadedQuizzes[grade]?.[type]) {
             return;
         }
-
         if (!this.state.isPreloading[grade]) this.state.isPreloading[grade] = {};
         this.state.isPreloading[grade][type] = true;
-
         try {
             const quiz = await this._generateSingleQuizForPreload(grade, type, wordToExclude, rangeOverride);
             if (quiz) {
@@ -2154,7 +2044,6 @@ const quizMode = {
     async _generateSingleQuizForPreload(grade, quizType, wordToExclude = null, rangeOverride = null) {
         const allWords = learningMode.state.wordList[grade] || [];
         if (allWords.length === 0) return null;
-
         let startVal, endVal;
         if (rangeOverride) {
             startVal = rangeOverride.start;
@@ -2163,36 +2052,28 @@ const quizMode = {
              startVal = parseInt(this.elements.quizRangeStart.textContent) || 1;
              endVal = parseInt(this.elements.quizRangeEnd.textContent) || allWords.length;
         }
-
         const startNum = Math.min(startVal, endVal);
         const endNum = Math.max(startVal, endVal);
         const startIndex = Math.max(0, startNum - 1);
         const endIndex = Math.min(allWords.length - 1, endNum - 1);
         const wordsInRange = allWords.slice(startIndex, endIndex + 1);
-
         if (wordsInRange.length === 0) return null;
-
         let localUpdates = {};
         try {
             const key = app.state.LOCAL_STORAGE_KEYS.UNSYNCED_PROGRESS_UPDATES(grade);
             localUpdates = JSON.parse(localStorage.getItem(key) || '{}');
         } catch(e) { console.warn(`Error reading local progress for ${grade} preload:`, e); }
-
         const learnedWordsInType = utils.getCorrectlyAnsweredWords(quizType, grade);
-
         let candidates = wordsInRange.filter(wordObj => {
             const word = wordObj.word;
             if (word === wordToExclude) return false;
             if (this.state.answeredWords.has(word)) return false;
             if (this.state.isPracticeMode) return true;
-
             const serverStatus = app.state.currentProgress[word]?.[quizType];
             const localStatus = localUpdates[word]?.[quizType];
             const finalStatus = localStatus !== undefined ? localStatus : serverStatus;
-
             return finalStatus !== 'correct';
         });
-
         if (quizType === 'FILL_IN_THE_BLANK') {
             candidates = candidates.filter(word => {
                 if (!word.sample || word.sample.trim() === '') return false;
@@ -2202,13 +2083,9 @@ const quizMode = {
                 return placeholderRegex.test(firstLine) || wordRegex.test(firstLine);
             });
         }
-
         if (candidates.length === 0) return null;
-
         candidates.sort(() => 0.5 - Math.random());
-
         const usableAllWordsForChoices = allWords.length >= 4 ? allWords : [...allWords, {word: 'dummy1', meaning: '오답1'}, {word: 'dummy2', meaning: '오답2'}, {word: 'dummy3', meaning: '오답3'}];
-
         const wordData = candidates[0];
         let quiz = null;
         if (quizType === 'MULTIPLE_CHOICE_MEANING') quiz = this.createMeaningQuiz(wordData, usableAllWordsForChoices);
@@ -2217,7 +2094,6 @@ const quizMode = {
              const definition = await api.fetchDefinition(wordData.word);
              if (definition) quiz = this.createDefinitionQuiz(wordData, usableAllWordsForChoices, definition);
         }
-
         return quiz;
     },
     createMeaningQuiz(correctWordData, allWordsData) {
@@ -2236,13 +2112,11 @@ const quizMode = {
     },
     createBlankQuiz(correctWordData, allWordsData) {
         if (!correctWordData.sample || correctWordData.sample.trim() === '') return null;
-
         const firstLineSentence = correctWordData.sample.split('\n')[0];
         let sentenceWithBlank = "";
         const placeholderRegex = /\*(.*?)\*/;
         const match = firstLineSentence.match(placeholderRegex);
         const wordRegex = new RegExp(`\\b${correctWordData.word}\\b`, 'i');
-
         if (match) {
             sentenceWithBlank = firstLineSentence.replace(placeholderRegex, "＿＿＿＿").trim();
         } else if (firstLineSentence.match(wordRegex)) {
@@ -2250,7 +2124,6 @@ const quizMode = {
         } else {
             return null;
         }
-
         const wrongAnswers = new Set();
         let candidates = allWordsData.filter(w => w.word !== correctWordData.word);
         utils.shuffleArray(candidates);
@@ -2293,7 +2166,6 @@ const quizMode = {
         this.elements.finishedMessage.textContent = message;
     },
 };
-
 const learningMode = {
      state: {
         wordList: { '1y': [], '2y': [], '3y': [] },
@@ -2351,7 +2223,6 @@ const learningMode = {
             e.target.value = sanitizedValue;
         });
         this.elements.backToStartBtn.addEventListener('click', () => this.resetStartScreen());
-
         this.elements.nextBtn.addEventListener('click', () => this.navigate(1));
         this.elements.prevBtn.addEventListener('click', () => this.navigate(-1));
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip());
@@ -2365,12 +2236,10 @@ const learningMode = {
             if(wordData) ui.showWordContextMenu(e, wordData.word);
         };
         this.elements.favoriteBtn.addEventListener('click', () => this.toggleFavorite());
-
         let wordDisplayTouchMove = false;
         this.elements.wordDisplay.addEventListener('touchstart', e => { wordDisplayTouchMove = false; clearTimeout(app.state.longPressTimer); app.state.longPressTimer = setTimeout(() => { const wordData = this.state.currentDisplayList[this.state.currentIndex]; if (!wordDisplayTouchMove && wordData) ui.showWordContextMenu(e, wordData.word); }, 700); }, { passive: true });
         this.elements.wordDisplay.addEventListener('touchmove', () => { wordDisplayTouchMove = true; clearTimeout(app.state.longPressTimer); });
         this.elements.wordDisplay.addEventListener('touchend', () => { clearTimeout(app.state.longPressTimer); });
-
         document.addEventListener('mousedown', this.handleMiddleClick.bind(this));
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
         document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
@@ -2385,11 +2254,9 @@ const learningMode = {
     async loadWordList(force = false, grade = app.state.selectedSheet) {
         if (!grade) return;
         if (!force && this.state.isWordListReady[grade]) return;
-
         const cacheKey = `wordListCache_${grade}`;
         const timestampKey = app.state.LOCAL_STORAGE_KEYS.CACHE_TIMESTAMP(grade);
         const versionKey = app.state.LOCAL_STORAGE_KEYS.CACHE_VERSION(grade);
-
         let forceRefreshDueToVersion = false;
         if (!force) {
             try {
@@ -2397,7 +2264,6 @@ const learningMode = {
                 const snapshot = await get(versionRef);
                 const remoteVersion = snapshot.val() || 0;
                 const localVersion = parseInt(localStorage.getItem(versionKey) || '0');
-
                 if (remoteVersion > localVersion) {
                     forceRefreshDueToVersion = true;
                 }
@@ -2406,9 +2272,7 @@ const learningMode = {
                 forceRefreshDueToVersion = true;
             }
         }
-
         const shouldForceRefresh = force || forceRefreshDueToVersion;
-
         if (shouldForceRefresh) {
             try {
                 localStorage.removeItem(cacheKey);
@@ -2417,7 +2281,6 @@ const learningMode = {
             } catch(e) {}
             this.state.isWordListReady[grade] = false;
         }
-
         try {
             const cachedData = localStorage.getItem(cacheKey);
             const savedTimestamp = localStorage.getItem(timestampKey);
@@ -2437,36 +2300,27 @@ const learningMode = {
                 localStorage.removeItem(versionKey);
             } catch(e2) {}
         }
-
         try {
             const dbRef = ref(rt_db, `${grade}/vocabulary`);
             const snapshot = await get(dbRef);
             const data = snapshot.val();
             if (!data) throw new Error(`Firebase에 '${grade}' 단어 데이터가 없습니다.`);
-
             const wordsArray = Object.values(data).sort((a, b) => a.id - b.id);
             this.state.wordList[grade] = wordsArray;
             this.state.isWordListReady[grade] = true;
-
             const timestampRef = ref(rt_db, `app_config/vocab_timestamp_${grade}`);
             const timestampSnapshot = await get(timestampRef);
             const newTimestamp = timestampSnapshot.val() || Date.now();
-
             const versionRef = ref(rt_db, `app_config/vocab_version_${grade}`);
             const versionSnapshot = await get(versionRef);
             const currentRemoteVersion = versionSnapshot.val() || 1;
-
             const cachePayload = { words: wordsArray };
              try {
                 localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
-
                 localStorage.setItem(timestampKey, newTimestamp.toString());
                 app.state.lastCacheTimestamp[grade] = newTimestamp;
-
                 localStorage.setItem(versionKey, currentRemoteVersion.toString());
-
                 app.updateLastUpdatedText();
-
              } catch(e) { console.error("Error saving word list cache:", e); }
         } catch (error) {
             this.showError(error.message);
@@ -2485,12 +2339,10 @@ const learningMode = {
             this.elements.startScreen.classList.remove('hidden');
             if (!this.state.isWordListReady[grade]) return;
         }
-
         this.state.isMistakeMode = false;
         this.state.isFavoriteMode = false;
         const currentWordList = this.state.wordList[grade];
         const startWord = this.elements.startWordInput.value.trim().toLowerCase();
-
         if (!startWord) {
             this.elements.startScreen.classList.add('hidden');
             try {
@@ -2503,7 +2355,6 @@ const learningMode = {
             this.launchApp(currentWordList);
             return;
         }
-
         const exactMatchIndex = currentWordList.findIndex(item => item.word.toLowerCase() === startWord);
         if (exactMatchIndex !== -1) {
             this.elements.startScreen.classList.add('hidden');
@@ -2511,7 +2362,6 @@ const learningMode = {
             this.launchApp(currentWordList);
             return;
         }
-
         const searchRegex = new RegExp(`\\b${startWord}\\b`, 'i');
         const explanationMatches = currentWordList
             .map((item, index) => ({ word: item.word, index }))
@@ -2529,7 +2379,6 @@ const learningMode = {
             .sort((a, b) => a.distance - b.distance)
             .slice(0, 5)
             .filter(s => s.distance < s.word.length / 2 + 1);
-
         if (levenshteinSuggestions.length > 0 || explanationMatches.length > 0) {
             const title = `<strong>'${startWord}'</strong>(을)를 찾을 수 없습니다. 혹시 이 단어인가요?`;
             this.displaySuggestions(levenshteinSuggestions, explanationMatches, currentWordList, title);
@@ -2543,9 +2392,7 @@ const learningMode = {
         this.state.isFavoriteMode = false;
         const grade = app.state.selectedSheet;
         if (!this.state.isWordListReady[grade]) { await this.loadWordList(false, grade); if (!this.state.isWordListReady[grade]) return; }
-
         const incorrectWords = mistakeWordsFromQuiz || utils.getIncorrectWords();
-
         if (incorrectWords.length === 0) {
             app.showToast("오답 노트에 단어가 없습니다!", false);
             app.navigateTo('mode', grade);
@@ -2560,14 +2407,12 @@ const learningMode = {
         this.state.isFavoriteMode = true;
         const grade = app.state.selectedSheet;
         if (!this.state.isWordListReady[grade]) { await this.loadWordList(false, grade); if (!this.state.isWordListReady[grade]) return; }
-
         const favoriteWords = utils.getFavoriteWords();
         if (favoriteWords.length === 0) {
             app.showToast("즐겨찾기에 등록된 단어가 없습니다!", false);
             app.navigateTo('mode', grade);
             return;
         }
-
         const favoriteWordList = favoriteWords.map(word => this.state.wordList[grade].find(wordObj => wordObj.word === word)).filter(Boolean);
         this.state.currentIndex = 0;
         this.launchApp(favoriteWordList);
@@ -2575,7 +2420,6 @@ const learningMode = {
     displaySuggestions(vocabSuggestions, explanationSuggestions, sourceList, title) {
         this.elements.startInputContainer.classList.add('hidden');
         this.elements.suggestionsTitle.innerHTML = title;
-
         const populateList = (listElement, suggestions) => {
             listElement.innerHTML = '';
             if (suggestions.length === 0) {
@@ -2590,10 +2434,8 @@ const learningMode = {
                 listElement.appendChild(btn);
             });
         };
-
         populateList(this.elements.suggestionsVocabList, vocabSuggestions);
         populateList(this.elements.suggestionsExplanationList, explanationSuggestions);
-
         this.elements.suggestionsContainer.classList.remove('hidden');
     },
     reset() {
@@ -2634,7 +2476,6 @@ const learningMode = {
         this.elements.cardBack.classList.remove('is-slid-up');
         const wordData = this.state.currentDisplayList[index];
         if (!wordData) return;
-
         if (!this.state.isMistakeMode && !this.state.isFavoriteMode) {
              try {
                 const key = app.state.LOCAL_STORAGE_KEYS.LAST_INDEX(app.state.selectedSheet);
@@ -2643,19 +2484,15 @@ const learningMode = {
                 console.error("Error saving last index to localStorage", e);
             }
         }
-
         this.elements.wordDisplay.textContent = wordData.word;
         ui.adjustFontSize(this.elements.wordDisplay);
-
         this.elements.meaningDisplay.innerHTML = wordData.meaning.replace(/\n/g, '<br>');
         ui.renderInteractiveText(this.elements.explanationDisplay, wordData.explanation);
         this.elements.explanationContainer.classList.toggle('hidden', !wordData.explanation || !wordData.explanation.trim());
         const hasSample = wordData.sample && wordData.sample.trim() !== '';
-
         const defaultImg = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
         const sampleImg = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
         this.elements.sampleBtnImg.src = hasSample ? sampleImg : defaultImg;
-
         const grade = app.state.selectedSheet;
         let isFavorite = app.state.currentProgress[wordData.word]?.favorite || false;
         if (grade) {
@@ -2679,10 +2516,8 @@ const learningMode = {
         activityTracker.recordActivity();
         const wordData = this.state.currentDisplayList[this.state.currentIndex];
         if (!wordData) return;
-
         const isFavorite = await utils.toggleFavorite(wordData.word);
         this.updateFavoriteIcon(isFavorite);
-
         if (this.state.isFavoriteMode && !isFavorite) {
              this.state.currentDisplayList.splice(this.state.currentIndex, 1);
              if (this.state.currentDisplayList.length === 0) {
@@ -2710,11 +2545,9 @@ const learningMode = {
         const isBackVisible = this.elements.cardBack.classList.contains('is-slid-up');
         const wordData = this.state.currentDisplayList[this.state.currentIndex];
         const hasSample = wordData && wordData.sample && wordData.sample.trim() !== '';
-
         const backImgUrl = 'https://images.icon-icons.com/1055/PNG/128/5-remove-cat_icon-icons.com_76681.png';
         const sampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
         const noSampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
-
         if (!isBackVisible) {
             if (!hasSample) { app.showNoSampleMessage(); return; }
             this.elements.backTitle.textContent = wordData.word;
@@ -2768,11 +2601,9 @@ const learningMode = {
     },
     handleProgressBarInteraction(e) {
         if (!this.isLearningModeActive()) return;
-
         const track = this.elements.progressBarTrack;
         const totalWords = this.state.currentDisplayList.length;
         if (totalWords <= 1) return;
-
         const handleInteraction = (clientX) => {
             activityTracker.recordActivity();
             const rect = track.getBoundingClientRect();
@@ -2784,7 +2615,6 @@ const learningMode = {
                 this.displayWord(newIndex);
             }
         };
-
         switch (e.type) {
             case 'mousedown':
             case 'touchstart':
@@ -2806,7 +2636,6 @@ const learningMode = {
         }
     },
 };
-
 function levenshteinDistance(a = '', b = '') {
     const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
     for (let i = 0; i <= a.length; i += 1) track[0][i] = i;
