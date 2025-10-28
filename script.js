@@ -154,7 +154,8 @@ const app = {
         psTitle: document.getElementById('ps-title'),
         psMessage: document.getElementById('ps-message'),
         psCloseBtn: document.getElementById('ps-close-btn'),
-    },
+        prLogoutBtn: document.getElementById('pr-logout-btn'),
+      },
     async init() {
         firebaseApp = initializeApp(this.config.firebaseConfig);
         auth = getAuth(firebaseApp);
@@ -421,9 +422,12 @@ async handlePermissionFlow(user) {
         this.elements.prGradeInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.submitPermissionRequest();
         });
+        this.elements.prLogoutBtn.addEventListener('click', () => { // 추가
+            this.elements.permissionRequestModal.classList.add('hidden');
+            signOut(auth);
+        });
     },
-     syncOfflineDataSync() {
-         if (!app.state.user) return;
+     syncOfflineDataSync() {         if (!app.state.user) return;
          const grade = app.state.selectedSheet;
          if (!grade) return;
          const timeKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_TIME(grade);
@@ -2657,6 +2661,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
