@@ -191,7 +191,7 @@ const app = {
             }
         });
     },
-    async handlePermissionFlow(user) {
+async handlePermissionFlow(user) {
         this.elements.loginScreen.classList.add('hidden');
         this.elements.mainContainer.classList.add('hidden');
         document.body.classList.add('items-center');
@@ -235,6 +235,13 @@ const app = {
                     '접근 제한', 
                     '관리자에 의해 앱 접근이 제한되었습니다.', 
                     'text-red-500',
+                    () => signOut(auth)
+                );
+            } else if (permissionStatus.status === 'pending') { // '확인 중' 상태 추가
+                this.showStatusModal(
+                    '확인 중', 
+                    '관리자가 사용 권한을 확인 중입니다.<br>잠시만 기다려주세요.', 
+                    'text-blue-500',
                     () => signOut(auth)
                 );
             } else {
@@ -2652,4 +2659,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
