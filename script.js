@@ -240,7 +240,7 @@ async handlePermissionFlow(user) {
             } else if (permissionStatus.status === 'pending') { // '확인 중' 상태 추가
                 this.showStatusModal(
                     '확인 중', 
-                    '관리자가 사용 권한을 확인 중입니다.<br>잠시만 기다려주세요.', 
+                    '관리자가 확인 중이니 기다려주세요.', 
                     'text-blue-500',
                     () => signOut(auth)
                 );
@@ -277,7 +277,7 @@ async handlePermissionFlow(user) {
             if (result.success) {
                 this.showStatusModal(
                     '요청 완료',
-                    '관리자에게 사용권한을 요청하였습니다.<br>승인을 기다려주세요.',
+                    '관리자에게 요청하였으니 기다려주세요.',
                     'text-blue-500',
                     () => signOut(auth)
                 );
@@ -2659,5 +2659,6 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
