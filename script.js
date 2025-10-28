@@ -260,12 +260,10 @@ async handlePermissionFlow(user) {
         const gradeStr = this.elements.prGradeInput.value.trim();
         const grade = parseInt(gradeStr);
         if (!name) {
-            this.showToast("이름을 입력해 주세요.", true);
             this.elements.prNameInput.focus();
             return;
         }
-        if (isNaN(grade) || grade <= 0) {
-            this.showToast("유효한 학년(숫자)을 입력해 주세요.", true);
+        if (isNaN(grade) || ![1, 2, 3].includes(grade)) {
             this.elements.prGradeInput.focus();
             return;
         }
@@ -2659,6 +2657,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
