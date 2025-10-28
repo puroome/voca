@@ -328,8 +328,11 @@
     </div>
     
     <!-- New Permission Modals Start -->
-    <div id="permission-request-modal" class="hidden fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[300]">
-        <div class="bg-white p-6 rounded-2xl shadow-2xl text-center w-11/12 max-w-sm">
+<div id="permission-request-modal" class="hidden fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[300]">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl text-center w-11/12 max-w-sm relative">
+            <button id="pr-logout-btn" class="group bg-red-500/80 hover:bg-red-600 text-white font-bold p-2 rounded-full shadow-lg absolute top-3 right-3 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            </button>
             <h2 class="text-2xl font-bold text-gray-800 mb-4">앱 사용 권한 요청</h2>
             <p class="mb-4 text-gray-600">앱 사용을 위해 이름과 학년 정보를 입력해 주세요.</p>
             <input type="text" id="pr-name-input" class="w-full border-2 border-gray-300 p-3 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition mb-3" placeholder="이름 (필수)">
@@ -362,4 +365,5 @@
     <script src="script.js"></script>
 </body>
 </html>
+
 
