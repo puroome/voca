@@ -427,7 +427,8 @@ async handlePermissionFlow(user) {
             signOut(auth);
         });
     },
-     syncOfflineDataSync() {         if (!app.state.user) return;
+     syncOfflineDataSync() {
+         if (!app.state.user) return;
          const grade = app.state.selectedSheet;
          if (!grade) return;
          const timeKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_TIME(grade);
@@ -2661,6 +2662,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
