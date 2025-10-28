@@ -187,6 +187,24 @@ const app = {
 
         onAuthStateChanged(auth, async (user) => {
             if (user) {
+                // 1. 접근 허가 목록 확인
+                try {
+                    const rosterRef = ref(rt_db, 'app_config/studentNameMap');
+                    const rosterSnap = await get(rosterRef);
+                    const allowedEmails = rosterSnap.val() ? Object.keys(rosterSnap.val()) : [];
+
+                    if (user.email !== this.config.adminEmail && !allowedEmails.includes(user.email)) {
+                        await signOut(auth);
+                        this.showToast("관리자에게 등록되지 않은 계정입니다. 접근이 허용되지 않습니다.", true);
+                        return;
+                    }
+                } catch(e) {
+                    console.error("Error checking access control:", e);
+                    await signOut(auth);
+                    this.showToast("접근 권한 확인 중 오류 발생. 다시 시도해 주세요.", true);
+                    return;
+                }
+                
                 this.state.user = user;
                 const userRef = doc(db, 'users', user.uid);
                 await setDoc(userRef, {
