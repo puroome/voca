@@ -15,7 +15,6 @@
     </style>
 </head>
 <body class="bg-gray-100 flex justify-center items-center min-h-screen p-4 pb-24">
-
     <div id="login-screen" class="text-center">
         <h1 class="text-4xl font-bold text-gray-800 mb-4">어휘 학습 앱</h1>
         <button id="login-btn" class="bg-white hover:bg-gray-100 text-gray-800 font-semibold py-3 px-6 border border-gray-300 rounded-lg shadow-md flex items-center justify-center mx-auto transition-colors">
@@ -23,19 +22,15 @@
             Google 계정으로 로그인
         </button>
     </div>
-
     <div id="ime-warning" class="hidden fixed top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 bg-red-600/50 text-white py-2 px-5 rounded-lg shadow-xl z-[200] text-lg font-semibold">영어키로 전환하세요.</div>
-
     <div class="fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
         <div class="w-full max-w-2xl relative px-4 flex items-center h-20">
             <button id="back-to-grade-selection-btn" class="hidden group bg-indigo-700 hover:bg-indigo-800 text-white font-bold p-3 rounded-full shadow-lg pointer-events-auto flex-shrink-0">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
             </button>
-            
             <div id="author-credit" class="absolute top-5 left-1/2 -translate-x-1/2 pointer-events-auto">
                 <p class="author-text text-center text-sm font-semibold">Made by JEONG KAPSU</p>
             </div>
-
             <div id="progress-bar-container" class="hidden w-full mx-4 pointer-events-auto mt-12">
                 <div id="progress-bar-track" class="relative w-full h-2 bg-gray-300 rounded-full cursor-pointer">
                     <div id="progress-bar-fill" class="absolute h-full bg-blue-500 rounded-full"></div>
@@ -46,7 +41,6 @@
                     </div>
                 </div>
             </div>
-            
             <div class="ml-auto flex items-center space-x-2 pointer-events-auto">
                 <button id="refresh-btn" class="hidden group bg-green-600 hover:bg-green-700 text-white font-bold p-3 rounded-full shadow-lg flex-shrink-0">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
@@ -57,7 +51,6 @@
             </div>
         </div>
     </div>
-
     <div id="main-container" class="hidden w-full max-w-2xl mx-auto pt-20">
         <div id="grade-selection-screen" class="content-panel p-8 rounded-2xl shadow-lg text-center relative">
             <button id="logout-btn" class="group bg-red-600 hover:bg-red-700 text-white font-bold p-3 rounded-full shadow-lg absolute top-6 right-6">
@@ -173,16 +166,12 @@
                     </div>
                 </div>
             </div>
-
             <div id="dashboard-stats-30day-container"></div>
-            
             <div id="dashboard-stats-total-container"></div>
         </div>
-
         <div id="quiz-mode-container" class="hidden content-panel w-full p-4 sm:p-6 rounded-2xl shadow-lg">
             <div id="quiz-selection-screen" class="text-center p-10">
                 <h1 class="text-2xl font-bold text-gray-800 mb-6">퀴즈 유형</h1>
-                
                 <div class="text-gray-600 mb-8">
                     <p>원하는 퀴즈 유형과 범위를 선택하세요.</p>
                     <div class="flex justify-center items-center mt-3 text-base font-semibold">
@@ -194,7 +183,6 @@
                                 class="min-w-[1.5rem] text-center font-bold text-white bg-red-500 bg-opacity-30 hover:bg-opacity-60 rounded-md px-0.5 py-0.5 transition-colors">1</button>
                     </div>
                 </div>
-                
                 <div class="flex flex-col sm:flex-row justify-center items-center sm:gap-x-6 gap-y-4">
                     <div id="start-meaning-quiz-btn" class="relative cursor-pointer overflow-hidden rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:-rotate-2 w-40 h-40">
                         <img src="https://res.cloudinary.com/dx07dymqs/image/upload/v1760583509/quiz1_xh4m9f.jpg" alt="뜻 맞히기 이미지" class="w-full h-full object-cover">
@@ -225,7 +213,6 @@
                 <p id="quiz-finished-message" class="text-gray-700 text-lg"></p>
              </div>
         </div>
-
         <div id="learning-mode-container" class="hidden">
             <div id="learning-start-screen" class="content-panel p-8 rounded-2xl shadow-lg text-center">
                 <div id="learning-start-input-container">
@@ -279,7 +266,6 @@
             </div>
         </div>
     </div>
-    
     <div id="learning-fixed-buttons" class="hidden fixed bottom-0 left-0 right-0 p-4 z-40">
         <div class="max-w-2xl mx-auto flex justify-between items-center px-4">
             <button id="prev-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-full w-14 h-14 flex items-center justify-center transition-colors">
@@ -293,7 +279,6 @@
             </button>
         </div>
     </div>
-    
     <div id="confirmation-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
         <div class="bg-white p-6 rounded-lg shadow-xl text-center w-11/12 max-w-sm">
             <p id="confirmation-message" class="mb-4 text-lg">어휘자료가 새로고침됩니다.<br>계속하시겠습니까?</p>
@@ -304,10 +289,8 @@
         </div>
     </div>
     <div id="refresh-success-message" class="hidden opacity-0 fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-green-600 text-white py-2 px-4 rounded-full text-lg font-bold transition-opacity duration-300 pointer-events-none">새로고침 완료!</div>
-
     <div id="no-sample-message" class="hidden opacity-0 fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-800 text-white py-2 px-4 rounded-full text-lg font-bold transition-opacity duration-300 pointer-events-none">예문이 없어요</div>
     <div id="translation-tooltip" class="hidden absolute bg-black bg-opacity-80 text-white text-sm rounded-lg py-2 px-3 z-[110] max-w-sm pointer-events-none"></div>
-
     <div id="practice-mode-control" class="hidden fixed bottom-4 left-4 z-50 group">
         <label for="practice-mode-checkbox" class="flex items-center bg-gray-800 bg-opacity-80 text-white p-3 rounded-lg shadow-lg cursor-pointer">
             <input type="checkbox" id="practice-mode-checkbox" class="h-5 w-5 rounded text-blue-500 focus:ring-blue-500 border-gray-300">
@@ -318,13 +301,11 @@
             <div class="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-gray-900"></div>
         </div>
     </div>
-
     <div id="word-context-menu" class="hidden absolute bg-white rounded-md shadow-lg py-1 z-[120] border border-gray-200 flex flex-col">
         <button id="search-daum-context-btn" class="text-left w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap">Daum</button>
         <button id="search-naver-context-btn" class="text-left w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap">Naver</button>
         <button id="search-longman-context-btn" class="text-left w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap">Longman</button>
     </div>
-
     <div id="range-input-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-[250] flex items-start justify-center pt-24">
         <div class="bg-white rounded-lg shadow-xl p-4 w-11/12 max-w-xs" onclick="event.stopPropagation()">
             <label id="range-input-label" for="range-input-field" class="block text-sm font-medium text-gray-700 mb-2">시작번호 (1-100) :</label>
@@ -335,7 +316,6 @@
             </div>
         </div>
     </div>
-
     <div id="quiz-result-modal" class="hidden fixed inset-0 bg-black/50 z-[250] flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-xl p-8 text-center w-full max-w-sm content-panel">
             <h2 class="text-2xl font-bold text-gray-800 mb-4">퀴즈 결과</h2>
@@ -346,6 +326,25 @@
             </div>
         </div>
     </div>
+    
+    <!-- New Permission Modals Start -->
+    <div id="permission-request-modal" class="hidden fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[300]">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl text-center w-11/12 max-w-sm">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">앱 사용 권한 요청</h2>
+            <p class="mb-4 text-gray-600">앱 사용을 위해 이름과 학년 정보를 입력해 주세요.</p>
+            <input type="text" id="pr-name-input" class="w-full border-2 border-gray-300 p-3 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition mb-3" placeholder="이름 (필수)">
+            <input type="number" id="pr-grade-input" class="w-full border-2 border-gray-300 p-3 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition mb-4" placeholder="학년 (숫자만 입력)" pattern="[0-9]*" inputmode="numeric">
+            <button id="pr-submit-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors">권한 요청</button>
+        </div>
+    </div>
+    <div id="permission-status-modal" class="hidden fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[300]">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl text-center w-11/12 max-w-sm">
+            <h2 id="ps-title" class="text-2xl font-bold text-gray-800 mb-4"></h2>
+            <p id="ps-message" class="mb-6 text-gray-600"></p>
+            <button id="ps-close-btn" class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors">확인</button>
+        </div>
+    </div>
+    <!-- New Permission Modals End -->
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
@@ -359,10 +358,8 @@
             getDatabase, ref, get, set,
             getFirestore, doc, getDoc, setDoc, updateDoc,
         };
-
         document.dispatchEvent(new Event('firebaseSDKLoaded'));
     </script>
-
     <script src="script.js"></script>
 </body>
 </html>
