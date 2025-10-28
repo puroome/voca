@@ -4,17 +4,33 @@ let getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup;
 let getDatabase, ref, get, set;
 let getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch;
 
+// index.html에서 가져올 변수들
+let accessControl; 
+let isUserAdmin = false;
+
 document.addEventListener('firebaseSDKLoaded', () => {
+    // Firebase SDK 함수들을 글로벌하게 임포트
     ({
-        initializeApp,
-        getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
+        initializeApp, getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
         getDatabase, ref, get, set,
         getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch
     } = window.firebaseSDK);
     window.firebaseSDK.writeBatch = writeBatch;
 
-    app.init();
+    // index.html에서 정의된 접근 제어 도우미 함수 및 변수 가져오기
+    // accessControl = window.accessControl; 
+
+    // 앱 초기화 (인증에 독립적인 이벤트 바인딩)
+    app.init(); 
 });
+
+// index.html에서 접근이 허가되면 발생하는 이벤트 리스너
+document.addEventListener('userAuthenticated', (e) => {
+    const { user, isAdmin } = e.detail;
+    isUserAdmin = isAdmin; // 관리자 상태 플래그 설정
+    app.startApp(user); // 앱 데이터 로드 시작
+});
+
 
 const activityTracker = {
     sessionSeconds: 0,
@@ -112,6 +128,7 @@ const app = {
         longPressTimer: null,
         lastCacheTimestamp: { '1y': null, '2y': null, '3y': null },
         audioContext: null,
+        isAdmin: false, // 관리자 플래그 추가
         LOCAL_STORAGE_KEYS: {
             LAST_GRADE: 'student_lastGrade',
             PRACTICE_MODE: 'student_practiceMode',
@@ -159,10 +176,15 @@ const app = {
         lastUpdatedText: document.getElementById('last-updated-text')
     },
     async init() {
-        firebaseApp = initializeApp(this.config.firebaseConfig);
+        // Firebase Auth, DB는 index.html 모듈 스크립트에서 초기화 및 글로벌 변수로 설정됨
+
+        // 로드된 Firebase App을 script.js의 변수에 연결
+        const config = this.config.firebaseConfig;
+        firebaseApp = initializeApp(config);
         auth = getAuth(firebaseApp);
         db = getFirestore(firebaseApp);
         rt_db = getDatabase(firebaseApp);
+
 
         await Promise.all([
             translationDBCache.init(),
@@ -170,11 +192,9 @@ const app = {
             this.fetchAndSetBackgroundImages()
         ]).catch(e => console.error("Cache or image init failed", e));
 
-        this.bindGlobalEvents();
-        quizMode.init();
-        learningMode.init();
-        dashboard.init();
-
+        // index.html에서 이미 이벤트 리스너를 바인딩했으므로, 여기서는 전역 이벤트를 제거
+        // this.bindGlobalEvents(); // 이 함수는 아래 startApp에서 일부 재호출됨
+        
         try {
             const savedPracticeMode = localStorage.getItem(this.state.LOCAL_STORAGE_KEYS.PRACTICE_MODE);
             if (savedPracticeMode === 'true') {
@@ -185,77 +205,63 @@ const app = {
             console.error("Error reading practice mode from localStorage", e);
         }
 
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                // 1. 접근 허가 목록 확인
-                try {
-                    const rosterRef = ref(rt_db, 'app_config/studentNameMap');
-                    const rosterSnap = await get(rosterRef);
-                    const allowedEmails = rosterSnap.val() ? Object.keys(rosterSnap.val()) : [];
+        // Auth Listener는 index.html에서 처리하며, 여기서는 userAuthenticated 이벤트를 통해 시작됨.
+    },
+    async startApp(user, isAdmin) {
+         // Firebase SDK가 로드되었는지 확인
+        if (!initializeApp) {
+            console.error("Firebase SDK is not loaded. Cannot start app.");
+            return;
+        }
 
-                    if (user.email !== this.config.adminEmail && !allowedEmails.includes(user.email)) {
-                        await signOut(auth);
-                        this.showToast("관리자에게 등록되지 않은 계정입니다. 접근이 허용되지 않습니다.", true);
-                        return;
-                    }
-                } catch(e) {
-                    console.error("Error checking access control:", e);
-                    await signOut(auth);
-                    this.showToast("접근 권한 확인 중 오류 발생. 다시 시도해 주세요.", true);
-                    return;
+        this.state.user = user;
+        this.state.isAdmin = isAdmin;
+
+        const userRef = doc(db, 'users', user.uid);
+        await setDoc(userRef, {
+            displayName: user.displayName,
+            email: user.email
+        }, { merge: true });
+
+        // UI 상태 업데이트
+        this.elements.loginScreen.classList.add('hidden');
+        this.elements.mainContainer.classList.remove('hidden');
+        document.body.classList.remove('items-center');
+
+        await utils.loadUserProgress();
+        await this.syncOfflineData();
+
+        if (!this.state.isAppReady) {
+            this.state.isAppReady = true;
+            await quizMode.preloadInitialQuizzesBasedOnSavedRange();
+        }
+
+        // index.html에서 처리되지 않은 전역 이벤트 리스너를 바인딩 (onAuthStateChanged 제거됨)
+        this.bindGlobalEvents(); 
+        
+        const hash = window.location.hash.substring(1);
+        const [view, gradeFromHash] = hash.split('-');
+
+        let initialState = { view: 'grade' };
+        try {
+            const lastGrade = localStorage.getItem(this.state.LOCAL_STORAGE_KEYS.LAST_GRADE);
+
+            if (gradeFromHash && ['1y', '2y', '3y'].includes(gradeFromHash)) {
+                if (['mode', 'quiz', 'learning', 'dashboard', 'mistakeReview', 'favoriteReview'].includes(view)) {
+                    initialState = { view: view, grade: gradeFromHash };
                 }
-                
-                this.state.user = user;
-                const userRef = doc(db, 'users', user.uid);
-                await setDoc(userRef, {
-                    displayName: user.displayName,
-                    email: user.email
-                }, { merge: true });
-
-                this.elements.loginScreen.classList.add('hidden');
-                this.elements.mainContainer.classList.remove('hidden');
-                document.body.classList.remove('items-center');
-
-                await utils.loadUserProgress();
-                await this.syncOfflineData();
-
-                if (!this.state.isAppReady) {
-                    this.state.isAppReady = true;
-                    await quizMode.preloadInitialQuizzesBasedOnSavedRange();
-                }
-
-                const hash = window.location.hash.substring(1);
-                const [view, gradeFromHash] = hash.split('-');
-
-                let initialState = { view: 'grade' };
-                try {
-                    const lastGrade = localStorage.getItem(this.state.LOCAL_STORAGE_KEYS.LAST_GRADE);
-
-                    if (gradeFromHash && ['1y', '2y', '3y'].includes(gradeFromHash)) {
-                        if (['mode', 'quiz', 'learning', 'dashboard', 'mistakeReview', 'favoriteReview'].includes(view)) {
-                            initialState = { view: view, grade: gradeFromHash };
-                        }
-                    } else if (['1y', '2y', '3y'].includes(view)) {
-                         initialState = { view: 'mode', grade: view };
-                    } else if (lastGrade && ['1y', '2y', '3y'].includes(lastGrade)) {
-                        initialState = { view: 'mode', grade: lastGrade };
-                    }
-                } catch(e) {
-                    console.error("Error reading last grade from localStorage", e);
-                    initialState = { view: 'grade' };
-                }
-
-                history.replaceState(initialState, '');
-                this._renderView(initialState.view, initialState.grade);
-            } else {
-                this.state.user = null;
-                this.state.currentProgress = {};
-                this.elements.loginScreen.classList.remove('hidden');
-                this.elements.mainContainer.classList.add('hidden');
-                document.body.classList.add('items-center');
-                this._renderView(null);
+            } else if (['1y', '2y', '3y'].includes(view)) {
+                 initialState = { view: 'mode', grade: view };
+            } else if (lastGrade && ['1y', '2y', '3y'].includes(lastGrade)) {
+                initialState = { view: 'mode', grade: lastGrade };
             }
-        });
+        } catch(e) {
+            console.error("Error reading last grade from localStorage", e);
+            initialState = { view: 'grade' };
+        }
+
+        history.replaceState(initialState, '');
+        this._renderView(initialState.view, initialState.grade);
     },
     async syncOfflineData() {
         if (!app.state.user) return;
@@ -290,16 +296,9 @@ const app = {
         await utils.loadUserProgress();
     },
     bindGlobalEvents() {
-        this.elements.loginBtn.addEventListener('click', () => {
-            const provider = new GoogleAuthProvider();
-            signInWithPopup(auth, provider).catch(error => {
-                console.error("Google Sign-In Error:", error);
-                this.showToast("로그인에 실패했습니다. 다시 시도해 주세요.", true);
-            });
-        });
-
-        this.elements.logoutBtn.addEventListener('click', () => signOut(auth));
-
+        // 기존의 로그인/로그아웃 이벤트는 index.html 모듈 스크립트로 이동됨.
+        // 여기서는 앱 로직에 필요한 이벤트만 유지
+        
         document.querySelectorAll('.grade-select-card').forEach(card => {
             card.addEventListener('click', () => {
                 const grade = card.dataset.sheet;
@@ -505,7 +504,7 @@ const app = {
             case 'mode':
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                if (this.state.user && this.state.user.email === this.config.adminEmail) {
+                if (this.state.isAdmin) { // 관리자 플래그를 사용하여 버튼 표시 (기존 로직 유지)
                     this.elements.refreshBtn.classList.remove('hidden');
                 }
                 this.elements.lastUpdatedText.classList.remove('hidden');
