@@ -270,7 +270,7 @@ const app = {
             if (result.success) {
                 this.showStatusModal(
                     '요청 완료',
-                    '관리자에게 사용권한을 요청하였습니다. 승인을 기다려주세요.',
+                    '관리자에게 사용권한을 요청하였습니다.<br>승인을 기다려주세요.',
                     'text-blue-500',
                     () => signOut(auth)
                 );
@@ -2652,3 +2652,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
