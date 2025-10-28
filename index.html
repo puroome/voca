@@ -18,10 +18,15 @@
 
     <div id="login-screen" class="text-center">
         <h1 class="text-4xl font-bold text-gray-800 mb-4">어휘 학습 앱</h1>
+        <p id="auth-message" class="mb-4 text-gray-600">Google 계정으로 로그인</p>
         <button id="login-btn" class="bg-white hover:bg-gray-100 text-gray-800 font-semibold py-3 px-6 border border-gray-300 rounded-lg shadow-md flex items-center justify-center mx-auto transition-colors">
             <img src="google.png" alt="Google 로고" class="w-6 h-6 mr-3">
             Google 계정으로 로그인
         </button>
+        <div id="initial-loader" class="hidden mt-8">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+            <p class="mt-2 text-gray-500">접근 권한 확인 중...</p>
+        </div>
     </div>
 
     <div id="ime-warning" class="hidden fixed top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 bg-red-600/50 text-white py-2 px-5 rounded-lg shadow-xl z-[200] text-lg font-semibold">영어키로 전환하세요.</div>
@@ -63,7 +68,7 @@
             <button id="logout-btn" class="group bg-red-600 hover:bg-red-700 text-white font-bold p-3 rounded-full shadow-lg absolute top-6 right-6">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
             </button>
-            <h1 class="text-3xl font-bold text-gray-800 mb-2">어휘 학습</h1>
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">어휘 학습 앱</h1>
              <p class="text-gray-600 mb-8">학습할 학년을 선택하세요.</p>
              <div class="grid grid-cols-3 gap-6 items-end perspective-container">
                    <div class="grade-select-card" data-sheet="1y">
@@ -360,24 +365,102 @@
             getFirestore, doc, getDoc, setDoc, updateDoc,
         };
 
+        const ADMIN_EMAIL = 'puroome@gmail.com';
+
+        const loginScreen = document.getElementById('login-screen');
+        const mainContainer = document.getElementById('main-container');
+        const authMessage = document.getElementById('auth-message');
+        const initialLoader = document.getElementById('initial-loader');
+        const loginBtn = document.getElementById('login-btn');
+        
+        let firebaseApp, auth, rt_db;
+
+        // Function to display messages or deny access
+        const showAccessDenied = (reason) => {
+            initialLoader.classList.add('hidden');
+            authMessage.innerHTML = reason;
+            authMessage.classList.add('text-red-500', 'font-bold');
+            loginScreen.classList.remove('hidden');
+            mainContainer.classList.add('hidden');
+            if (auth && auth.currentUser) {
+                 signOut(auth).catch(e => console.error("Sign out failed on denial:", e));
+            }
+        };
+
+        // Roster Check and App Start
+        const checkRosterAndProceed = async (user) => {
+            initialLoader.classList.remove('hidden');
+            authMessage.textContent = '접근 권한 확인 중...';
+            
+            // 1. 관리자는 무조건 통과
+            if (user.email === ADMIN_EMAIL) {
+                document.dispatchEvent(new CustomEvent('userAuthenticated', { detail: { user, isAdmin: true } }));
+                return;
+            }
+
+            // 2. 학생 명단 확인 (Realtime DB의 studentNameMap 사용)
+            const studentRosterRef = ref(rt_db, 'studentRoster/studentNameMap');
+            
+            try {
+                const snapshot = await get(studentRosterRef);
+                const allowedEmailsMap = snapshot.val(); 
+
+                const isStudentAllowed = allowedEmailsMap && allowedEmailsMap.hasOwnProperty(user.email);
+                
+                if (isStudentAllowed) {
+                    // 허가된 학생. script.js로 앱 로드를 위임합니다.
+                    document.dispatchEvent(new CustomEvent('userAuthenticated', { detail: { user, isAdmin: false } }));
+                } else {
+                    // 허가되지 않음
+                    showAccessDenied(`등록되지 않은 계정 (${user.email})입니다.<br>관리자에게 문의하세요.`);
+                }
+            } catch (error) {
+                console.error("RTDB 학생 명단 확인 오류:", error);
+                showAccessDenied('명단 확인 중 오류가 발생했습니다.<br>잠시 후 다시 시도해 주세요.'); 
+            } finally {
+                initialLoader.classList.add('hidden');
+            }
+        };
+
+        // Firebase Initialization
+        document.addEventListener('DOMContentLoaded', () => {
+            const config = window.app?.config?.firebaseConfig; // script.js에서 config 가져오기 시도 (없을 경우를 대비해)
+            if (config) {
+                firebaseApp = initializeApp(config);
+                auth = getAuth(firebaseApp);
+                rt_db = getDatabase(firebaseApp);
+                
+                loginBtn.addEventListener('click', () => {
+                    const provider = new GoogleAuthProvider();
+                    signInWithPopup(auth, provider).catch(error => {
+                        console.error("Google Sign-In Error:", error);
+                        showAccessDenied("로그인에 실패했습니다. 다시 시도해 주세요.");
+                    });
+                });
+                
+                document.getElementById('logout-btn').addEventListener('click', () => {
+                    if (auth) signOut(auth);
+                });
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        checkRosterAndProceed(user); 
+                    } else {
+                        loginScreen.classList.remove('hidden');
+                        mainContainer.classList.add('hidden');
+                        document.body.classList.add('items-center');
+                        authMessage.textContent = 'Google 계정으로 로그인';
+                        authMessage.classList.remove('text-red-500', 'font-bold');
+                        initialLoader.classList.add('hidden');
+                    }
+                });
+
+            }
+        });
+
         document.dispatchEvent(new Event('firebaseSDKLoaded'));
     </script>
 
     <script src="script.js"></script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
