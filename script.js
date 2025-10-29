@@ -46,7 +46,7 @@ const activityTracker = {
             document.body.addEventListener(event, this.recordActivity, true));
     },
     stopAndSave() {
-        if (!this.timerInterval) return;
+        if (this.timerInterval) return;
         clearInterval(this.timerInterval);
         clearInterval(this.saveInterval);
         this.timerInterval = null;
@@ -79,7 +79,10 @@ const app = {
             appId: "1:213863780677:web:78d6b8755866a0c5ddee2c",
             databaseURL: "https://wordapp-91c0a-default-rtdb.asia-southeast1.firebasedatabase.app/"
         },
-        SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec",
+        // [필수] 학생 명단 시트 (권한 요청 처리) GAS 배포 주소
+        SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzjtB_Mh6TlEGwd_UzBe-gwOJ6-LxViJuFl1C-4U_4qhOb2cZGL-MRQ1nP39c3ibF4/exec",
+        // [필수] 어휘 데이터 시트 (버전 업데이트) GAS 배포 주소
+        VOCAB_SYNC_URL: "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec",
         MERRIAM_WEBSTER_API_KEY: "02d1892d-8fb1-4e2d-bc43-4ddd4a47eab3",
         sheetLinks: {
             '1y': 'https://docs.google.com/spreadsheets/d/1r7fWUV1ea9CU-s2iSOwLKexEe2_7L8oUKhK0n1DpDUM/edit?usp=sharing',
@@ -199,7 +202,7 @@ async handlePermissionFlow(user) {
         const email = user.email;
         try {
             const permissionStatus = await api.checkPermission(email);
-            if (permissionStatus.status === 'approved') {
+            if (permissionStatus === 'approved') {
                 this.state.user = user;
                 const userRef = doc(db, 'users', user.uid);
                 await setDoc(userRef, { displayName: user.displayName, email: user.email }, { merge: true });
@@ -231,21 +234,21 @@ async handlePermissionFlow(user) {
                 }
                 history.replaceState(initialState, '');
                 this._renderView(initialState.view, initialState.grade);
-            } else if (permissionStatus.status === 'denied') {
+            } else if (permissionStatus === 'denied') {
                 this.showStatusModal(
                     '접근 제한', 
                     '관리자에 의해 앱 접근이 제한되었습니다.', 
                     'text-red-500',
                     () => signOut(auth)
                 );
-            } else if (permissionStatus.status === 'pending') { // '확인 중' 상태 추가
+            } else if (permissionStatus === 'pending') {
                 this.showStatusModal(
                     '확인 중', 
                     '관리자가 확인 중이니 기다려주세요.', 
                     'text-blue-500',
                     () => signOut(auth)
                 );
-            } else {
+            } else { 
                 this.state.user = user;
                 this.showRequestModal();
             }
@@ -273,7 +276,7 @@ async handlePermissionFlow(user) {
         try {
             const result = await api.requestPermission(this.state.user.email, name, grade);
             this.elements.permissionRequestModal.classList.add('hidden');
-            if (result.success) {
+            if (result) {
                 this.showStatusModal(
                     '요청 완료',
                     '관리자에게 요청하였으니 기다려주세요.',
@@ -281,14 +284,14 @@ async handlePermissionFlow(user) {
                     () => signOut(auth)
                 );
             } else {
-                this.showToast(result.message || "권한 요청에 실패했습니다. 다시 시도해 주세요.", true);
+                this.showToast(\"권한 요청에 실패했습니다. 다시 시도해 주세요.\", true);
                 this.elements.prSubmitBtn.disabled = false;
                 this.elements.prSubmitBtn.textContent = '권한 요청';
             }
         } catch (error) {
-            console.error("Permission Request API Error:", error);
+            console.error(\"Permission Request API Error:\", error);
             this.elements.permissionRequestModal.classList.add('hidden');
-            this.showToast("서버 오류로 인해 요청에 실패했습니다. 다시 시도해 주세요.", true);
+            this.showToast(\"서버 오류로 인해 요청에 실패했습니다. 다시 시도해 주세요.\", true);
             signOut(auth);
         }
     },
@@ -422,7 +425,7 @@ async handlePermissionFlow(user) {
         this.elements.prGradeInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.submitPermissionRequest();
         });
-        this.elements.prLogoutBtn.addEventListener('click', () => { // 추가
+        this.elements.prLogoutBtn.addEventListener('click', () => {
             this.elements.permissionRequestModal.classList.add('hidden');
             signOut(auth);
         });
@@ -568,7 +571,7 @@ async handlePermissionFlow(user) {
         ].filter(el => el);
         elementsToDisable.forEach(el => el.classList.add('pointer-events-none', 'opacity-50'));
         const refreshIconHTML = this.elements.refreshBtn.innerHTML;
-        this.elements.refreshBtn.innerHTML = `<div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
+        this.elements.refreshBtn.innerHTML = `<div class=\"w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin\"></div>`;
         try {
             const versionRef = ref(rt_db, `app_config/vocab_version_${sheet}`);
             const snapshot = await get(versionRef);
@@ -714,7 +717,7 @@ const audioDBCache = {
         return new Promise((resolve, reject) => {
             if (!('indexedDB' in window)) { console.warn('IndexedDB not supported, TTS caching disabled.'); return resolve(); }
             const request = indexedDB.open(this.dbName, 1);
-            request.onupgradeneeded = event => { const db = event.target.result; if (!db.objectStoreNames.contains(this.storeName)) { db.createObjectStore(this.storeName); } };
+            request.onupgradeneeded = event => { const db = event.target.result; if (!db.objectStoreNames.contains(this.storeName)) { db.createObjectStore(this.storeStore); } };
             request.onsuccess = event => { this.db = event.target.result; resolve(); };
             request.onerror = event => { console.error("IndexedDB error:", event.target.error); reject(event.target.error); };
         });
@@ -899,26 +902,87 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         }
     },
     async checkPermission(email) {
-        const url = new URL(app.config.SCRIPT_URL);
-        url.searchParams.append('action', 'checkPermission');
-        url.searchParams.append('email', email);
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
+        try {
+            const docRef = doc(db, 'permissions', email.toLowerCase());
+            const docSnap = await getDoc(docRef);
+            
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const status = (data.status || 'pending').toLowerCase();
+                
+                return status;
+            } else {
+                return 'none';
+            }
+        } catch (error) {
+            console.error("Error checking permission from Firestore:", error);
+            const url = new URL(app.config.SCRIPT_URL);
+            url.searchParams.append('action', 'checkPermission');
+            url.searchParams.append('email', email);
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data = await response.json();
+            return data.status;
+
+        }
     },
     async requestPermission(email, name, grade) {
-        const url = new URL(app.config.SCRIPT_URL);
-        url.searchParams.append('action', 'requestPermission');
-        url.searchParams.append('email', email);
-        url.searchParams.append('name', name);
-        url.searchParams.append('grade', grade);
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
-    }
+        try {
+            const gradeY = grade + 'y';
+            await setDoc(doc(db, 'permissions', email.toLowerCase()), {
+                email: email,
+                name: name,
+                grade: gradeY,
+                status: 'pending',
+                requestDate: new Date().toISOString()
+            });
+
+            const gasUrl = new URL(app.config.SCRIPT_URL);
+            gasUrl.searchParams.append('action', 'requestPermissionSheet');
+            gasUrl.searchParams.append('email', email);
+            gasUrl.searchParams.append('name', name);
+            gasUrl.searchParams.append('grade', grade); 
+            
+            fetch(gasUrl).then(response => response.json()).then(data => {
+                if (!data.success) {
+                    console.error("GAS Sheets 기록 실패:", data.message);
+                }
+            }).catch(error => {
+                console.error("GAS Sheets 기록 중 통신 오류:", error);
+            });
+            
+            return true;
+        } catch (error) {
+            console.error("Error requesting permission to Firestore:", error);
+            return false;
+        }
+    },
+    async fetchDefinition(word) {
+        if (!word) return null;
+        const apiKey = app.config.MERRIAM_WEBSTER_API_KEY;
+        const url = `https://dictionaryapi.com/api/v3/references/learners/json/${encodeURIComponent(word)}?key=${apiKey}`;
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                console.warn(`Definition fetch failed for ${word}: Status ${response.status}`);
+                return null;
+            }
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+                const firstResult = data[0];
+                if (typeof firstResult === 'object' && firstResult !== null && firstResult.shortdef && Array.isArray(firstResult.shortdef) && firstResult.shortdef.length > 0) {
+                    return firstResult.shortdef[0].split(';')[0].trim();
+                }
+            }
+            return null;
+        } catch (e) {
+            console.error(`Error fetching definition for ${word}:`, e);
+            return null;
+        }
+    },
 };
 const ui = {
-    nonInteractiveWords: new Set(['a', 'an', 'the', 'I', 'me', 'my', 'mine', 'you', 'your', 'yours', 'he', 'him', 'his', 'she', 'her', 'hers', 'it', 'its', 'we', 'us', 'our', 'ours', 'they', 'them', 'their', 'theirs', 'this', 'that', 'these', 'those', 'myself', 'yourself', 'himself', 'herself', 'itself', 'ourselves', 'yourselves', 'something', 'anybody', 'anyone', 'anything', 'nobody', 'no one', 'nothing', 'everybody', 'everyone', 'everything', 'all', 'any', 'both', 'each', 'either', 'every', 'few', 'little', 'many', 'much', 'neither', 'none', 'one', 'other', 'several', 'some', 'about', 'above', 'across', 'after', 'against', 'along', 'among', 'around', 'at', 'before', 'behind', 'below', 'beneath', 'beside', 'between', 'beyond', 'by', 'down', 'during', 'for', 'from', 'in', 'inside', 'into', 'like', 'near', 'of', 'off', 'on', 'onto', 'out', 'outside', 'over', 'past', 'since', 'through', 'throughout', 'to', 'toward', 'under', 'underneath', 'until', 'unto', 'up', 'upon', 'with', 'within', 'without', 'and', 'but', 'or', 'nor', 'for', 'yet', 'so', 'after', 'although', 'as', 'because', 'before', 'if', 'once', 'since', 'than', 'that', 'though', 'till', 'unless', 'until', 'when', 'whenever', 'where', 'whereas', 'wherever', 'whether', 'while', 'that', 'which', 'who', 'whom', 'whose', 'when', 'where', 'why', 'what', 'whatever', 'whichever', 'whoever', 'whomever', 'who', 'whom', 'whose', 'what', 'which', 'when', 'where', 'why', 'how', 'be', 'am', 'is', 'are', 'was', 'were', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'done', 'can', 'could', 'may', 'might', 'must', 'shall', 'should', 'will', 'would', 'ought', 'not', 'very', 'too', 'so', 'just', 'well', 'often', 'always', 'never', 'sometimes', 'here', 'there', 'now', 'then', 'again', 'also', 'ever', 'even', 'how', 'quite', 'rather', 'soon', 'still', 'more', 'most', 'less', 'least', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'then', 'there', 'here', "don't", "didn't", "can't", "couldn't", "she's", "he's", "i'm", "you're", "they're", "we're", "it's", "that's"]),
+    nonInteractiveWords: new Set(['a', 'an', 'the', 'I', 'me', 'my', 'mine', 'you', 'your', 'yours', 'he', 'him', 'his', 'she', 'her', 'hers', 'it', 'its', 'we', 'us', 'our', 'ours', 'they', 'them', 'their', 'theirs', 'this', 'that', 'these', 'those', 'myself', 'yourself', 'himself', 'herself', 'itself', 'ourselves', 'yourselves', 'something', 'anybody', 'anyone', 'anything', 'nobody', 'no one', 'nothing', 'everybody', 'everyone', 'everything', 'all', 'any', 'both', 'each', 'either', 'every', 'few', 'little', 'many', 'much', 'neither', 'none', 'one', 'other', 'several', 'some', 'about', 'above', 'across', 'after', 'against', 'along', 'among', 'around', 'at', 'before', 'behind', 'below', 'beneath', 'beside', 'between', 'beyond', 'by', 'down', 'during', 'for', 'from', 'in', 'inside', 'into', 'like', 'near', 'of', 'off', 'on', 'onto', 'out', 'outside', 'over', 'past', 'since', 'through', 'throughout', 'to', 'toward', 'under', 'underneath', 'until', 'unto', 'up', 'upon', 'with', 'within', 'without', 'and', 'but', 'or', 'nor', 'for', 'yet', 'so', 'after', 'although', 'as', 'because', 'before', 'if', 'once', 'since', 'than', 'that', 'though', 'till', 'unless', 'until', 'when', 'whenever', 'where', 'whereas', 'wherever', 'whether', 'while', 'that', 'which', 'who', 'whom', 'whose', 'when', 'where', 'why', 'what', 'whatever', 'whichever', 'whoever', 'whomever', 'who', 'whom', 'whose', 'what', 'which', 'when', 'where', 'why', 'how', 'be', 'am', 'is', 'are', 'was', 'were', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'done', 'can', 'could', 'may', 'might', 'must', 'shall', 'should', 'will', 'would', 'ought', 'not', 'very', 'too', 'so', 'just', 'well', 'often', 'always', 'never', 'sometimes', 'here', 'there', 'now', 'then', 'again', 'also', 'ever', 'even', 'how', 'quite', 'rather', 'soon', 'still', 'more', 'most', 'less', 'least', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'then', 'there', 'now', 'then', 'again', 'also', 'ever', 'even', 'how', 'quite', 'rather', 'soon', 'still', 'more', 'most', 'less', 'least', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'then', 'there', 'here', "don't", "didn't", "can't", "couldn't", "she's", "he's", "i'm", "you're", "they're", "we're", "it's", "that's"]),
     adjustFontSize(element) {
         if (!element || !element.parentElement) return;
         element.style.fontSize = '';
@@ -1299,7 +1363,7 @@ const dashboard = {
     init() {},
     async show() {
         this.destroyCharts();
-        this.elements.content.innerHTML = `<div class="text-center p-4"><div class="loader mx-auto"></div></div>`;
+        this.elements.content.innerHTML = `<div class=\"text-center p-4\"><div class=\"loader mx-auto\"></div></div>`;
         this.elements.stats30DayContainer.innerHTML = '';
         this.elements.statsTotalContainer.innerHTML = '';
         if (!learningMode.state.isWordListReady[app.state.selectedSheet]) {
@@ -1313,13 +1377,13 @@ const dashboard = {
     renderBaseStats() {
         const grade = app.state.selectedSheet;
         if (!grade || !learningMode.state.wordList[grade]) {
-             this.elements.content.innerHTML = `<p class="text-center text-gray-600">데이터를 불러올 수 없습니다.</p>`;
+             this.elements.content.innerHTML = `<p class=\"text-center text-gray-600\">데이터를 불러올 수 없습니다.</p>`;
              return;
         }
         const allWords = learningMode.state.wordList[grade] || [];
         const totalWords = allWords.length;
         if (totalWords === 0) {
-            this.elements.content.innerHTML = `<p class="text-center text-gray-600">학습할 단어가 없습니다.</p>`;
+            this.elements.content.innerHTML = `<p class=\"text-center text-gray-600\">학습할 단어가 없습니다.</p>`;
             return;
         }
         const counts = { learned: 0, learning: 0, review: 0, unseen: 0 };
@@ -1332,10 +1396,10 @@ const dashboard = {
             { name: '복습 필요', description: '최소 1종류의 퀴즈에서 틀림', count: counts.review, color: 'bg-orange-500' },
             { name: '학습 완료', description: '모든 종류의 퀴즈에서 정답을 맞힘', count: counts.learned, color: 'bg-green-500' }
         ];
-        let contentHTML = `<div class="bg-gray-50 p-4 rounded-lg shadow-inner text-center"><p class="text-lg text-gray-600">총 단어 수</p><p class="text-4xl font-bold text-gray-800">${totalWords}</p></div><div><h2 class="text-xl font-bold text-gray-700 mb-3 text-center">학습 단계별 분포</h2><div class="space-y-4">`;
+        let contentHTML = `<div class=\"bg-gray-50 p-4 rounded-lg shadow-inner text-center\"><p class=\"text-lg text-gray-600\">총 단어 수</p><p class=\"text-4xl font-bold text-gray-800\">${totalWords}</p></div><div><h2 class=\"text-xl font-bold text-gray-700 mb-3 text-center\">학습 단계별 분포</h2><div class=\"space-y-4\">`;
         stats.forEach(stat => {
             const percentage = totalWords > 0 ? ((stat.count / totalWords) * 100).toFixed(1) : 0;
-            contentHTML += `<div class="w-full"><div class="flex justify-between items-center mb-1"><span class="text-base font-semibold text-gray-700" title="${stat.description}">${stat.name}</span><span class="text-sm font-medium text-gray-500">${stat.count}개 (${percentage}%)</span></div><div class="w-full bg-gray-200 rounded-full h-4"><div class="${stat.color} h-4 rounded-full" style="width: ${percentage}%"></div></div></div>`;
+            contentHTML += `<div class=\"w-full\"><div class=\"flex justify-between items-center mb-1\"><span class=\"text-base font-semibold text-gray-700\" title=\"${stat.description}\">${stat.name}</span><span class=\"text-sm font-medium text-gray-500\">${stat.count}개 (${percentage}%)</span></div><div class=\"w-full bg-gray-200 rounded-full h-4\"><div class=\"${stat.color} h-4 rounded-full\" style=\"width: ${percentage}%\"></div></div></div>`;
         });
         contentHTML += `</div></div>`;
         this.elements.content.innerHTML = contentHTML;
@@ -1352,7 +1416,7 @@ const dashboard = {
             this.renderSummaryCards(studyHistory, quizHistory, grade);
         } catch (e) {
             console.error("Error rendering advanced stats:", e);
-            this.elements.content.innerHTML += `<p class="text-red-500 text-center mt-4">추가 통계 정보를 불러오는 데 실패했습니다.</p>`;
+            this.elements.content.innerHTML += `<p class=\"text-red-500 text-center mt-4\">추가 통계 정보를 불러오는 데 실패했습니다.</p>`;
         }
     },
     destroyCharts() {
@@ -1481,7 +1545,7 @@ const dashboard = {
                     for(const type in quizStats){
                         if(quizHistory[dateString][grade][type]){
                             quizStats[type].correct += quizHistory[dateString][grade][type].correct || 0;
-                            quizStats[type].total += quizHistory[dateString][grade][type].total || 0;
+                            quizStats[type].total += quizStats[type].total || 0;
                         }
                     }
                 }
@@ -1514,20 +1578,20 @@ const dashboard = {
                 const { correct, total } = stats[type.id] || { correct: 0, total: 0 };
                 const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
                 cards += `
-                    <div class="bg-white p-2 rounded-lg shadow-sm text-center">
-                        <p class="text-sm font-semibold text-gray-500">${type.name}</p>
-                        <p class="font-bold text-gray-800 text-xl">${accuracy}%</p>
-                        <p class="text-xs text-gray-400">(${correct}/${total})</p>
+                    <div class=\"bg-white p-2 rounded-lg shadow-sm text-center\">
+                        <p class=\"text-sm font-semibold text-gray-500\">${type.name}</p>
+                        <p class=\"font-bold text-gray-800 text-xl\">${accuracy}%</p>
+                        <p class=\"text-xs text-gray-400\">(${correct}/${total})</p>
                     </div>
                 `;
             });
             return `
-                <div class="bg-gray-50 p-4 rounded-xl shadow-inner">
-                    <h4 class="font-bold text-gray-700 mb-4 text-lg text-center">
+                <div class=\"bg-gray-50 p-4 rounded-xl shadow-inner\">
+                    <h4 class=\"font-bold text-gray-700 mb-4 text-lg text-center\">
                         ${title}
-                        <span class="font-normal text-gray-500">(${this.formatSeconds(time)})</span>
+                        <span class=\"font-normal text-gray-500\">(${this.formatSeconds(time)})</span>
                     </h4>
-                    <div class="grid grid-cols-3 gap-1">
+                    <div class=\"grid grid-cols-3 gap-1\">
                         ${cards}
                     </div>
                 </div>
@@ -1626,7 +1690,7 @@ const quizMode = {
                     e.preventDefault();
                     const targetLi = this.elements.choices.children[choiceIndex - 1];
                     targetLi.classList.add('bg-gray-200');
-                    setTimeout(() => targetLi.classList.remove('bg-gray-200'), 150);
+                    setTimeout(() => targetLi.classList.remove('bg-gray-250'), 150);
                     targetLi.click();
                 }
             }
@@ -1929,7 +1993,7 @@ const quizMode = {
         choices.forEach((choice, index) => {
             const li = document.createElement('li');
             li.className = 'choice-item border-2 border-gray-300 py-3 px-4 rounded-lg cursor-pointer flex items-start transition-all text-lg hover:bg-blue-50';
-            li.innerHTML = `<span class="font-bold mr-3">${index + 1}.</span> <span>${choice}</span>`;
+            li.innerHTML = `<span class=\"font-bold mr-3\">${index + 1}.</span> <span>${choice}</span>`;
             li.onclick = () => this.checkAnswer(li, choice);
             this.elements.choices.appendChild(li);
         });
@@ -2125,8 +2189,8 @@ const quizMode = {
         const firstLineSentence = correctWordData.sample.split('\n')[0];
         let sentenceWithBlank = "";
         const placeholderRegex = /\*(.*?)\*/;
-        const match = firstLineSentence.match(placeholderRegex);
         const wordRegex = new RegExp(`\\b${correctWordData.word}\\b`, 'i');
+        const match = firstLineSentence.match(placeholderRegex);
         if (match) {
             sentenceWithBlank = firstLineSentence.replace(placeholderRegex, "＿＿＿＿").trim();
         } else if (firstLineSentence.match(wordRegex)) {
@@ -2433,7 +2497,7 @@ const learningMode = {
         const populateList = (listElement, suggestions) => {
             listElement.innerHTML = '';
             if (suggestions.length === 0) {
-                listElement.innerHTML = '<p class="text-gray-400 text-sm p-3">결과 없음</p>';
+                listElement.innerHTML = '<p class=\"text-gray-400 text-sm p-3\">결과 없음</p>';
                 return;
             }
             suggestions.forEach(({ word, index }) => {
@@ -2468,7 +2532,7 @@ const learningMode = {
     },
     showError(message) {
         this.elements.loader.querySelector('.loader').style.display = 'none';
-        this.elements.loaderText.innerHTML = `<p class="text-red-500 font-bold">오류 발생</p><p class="text-sm text-gray-600 mt-2 break-all">${message}</p>`;
+        this.elements.loaderText.innerHTML = `<p class=\"text-red-500 font-bold\">오류 발생</p><p class=\"text-sm text-gray-600 mt-2 break-all\">${message}</p>`;
     },
     launchApp(wordList) {
         this.state.currentDisplayList = wordList;
@@ -2489,6 +2553,7 @@ const learningMode = {
         if (!this.state.isMistakeMode && !this.state.isFavoriteMode) {
              try {
                 const key = app.state.LOCAL_STORAGE_KEYS.LAST_INDEX(app.state.selectedSheet);
+                const grade = app.state.selectedSheet;
                 localStorage.setItem(key, index);
             } catch (e) {
                 console.error("Error saving last index to localStorage", e);
@@ -2662,9 +2727,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
-
-
-
-
