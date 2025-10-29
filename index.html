@@ -330,11 +330,14 @@
     <!-- New Permission Modals Start -->
 <div id="permission-request-modal" class="hidden fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[300]">
         <div class="bg-white p-6 rounded-2xl shadow-2xl text-center w-11/12 max-w-sm relative">
-            <button id="pr-logout-btn" class="group bg-red-500/80 hover:bg-red-600 text-white font-bold p-2 rounded-full shadow-lg absolute top-3 right-3 transition-colors">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
-</svg>
-            </button>
+            <button id="pr-logout-btn" class="absolute top-4 right-4 flex items-center justify-center space-x-1 p-2 pr-3 rounded-xl shadow-lg
+           bg-gradient-to-br from-red-500 to-orange-500 text-white font-semibold
+           hover:from-red-600 hover:to-orange-600 transition-all duration-200 ease-in-out z-[200]">
+    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+    </svg>
+    <span class="text-sm">Logout</span>
+</button>
             <h2 class="text-2xl font-bold text-gray-800 mb-4">앱 사용 권한 요청</h2>
             <p class="mb-4 text-gray-600">앱 사용을 위해 이름과 학년 정보를 입력해 주세요.</p>
             <input type="text" id="pr-name-input" class="w-full border-2 border-gray-300 p-3 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition mb-3" placeholder="이름 (필수)">
@@ -367,6 +370,7 @@
     <script src="script.js"></script>
 </body>
 </html>
+
 
 
 
