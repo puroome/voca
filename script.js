@@ -79,7 +79,7 @@ const app = {
             appId: "1:213863780677:web:78d6b8755866a0c5ddee2c",
             databaseURL: "https://wordapp-91c0a-default-rtdb.asia-southeast1.firebasedatabase.app/"
         },
-        SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzjtB_Mh6TlEGwd_UzBe-gwOJ6-LxViJuFl1C-4U_4qhOb2cZGL-MRQ1nP39c3ibF4/exec",
+        SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzjtB_Mh6TlEGwd_UzBe-gwOJ6-LxViJuFl1C-4U_4qhOb2cZGL-MRQ1nP39c3ibF4/exec", // UPDATED: New Apps Script URL for permission flow
         MERRIAM_WEBSTER_API_KEY: "02d1892d-8fb1-4e2d-bc43-4ddd4a47eab3",
         sheetLinks: {
             '1y': 'https://docs.google.com/spreadsheets/d/1r7fWUV1ea9CU-s2iSOwLKexEe2_7L8oUKhK0n1DpDUM/edit?usp=sharing',
@@ -197,17 +197,8 @@ async handlePermissionFlow(user) {
         this.elements.mainContainer.classList.add('hidden');
         document.body.classList.add('items-center');
         const email = user.email;
-        
         try {
-            const permissionDocRef = doc(db, 'permissions', user.uid);
-            const permissionSnap = await getDoc(permissionDocRef);
-
-            let permissionStatus = { status: 'none' };
-            if (permissionSnap.exists()) {
-                const data = permissionSnap.data();
-                permissionStatus.status = data.permission_status || 'pending';
-            }
-
+            const permissionStatus = await api.checkPermission(email);
             if (permissionStatus.status === 'approved') {
                 this.state.user = user;
                 const userRef = doc(db, 'users', user.uid);
@@ -254,7 +245,7 @@ async handlePermissionFlow(user) {
                     'text-blue-500',
                     () => signOut(auth)
                 );
-            } else { 
+            } else { // 'new' status or error fetching
                 this.state.user = user;
                 this.showRequestModal();
             }
@@ -268,25 +259,21 @@ async handlePermissionFlow(user) {
         if (!this.state.user) return;
         const name = this.elements.prNameInput.value.trim();
         const gradeStr = this.elements.prGradeInput.value.trim();
-        const gradeNum = parseInt(gradeStr);
-
+        const grade = parseInt(gradeStr);
         if (!name) {
             this.elements.prNameInput.focus();
             return;
         }
-        if (isNaN(gradeNum) || ![1, 2, 3].includes(gradeNum)) {
+        if (isNaN(grade) || ![1, 2, 3].includes(grade)) {
             this.elements.prGradeInput.focus();
+            this.showToast("학년은 1, 2, 3 중 하나의 숫자여야 합니다.", true);
             return;
         }
-
-        const grade = gradeNum + 'y';
-        
         this.elements.prSubmitBtn.disabled = true;
         this.elements.prSubmitBtn.textContent = '요청 중...';
-        
         try {
-            const result = await api.requestPermission(this.state.user.email, name, grade, this.state.user.uid);
-            
+            // Send grade as number (1, 2, 3)
+            const result = await api.requestPermission(this.state.user.email, name, grade);
             this.elements.permissionRequestModal.classList.add('hidden');
             if (result.success) {
                 this.showStatusModal(
@@ -320,7 +307,7 @@ async handlePermissionFlow(user) {
         this.elements.psCloseBtn.addEventListener('click', closeHandler);
     },
     showRequestModal() {
-        this.elements.prNameInput.value = this.state.user?.displayName || '';
+        this.elements.prNameInput.value = '';
         this.elements.prGradeInput.value = '';
         this.elements.prSubmitBtn.disabled = false;
         this.elements.prSubmitBtn.textContent = '권한 요청';
@@ -437,7 +424,7 @@ async handlePermissionFlow(user) {
         this.elements.prGradeInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.submitPermissionRequest();
         });
-        this.elements.prLogoutBtn.addEventListener('click', () => { 
+        this.elements.prLogoutBtn.addEventListener('click', () => {
             this.elements.permissionRequestModal.classList.add('hidden');
             signOut(auth);
         });
@@ -554,9 +541,8 @@ async handlePermissionFlow(user) {
             case 'mode':
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                if (this.state.user && this.state.user.email === this.config.adminEmail) {
-                    this.elements.refreshBtn.classList.remove('hidden');
-                }
+                // No longer check for adminEmail here. Refresh is for all users if data is old.
+                this.elements.refreshBtn.classList.remove('hidden'); // Show refresh for all users to get latest word list data
                 this.elements.lastUpdatedText.classList.remove('hidden');
                 this.loadModeImages();
                 quizMode.reset();
@@ -913,25 +899,21 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             return null;
         }
     },
-    async checkPermission(uid) {
-        const docRef = doc(db, 'permissions', uid);
-        const permissionSnap = await getDoc(docRef);
-
-        let status = 'none';
-        if (permissionSnap.exists()) {
-            const data = permissionSnap.data();
-            status = data.permission_status || 'pending';
-        }
-        return { status: status };
+    async checkPermission(email) {
+        const url = new URL(app.config.SCRIPT_URL);
+        url.searchParams.append('action', 'checkPermission');
+        url.searchParams.append('email', email);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        return await response.json();
     },
-    async requestPermission(email, name, grade, uid) {
+    async requestPermission(email, name, grade) {
         const url = new URL(app.config.SCRIPT_URL);
         url.searchParams.append('action', 'requestPermission');
         url.searchParams.append('email', email);
         url.searchParams.append('name', name);
-        url.searchParams.append('grade', grade.replace('y', '')); 
-        url.searchParams.append('uid', uid);
-        
+        // grade is passed as a number (1, 2, 3) to Apps Script
+        url.searchParams.append('grade', grade);
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         return await response.json();
@@ -2262,12 +2244,12 @@ const learningMode = {
         });
         this.elements.wordDisplay.oncontextmenu = e => {
             e.preventDefault();
-            const wordData = this.state.currentDisplayList[this.state.currentIndex]?.word;
-            if (wordData) ui.showWordContextMenu(e, wordData);
+            const wordData = this.state.currentDisplayList[this.state.currentIndex];
+            if(wordData) ui.showWordContextMenu(e, wordData.word);
         };
         this.elements.favoriteBtn.addEventListener('click', () => this.toggleFavorite());
         let wordDisplayTouchMove = false;
-        this.elements.wordDisplay.addEventListener('touchstart', e => { wordDisplayTouchMove = false; clearTimeout(app.state.longPressTimer); app.state.longPressTimer = setTimeout(() => { const wordData = this.state.currentDisplayList[this.state.currentIndex]?.word; if (!wordDisplayTouchMove && wordData) ui.showWordContextMenu(e, wordData); }, 700); }, { passive: true });
+        this.elements.wordDisplay.addEventListener('touchstart', e => { wordDisplayTouchMove = false; clearTimeout(app.state.longPressTimer); app.state.longPressTimer = setTimeout(() => { const wordData = this.state.currentDisplayList[this.state.currentIndex]; if (!wordDisplayTouchMove && wordData) ui.showWordContextMenu(e, wordData.word); }, 700); }, { passive: true });
         this.elements.wordDisplay.addEventListener('touchmove', () => { wordDisplayTouchMove = true; clearTimeout(app.state.longPressTimer); });
         this.elements.wordDisplay.addEventListener('touchend', () => { clearTimeout(app.state.longPressTimer); });
         document.addEventListener('mousedown', this.handleMiddleClick.bind(this));
@@ -2410,7 +2392,7 @@ const learningMode = {
             .slice(0, 5)
             .filter(s => s.distance < s.word.length / 2 + 1);
         if (levenshteinSuggestions.length > 0 || explanationMatches.length > 0) {
-            const title = `<strong>'${startWord}'</strong>(을)를 찾을 수 없습니다.<br>혹시 이 단어인가요?`;
+            const title = `<strong>'${startWord}'</strong>(을)를 찾을 수 없습니다. 혹시 이 단어인가요?`;
             this.displaySuggestions(levenshteinSuggestions, explanationMatches, currentWordList, title);
         } else {
             const title = `<strong>'${startWord}'</strong>에 대한 검색 결과가 없습니다.`;
@@ -2520,8 +2502,8 @@ const learningMode = {
         ui.renderInteractiveText(this.elements.explanationDisplay, wordData.explanation);
         this.elements.explanationContainer.classList.toggle('hidden', !wordData.explanation || !wordData.explanation.trim());
         const hasSample = wordData.sample && wordData.sample.trim() !== '';
-        const defaultImg = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
-        const sampleImg = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
+        const defaultImg = 'https://images.icon-icons.com/1055/PNG/128/23-minus-cat_icon-icons.com_76699.png'; // Placeholder for consistency
+        const sampleImg = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png'; // Placeholder for consistency
         this.elements.sampleBtnImg.src = hasSample ? sampleImg : defaultImg;
         const grade = app.state.selectedSheet;
         let isFavorite = app.state.currentProgress[wordData.word]?.favorite || false;
@@ -2577,7 +2559,7 @@ const learningMode = {
         const hasSample = wordData && wordData.sample && wordData.sample.trim() !== '';
         const backImgUrl = 'https://images.icon-icons.com/1055/PNG/128/5-remove-cat_icon-icons.com_76681.png';
         const sampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
-        const noSampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
+        const noSampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/23-minus-cat_icon-icons.com_76699.png';
         if (!isBackVisible) {
             if (!hasSample) { app.showNoSampleMessage(); return; }
             this.elements.backTitle.textContent = wordData.word;
