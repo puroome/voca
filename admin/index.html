@@ -116,7 +116,7 @@
 
         <div id="refresh-confirm-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
             <div class="bg-white p-6 rounded-lg shadow-xl text-center w-11/12 max-w-sm">
-                <p class="mb-4 text-lg">캐시된 학생 통계 데이터와 어휘 목록의 최종 업데이트 시간을 새로고침합니다.<br>계속하시겠습니까?</p>
+                <p class="mb-4 text-lg">학생명단 및 통계자료를 새로고침합니다.<br>계속하시겠습니까?</p>
                 <div class="flex justify-center gap-4">
                     <button id="confirm-yes-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg">예</button>
                     <button id="confirm-no-btn" class="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-6 rounded-lg">아니오</button>
@@ -149,7 +149,7 @@
 
         const adminApp = {
             ADMIN_EMAIL: 'puroome@gmail.com',
-            // Apps Script API는 이제 학생 명단 로드에 사용되지 않으므로 제거
+            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec',
             state: {
                 wordLists: {},
                 allUsers: {},
@@ -199,10 +199,9 @@
                     signOut(auth);
                 });
 
-                // 새로고침 버튼 기능 수정: 캐시 삭제만 수행
                 this.elements.refreshDataBtn.addEventListener('click', () => this.elements.refreshConfirmModal.classList.remove('hidden'));
                 this.elements.confirmNoBtn.addEventListener('click', () => this.elements.refreshConfirmModal.classList.add('hidden'));
-                this.elements.confirmYesBtn.addEventListener('click', () => this.clearAndRefreshCaches());
+                this.elements.confirmYesBtn.addEventListener('click', () => this.forceRefreshAdminConfig());
 
                 this.elements.gradeSelection.addEventListener('click', (e) => {
                     if (e.target.classList.contains('grade-btn')) {
@@ -245,39 +244,32 @@
                 });
             },
 
-            async clearAndRefreshCaches() {
+            async forceRefreshAdminConfig() {
                 this.elements.refreshConfirmModal.classList.add('hidden');
-                this.elements.initialLoaderText.textContent = '캐시된 학생 통계 데이터 및 어휘 목록 캐시 삭제 중...';
+                this.elements.initialLoaderText.textContent = '최신 학생 명단 및 통계 캐시 삭제 중...';
                 this.elements.initialLoader.classList.remove('hidden');
 
+                const cacheKey = this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE;
+                localStorage.removeItem(cacheKey);
+
+                await this.loadAdminConfig(true);
+
                 try {
-                    // 1. 모든 통계/랭킹 캐시 삭제
                     for (let i = 0; i < localStorage.length; i++){
                         const key = localStorage.key(i);
-                        if (key && (key.startsWith('admin_rankingCache_') || 
-                                    key.startsWith('admin_studentDetail_') ||
-                                    key.startsWith('wordListCache_') || // 어휘 목록 캐시 삭제
-                                    key.startsWith('wordListCacheTimestamp_') || // 어휘 시간 캐시 삭제
-                                    key.startsWith('wordListVersion_') // 어휘 버전 캐시 삭제
-                                    )) {
+                        if (key && (key.startsWith('admin_rankingCache_') || key.startsWith('admin_studentDetail_'))) {
                             localStorage.removeItem(key);
                             i--;
                         }
                     }
-                    // 2. 관리자 config 캐시는 학생 명단과 이름 정보가 들어있으므로 삭제 (새로운 정보 로드를 유도)
-                    localStorage.removeItem(this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE);
-                    
                     const updateTime = Date.now();
                     localStorage.setItem(this.state.LOCAL_STORAGE_KEYS.ADMIN_LAST_UPDATE_TIME, updateTime.toString());
                     this.updateLastUpdatedAdminText(updateTime);
 
                 } catch (e) {
-                    console.error("Error clearing caches from localStorage", e);
+                    console.error("Error clearing Firebase caches from localStorage", e);
                 }
 
-                // 캐시 삭제 후 데이터를 다시 로드 (이때 loadAdminConfig가 Firestore에서 데이터를 가져옴)
-                await Promise.all([this.loadAdminConfig(true), this.cacheAllUsers()]); 
-                
                 this.handleHashChange();
                 this.elements.initialLoader.classList.add('hidden');
             },
@@ -330,7 +322,6 @@
                 const lastUpdateTime = localStorage.getItem(this.state.LOCAL_STORAGE_KEYS.ADMIN_LAST_UPDATE_TIME);
                 this.updateLastUpdatedAdminText(lastUpdateTime ? parseInt(lastUpdateTime) : null);
 
-                // **수정됨: Firebase Firestore에서 학생 명단을 로드**
                 await Promise.all([this.loadAdminConfig(), this.cacheAllUsers()]);
 
                 this.elements.initialLoader.classList.add('hidden');
@@ -339,7 +330,6 @@
                 this.handleHashChange();
             },
 
-            // **수정됨: Firebase Firestore의 'permissions' 컬렉션에서 학생 정보 로드**
             async loadAdminConfig(forceRefresh = false) {
                 const cacheKey = this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE;
 
@@ -356,46 +346,23 @@
                          localStorage.removeItem(cacheKey);
                     }
                 }
-                
-                // Firestore에서 모든 권한 문서 가져오기
+
                 try {
-                    const permissionsCollection = collection(db, 'permissions');
-                    const snapshot = await getDocs(permissionsCollection);
-                    
-                    const studentNameMap = {};
-                    const gradeStudentMap = { '1y': [], '2y': [], '3y': [], 'unassigned': [] };
-
-                    snapshot.docs.forEach(doc => {
-                        const data = doc.data();
-                        const uid = doc.id;
-                        const email = data.email;
-                        const name = data.name;
-                        const grade = data.grade;
-                        const permissionStatus = data.permission_status; 
-
-                        // 승인된 학생만 관리자 대시보드에 표시
-                        if (permissionStatus === 'approved') {
-                            studentNameMap[email] = name;
-                            if (grade && gradeStudentMap[grade]) {
-                                gradeStudentMap[grade].push(email);
-                            } else {
-                                // 학년 정보가 없거나 유효하지 않으면 미배정에 추가 (Firestore에서 grade 필드는 1y, 2y, 3y 형태)
-                                gradeStudentMap['unassigned'].push(email);
-                            }
-                        }
-                    });
-
-                    this.state.studentNameMap = studentNameMap;
-                    this.state.gradeStudentMap = gradeStudentMap;
-                    
-                    localStorage.setItem(cacheKey, JSON.stringify({
-                        studentNameMap: studentNameMap,
-                        gradeStudentMap: gradeStudentMap
-                    }));
-
+                    const url = new URL(this.SCRIPT_URL);
+                    url.searchParams.append('action', 'getStudentAdminData');
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+                    const data = await response.json();
+                    if (data.success) {
+                        this.state.studentNameMap = data.studentNameMap;
+                        this.state.gradeStudentMap = data.gradeStudentMap;
+                        localStorage.setItem(cacheKey, JSON.stringify({
+                            studentNameMap: data.studentNameMap,
+                            gradeStudentMap: data.gradeStudentMap
+                        }));
+                    } else { throw new Error(data.message); }
                 } catch(e) {
-                    console.error("Firebase에서 관리자 데이터 로드 실패:", e);
-                    alert(`학생 명단을 불러오는 데 실패했습니다: ${e.message}`);
+                    alert(`Google Sheets에서 학생 명단을 불러오는 데 실패했습니다: ${e.message}`);
                 }
             },
 
@@ -437,13 +404,13 @@
                 this.elements.studentDropdown.innerHTML = '';
 
                 let studentsToDisplay = [];
-                // Firestore에서 로드된 gradeStudentMap을 사용
-                const studentEmailsInGrade = this.state.gradeStudentMap[grade] || [];
-                
-                // Firestore permissions 문서에 있지만 users 컬렉션에는 없는 경우를 대비해 email로만 필터링
-                studentsToDisplay = studentEmailsInGrade
-                    .map(email => this.state.allUsers[email])
-                    .filter(Boolean); // users 컬렉션에 있는 학생만 표시
+                if (grade === 'unassigned') {
+                    const assignedEmails = Object.keys(this.state.studentNameMap);
+                    studentsToDisplay = Object.values(this.state.allUsers).filter(user => !assignedEmails.includes(user.email));
+                } else {
+                    const studentEmails = this.state.gradeStudentMap[grade] || [];
+                    studentsToDisplay = studentEmails.map(email => this.state.allUsers[email]).filter(Boolean);
+                }
 
                 this.state.studentsForSelectedGrade = studentsToDisplay;
 
@@ -466,7 +433,6 @@
                 }
 
                 studentsToDisplay.forEach(studentData => {
-                    // Firestore permissions 문서에서 가져온 이름 사용 (loadAdminConfig에서 studentNameMap에 저장됨)
                     const displayName = this.state.studentNameMap[studentData.email] || studentData.displayName;
                     const option = document.createElement('option');
                     option.value = studentData.email;
@@ -524,7 +490,6 @@
                 }
 
                 try {
-                    // 미배정(unassigned)은 통계 대상이 아니므로 제외
                     let gradesToShow = ['1y', '2y', '3y'];
                     const selectedGradeFilter = this.state.selectedGrade;
                     if (selectedGradeFilter && selectedGradeFilter !== 'unassigned') {
@@ -567,7 +532,6 @@
                 block.dataset.grade = grade;
 
                 if (!this.state.wordLists[grade]) {
-                    // 어휘 목록이 없을 경우 Realtime Database에서 로드 (script.js의 learningMode.loadWordList 로직을 간소화)
                     try {
                         const dbRef = ref(rt_db, `${grade}/vocabulary`);
                         const snapshot = get(dbRef).then(snapshot => {
@@ -597,6 +561,7 @@
             },
 
             appendSummaryCards(block, grade, studyHistory, quizHistory) {
+                // const stats7 = this.getStatsForPeriod(7, grade, studyHistory, quizHistory); // 7일 통계는 차트로 표시
                 const stats30 = this.getStatsForPeriod(30, grade, studyHistory, quizHistory);
                 const totalStats = this.getStatsForPeriod(3650, grade, studyHistory, quizHistory);
 
@@ -912,27 +877,23 @@
                             let totalQuizzes = 0;
                             const today = new Date();
 
-                            // 현재 선택된 학년에 대한 7일 데이터만 집계
-                            const targetGrades = grade === 'unassigned' ? ['1y', '2y', '3y'] : [grade]; 
-
                             for (let i = 0; i < 7; i++) {
                                 const d = new Date(today);
                                 d.setDate(d.getDate() - i);
                                 const dateString = d.toISOString().slice(0, 10);
 
-                                targetGrades.forEach(g => {
-                                    if(studyHistory[dateString] && studyHistory[dateString][g]) {
-                                        totalSeconds += studyHistory[dateString][g];
-                                    }
-                                    if (quizHistory[dateString] && quizHistory[dateString][g]) {
-                                        Object.values(quizHistory[dateString][g]).forEach(typeStats => {
+                                if(studyHistory[dateString]) {
+                                    Object.values(studyHistory[dateString]).forEach(seconds => totalSeconds += seconds);
+                                }
+                                if (quizHistory[dateString]) {
+                                    Object.values(quizHistory[dateString]).forEach(gradeData => {
+                                        Object.values(gradeData).forEach(typeStats => {
                                             totalCorrect += typeStats.correct || 0;
                                             totalQuizzes += typeStats.total || 0;
                                         });
-                                    }
-                                });
+                                    });
+                                }
                             }
-                            
                             const accuracy = totalQuizzes > 0 ? (totalCorrect / totalQuizzes) * 100 : 0;
                             const displayName = this.state.studentNameMap[student.email] || student.displayName;
                             return { name: displayName, email: student.email, time: totalSeconds, accuracy: accuracy, totalQuizzes, totalCorrect };
@@ -980,9 +941,7 @@
                 let skip = 1;
                 qualifiedStudents.forEach((student) => {
                     const currentScore = isAccuracy ? student.accuracy : student.time;
-                    const scoreFixed = currentScore.toFixed(isAccuracy ? 5 : 0);
-
-                    if (scoreFixed !== lastScore.toFixed(isAccuracy ? 5 : 0)) {
+                    if ((isAccuracy && currentScore.toFixed(5) !== lastScore.toFixed(5)) || (!isAccuracy && currentScore !== lastScore)) {
                         rank += skip;
                         skip = 1;
                     } else {
@@ -997,16 +956,17 @@
                 const podiumHTML = `
                     <div class="podium">
                         ${[2, 1, 3].map(rankValue => {
-                            const student = top3.find(s => s.rank === rankValue);
+                            const studentsAtRank = top3.filter(s => s.rank === rankValue);
+                            const student = studentsAtRank.length > 0 ? studentsAtRank[0] : null;
                             const height = rankValue === 1 ? '9rem' : rankValue === 2 ? '7rem' : '5rem';
                             if (!student) {
                                 return `<div class="podium-step rank-${rankValue}"><div class="podium-base bg-gray-200" style="height: ${height};"></div></div>`;
                             }
                             const medal = ['🥇', '🥈', '🥉'][rankValue - 1];
-                            const color = ['bg-yellow-400', 'bg-gray-400', 'bg-orange-400'][rankValue-1];
+                            const color = ['bg-yellow-400', 'bg-gray-200', 'bg-orange-400'][rankValue-1];
                             return `
                                 <div class="podium-step rank-${rankValue} cursor-pointer" data-email="${student.email}">
-                                    <div class="podium-base ${color}" style="height: ${height};">
+                                    <div class="podium-base ${color}">
                                         <div class="p-2">
                                             <div class="text-4xl">${medal}</div>
                                             <p class="student-name text-white">${student.name}</p>
@@ -1019,7 +979,7 @@
 
                 const listHTML = processedData.map((student) => {
                     const isQualified = !isAccuracy || student.totalQuizzes >= 50;
-                    const rank = isQualified ? (student.rank || '') : '-';
+                    const rank = isQualified ? (student.rank || '') : '';
 
                     let itemClass = 'bg-white';
                     if (isQualified && student.rank) {
