@@ -79,7 +79,7 @@ const app = {
             appId: "1:213863780677:web:78d6b8755866a0c5ddee2c",
             databaseURL: "https://wordapp-91c0a-default-rtdb.asia-southeast1.firebasedatabase.app/"
         },
-        SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzjtB_Mh6TlEGwd_UzBe-gwOJ6-LxViJuFl1C-4U_4qhOb2cZGL-MRQ1nP39c3ibF4/exec", // UPDATED: New Apps Script URL for permission flow
+        SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec",
         MERRIAM_WEBSTER_API_KEY: "02d1892d-8fb1-4e2d-bc43-4ddd4a47eab3",
         sheetLinks: {
             '1y': 'https://docs.google.com/spreadsheets/d/1r7fWUV1ea9CU-s2iSOwLKexEe2_7L8oUKhK0n1DpDUM/edit?usp=sharing',
@@ -238,14 +238,14 @@ async handlePermissionFlow(user) {
                     'text-red-500',
                     () => signOut(auth)
                 );
-            } else if (permissionStatus.status === 'pending') {
+            } else if (permissionStatus.status === 'pending') { // '확인 중' 상태 추가
                 this.showStatusModal(
                     '확인 중', 
                     '관리자가 확인 중이니 기다려주세요.', 
                     'text-blue-500',
                     () => signOut(auth)
                 );
-            } else { // 'new' status or error fetching
+            } else {
                 this.state.user = user;
                 this.showRequestModal();
             }
@@ -266,13 +266,11 @@ async handlePermissionFlow(user) {
         }
         if (isNaN(grade) || ![1, 2, 3].includes(grade)) {
             this.elements.prGradeInput.focus();
-            this.showToast("학년은 1, 2, 3 중 하나의 숫자여야 합니다.", true);
             return;
         }
         this.elements.prSubmitBtn.disabled = true;
         this.elements.prSubmitBtn.textContent = '요청 중...';
         try {
-            // Send grade as number (1, 2, 3)
             const result = await api.requestPermission(this.state.user.email, name, grade);
             this.elements.permissionRequestModal.classList.add('hidden');
             if (result.success) {
@@ -424,7 +422,7 @@ async handlePermissionFlow(user) {
         this.elements.prGradeInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.submitPermissionRequest();
         });
-        this.elements.prLogoutBtn.addEventListener('click', () => {
+        this.elements.prLogoutBtn.addEventListener('click', () => { // 추가
             this.elements.permissionRequestModal.classList.add('hidden');
             signOut(auth);
         });
@@ -541,8 +539,9 @@ async handlePermissionFlow(user) {
             case 'mode':
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                // No longer check for adminEmail here. Refresh is for all users if data is old.
-                this.elements.refreshBtn.classList.remove('hidden'); // Show refresh for all users to get latest word list data
+                if (this.state.user && this.state.user.email === this.config.adminEmail) {
+                    this.elements.refreshBtn.classList.remove('hidden');
+                }
                 this.elements.lastUpdatedText.classList.remove('hidden');
                 this.loadModeImages();
                 quizMode.reset();
@@ -912,7 +911,6 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         url.searchParams.append('action', 'requestPermission');
         url.searchParams.append('email', email);
         url.searchParams.append('name', name);
-        // grade is passed as a number (1, 2, 3) to Apps Script
         url.searchParams.append('grade', grade);
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -2502,8 +2500,8 @@ const learningMode = {
         ui.renderInteractiveText(this.elements.explanationDisplay, wordData.explanation);
         this.elements.explanationContainer.classList.toggle('hidden', !wordData.explanation || !wordData.explanation.trim());
         const hasSample = wordData.sample && wordData.sample.trim() !== '';
-        const defaultImg = 'https://images.icon-icons.com/1055/PNG/128/23-minus-cat_icon-icons.com_76699.png'; // Placeholder for consistency
-        const sampleImg = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png'; // Placeholder for consistency
+        const defaultImg = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
+        const sampleImg = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
         this.elements.sampleBtnImg.src = hasSample ? sampleImg : defaultImg;
         const grade = app.state.selectedSheet;
         let isFavorite = app.state.currentProgress[wordData.word]?.favorite || false;
@@ -2559,7 +2557,7 @@ const learningMode = {
         const hasSample = wordData && wordData.sample && wordData.sample.trim() !== '';
         const backImgUrl = 'https://images.icon-icons.com/1055/PNG/128/5-remove-cat_icon-icons.com_76681.png';
         const sampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
-        const noSampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/23-minus-cat_icon-icons.com_76699.png';
+        const noSampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
         if (!isBackVisible) {
             if (!hasSample) { app.showNoSampleMessage(); return; }
             this.elements.backTitle.textContent = wordData.word;
@@ -2664,3 +2662,9 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
+
+
+
+
+
