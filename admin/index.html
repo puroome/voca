@@ -70,11 +70,9 @@
                 </div>
                 <div class="flex flex-col items-end space-y-1">
                     <div class="flex items-center space-x-2">
-                         <button id="refresh-data-btn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold p-2 rounded-lg shadow-md transition-transform transform hover:scale-105" title="학생 명단 새로고침">
+                         <button id="refresh-data-btn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold p-2 rounded-lg shadow-md transition-transform transform hover:scale-105" title="학습 통계 캐시 삭제 및 권한 동기화">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                <polyline points="23 4 23 10 17 10"></polyline>
-                                <polyline points="1 20 1 14 7 14"></polyline>
-                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                         </button>
                         <button id="logout-btn" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
@@ -116,7 +114,7 @@
 
         <div id="refresh-confirm-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
             <div class="bg-white p-6 rounded-lg shadow-xl text-center w-11/12 max-w-sm">
-                <p class="mb-4 text-lg">학생명단 및 통계자료를 새로고침합니다.<br>계속하시겠습니까?</p>
+                <p class="mb-4 text-lg">학생 학습 통계 캐시를 삭제하고,<br>학생 명단을 Firebase에 동기화합니다.<br>계속하시겠습니까?</p>
                 <div class="flex justify-center gap-4">
                     <button id="confirm-yes-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg">예</button>
                     <button id="confirm-no-btn" class="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-6 rounded-lg">아니오</button>
@@ -149,12 +147,13 @@
 
         const adminApp = {
             ADMIN_EMAIL: 'puroome@gmail.com',
-            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec',
+            SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzjtB_Mh6TlEGwd_UzBe-gwOJ6-LxViJuFl1C-4U_4qhOb2cZGL-MRQ1nP39c3ibF4/exec', // UPDATED: Changed to the permission script URL
+            FIRESTORE_PERMISSIONS_COLLECTION: 'user_permissions', // NEW: Collection name for permission status
             state: {
                 wordLists: {},
                 allUsers: {},
-                studentNameMap: {},
-                gradeStudentMap: {},
+                studentNameMap: {}, // Now loaded from Firestore permissions
+                gradeStudentMap: {}, // Now loaded from Firestore permissions
                 selectedGrade: null,
                 studentsForSelectedGrade: [],
                 charts: {},
@@ -246,29 +245,42 @@
 
             async forceRefreshAdminConfig() {
                 this.elements.refreshConfirmModal.classList.add('hidden');
-                this.elements.initialLoaderText.textContent = '최신 학생 명단 및 통계 캐시 삭제 중...';
+                this.elements.initialLoaderText.textContent = '학생 명단 동기화 및 통계 캐시 삭제 중...';
                 this.elements.initialLoader.classList.remove('hidden');
 
-                const cacheKey = this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE;
-                localStorage.removeItem(cacheKey);
-
-                await this.loadAdminConfig(true);
-
+                // 1. Clear all local storage caches related to student details and rankings
                 try {
                     for (let i = 0; i < localStorage.length; i++){
                         const key = localStorage.key(i);
-                        if (key && (key.startsWith('admin_rankingCache_') || key.startsWith('admin_studentDetail_'))) {
+                        if (key && (key.startsWith('admin_rankingCache_') || key.startsWith('admin_studentDetail_') || key === this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE)) {
                             localStorage.removeItem(key);
                             i--;
                         }
                     }
-                    const updateTime = Date.now();
-                    localStorage.setItem(this.state.LOCAL_STORAGE_KEYS.ADMIN_LAST_UPDATE_TIME, updateTime.toString());
-                    this.updateLastUpdatedAdminText(updateTime);
-
                 } catch (e) {
                     console.error("Error clearing Firebase caches from localStorage", e);
                 }
+                
+                // 2. Trigger Google Sheet to Firebase sync (updates user_permissions collection)
+                try {
+                    const url = new URL(this.SCRIPT_URL);
+                    url.searchParams.append('action', 'syncSheetToFirebase');
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+                    const data = await response.json();
+                    if (!data.success) throw new Error(data.message);
+                    
+                    this.elements.initialLoaderText.textContent = `Firebase 동기화 완료: ${data.syncedCount || 0}명 갱신.`;
+                } catch(e) {
+                     alert(`Google Sheet 동기화 실패: ${e.message}. 수동으로 시트를 확인해주세요.`);
+                }
+                
+                // 3. Reload admin config from Firebase (which holds the new list)
+                await this.loadAdminConfig(true); 
+
+                const updateTime = Date.now();
+                localStorage.setItem(this.state.LOCAL_STORAGE_KEYS.ADMIN_LAST_UPDATE_TIME, updateTime.toString());
+                this.updateLastUpdatedAdminText(updateTime);
 
                 this.handleHashChange();
                 this.elements.initialLoader.classList.add('hidden');
@@ -347,22 +359,49 @@
                     }
                 }
 
+                // Load student list from Firestore user_permissions collection
                 try {
-                    const url = new URL(this.SCRIPT_URL);
-                    url.searchParams.append('action', 'getStudentAdminData');
-                    const response = await fetch(url);
-                    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-                    const data = await response.json();
-                    if (data.success) {
-                        this.state.studentNameMap = data.studentNameMap;
-                        this.state.gradeStudentMap = data.gradeStudentMap;
-                        localStorage.setItem(cacheKey, JSON.stringify({
-                            studentNameMap: data.studentNameMap,
-                            gradeStudentMap: data.gradeStudentMap
-                        }));
-                    } else { throw new Error(data.message); }
+                    this.elements.initialLoaderText.textContent = 'Firebase에서 학생 명단 구성 중...';
+                    
+                    const permissionsCollection = collection(db, this.FIRESTORE_PERMISSIONS_COLLECTION);
+                    const snapshot = await getDocs(permissionsCollection);
+                    
+                    const studentNameMap = {};
+                    const gradeStudentMap = { '1y': [], '2y': [], '3y': [], 'unassigned': [] };
+                    
+                    snapshot.docs.forEach(doc => {
+                        const data = doc.data();
+                        const email = data.email.toLowerCase();
+                        const name = data.name;
+                        const grade = data.grade;
+                        const permission = data.permission; // yes, no, pending
+
+                        if (permission === 'yes') {
+                            studentNameMap[email] = name;
+                            if (grade === '1y' || grade === '2y' || grade === '3y') {
+                                gradeStudentMap[grade].push(email);
+                            } else {
+                                gradeStudentMap['unassigned'].push(email);
+                            }
+                        } else if (permission === 'pending' || permission === 'no') {
+                            // Only 'approved' students are included in gradeStudentMap for now
+                             studentNameMap[email] = name; // Still track name for unassigned/pending/denied logic later if needed
+                             if (grade === '1y' || grade === '2y' || grade === '3y') {
+                                gradeStudentMap['unassigned'].push(email);
+                            }
+                        }
+                    });
+
+                    this.state.studentNameMap = studentNameMap;
+                    this.state.gradeStudentMap = gradeStudentMap;
+                    
+                    localStorage.setItem(cacheKey, JSON.stringify({
+                        studentNameMap: studentNameMap,
+                        gradeStudentMap: gradeStudentMap
+                    }));
+
                 } catch(e) {
-                    alert(`Google Sheets에서 학생 명단을 불러오는 데 실패했습니다: ${e.message}`);
+                    alert(`Firebase에서 학생 명단을 불러오는 데 실패했습니다: ${e.message}`);
                 }
             },
 
@@ -394,6 +433,7 @@
 
             async cacheAllUsers() {
                 try {
+                    // Cache only users who have logged in and are in the 'users' collection
                     const usersCollection = collection(db, 'users');
                     const snapshot = await getDocs(usersCollection);
                     snapshot.docs.forEach(doc => { this.state.allUsers[doc.data().email] = { id: doc.id, ...doc.data() }; });
@@ -404,13 +444,15 @@
                 this.elements.studentDropdown.innerHTML = '';
 
                 let studentsToDisplay = [];
-                if (grade === 'unassigned') {
-                    const assignedEmails = Object.keys(this.state.studentNameMap);
-                    studentsToDisplay = Object.values(this.state.allUsers).filter(user => !assignedEmails.includes(user.email));
-                } else {
-                    const studentEmails = this.state.gradeStudentMap[grade] || [];
-                    studentsToDisplay = studentEmails.map(email => this.state.allUsers[email]).filter(Boolean);
-                }
+                const studentEmails = this.state.gradeStudentMap[grade] || [];
+                
+                // For all emails in the list, retrieve the user data cached from the 'users' collection
+                studentsToDisplay = studentEmails
+                    .map(email => this.state.allUsers[email])
+                    .filter(Boolean);
+                
+                // For 'unassigned', we might also want to list students who have requested permission but haven't logged in yet,
+                // but for simplicity and consistency with historical data, we only show those present in allUsers for now.
 
                 this.state.studentsForSelectedGrade = studentsToDisplay;
 
@@ -419,7 +461,7 @@
                 defaultOption.textContent = "학생을 선택하세요";
                 this.elements.studentDropdown.appendChild(defaultOption);
 
-                if (studentsToDisplay.length > 0) {
+                if (studentsToDisplay.length > 0 && grade !== 'unassigned') {
                     const allStudentsOption = document.createElement('option');
                     allStudentsOption.value = "__all__";
                     allStudentsOption.textContent = "전체 학생 순위";
@@ -492,12 +534,34 @@
                 try {
                     let gradesToShow = ['1y', '2y', '3y'];
                     const selectedGradeFilter = this.state.selectedGrade;
-                    if (selectedGradeFilter && selectedGradeFilter !== 'unassigned') {
-                        gradesToShow = [selectedGradeFilter, ...gradesToShow.filter(g => g !== selectedGradeFilter)];
+                    
+                    // Fetch student grade from Firestore user_permissions for display
+                    const permissionDoc = await getDoc(doc(db, this.FIRESTORE_PERMISSIONS_COLLECTION, student.email));
+                    const studentDataFromPermission = permissionDoc.exists() ? permissionDoc.data() : {};
+                    const actualGrade = studentDataFromPermission.grade;
+                    const studentPermission = studentDataFromPermission.permission || 'new';
+
+                    // If student is approved and has an assigned grade, prioritize that, otherwise use default order
+                    if (studentPermission === 'yes' && actualGrade && ['1y', '2y', '3y'].includes(actualGrade)) {
+                        gradesToShow = [actualGrade, ...gradesToShow.filter(g => g !== actualGrade)];
                     }
+
 
                     const gradeColors = { '1y': 'bg-yellow-50', '2y': 'bg-blue-50', '3y': 'bg-red-50' };
 
+                    // Display permission status card first if not approved
+                    if (studentPermission !== 'yes') {
+                        const statusColor = studentPermission === 'no' ? 'bg-red-100' : 'bg-yellow-100';
+                        const statusText = studentPermission === 'no' ? '접근 거부됨' : studentPermission === 'pending' ? '접근 확인 대기 중' : '권한 요청 필요';
+                        this.elements.studentDetails.innerHTML += `
+                            <div class="p-6 rounded-lg shadow-lg ${statusColor} text-center">
+                                <h3 class="text-xl font-bold text-gray-800">권한 상태</h3>
+                                <p class="text-lg mt-2">${statusText}</p>
+                                <p class="text-sm text-gray-600 mt-1">이메일: ${student.email}</p>
+                            </div>
+                        `;
+                    }
+                    
                     for (const grade of gradesToShow) {
                         const gradeBlock = this.createGradeStatisticsBlock(
                             student,
