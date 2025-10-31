@@ -197,12 +197,19 @@ async handlePermissionFlow(user) {
         this.elements.mainContainer.classList.add('hidden');
         document.body.classList.add('items-center');
         const email = user.email;
+        const userRef = doc(db, 'users', user.uid);
+        
+        // 1. Firestore에 기본 사용자 정보 저장/업데이트
+        // 이 단계는 사용자가 승인된 후에도 이름, 학년 등을 업데이트할 때 필요하므로 유지합니다.
+        await setDoc(userRef, { displayName: user.displayName, email: user.email }, { merge: true });
+
         try {
-            const permissionStatus = await api.checkPermission(email);
-            if (permissionStatus.status === 'approved') {
+            // 2. Firestore에서 권한 상태 직접 확인
+            const permissionStatus = await api.checkPermission(user.uid); 
+
+            if (permissionStatus === 'approved') {
                 this.state.user = user;
-                const userRef = doc(db, 'users', user.uid);
-                await setDoc(userRef, { displayName: user.displayName, email: user.email }, { merge: true });
+                
                 this.elements.mainContainer.classList.remove('hidden');
                 document.body.classList.remove('items-center');
                 await utils.loadUserProgress();
@@ -231,21 +238,21 @@ async handlePermissionFlow(user) {
                 }
                 history.replaceState(initialState, '');
                 this._renderView(initialState.view, initialState.grade);
-            } else if (permissionStatus.status === 'denied') {
+            } else if (permissionStatus === 'denied') {
                 this.showStatusModal(
                     '접근 제한', 
                     '관리자에 의해 앱 접근이 제한되었습니다.', 
                     'text-red-500',
                     () => signOut(auth)
                 );
-            } else if (permissionStatus.status === 'pending') { // '확인 중' 상태 추가
+            } else if (permissionStatus === 'pending') { // '확인 중' 상태 추가
                 this.showStatusModal(
                     '확인 중', 
                     '관리자가 확인 중이니 기다려주세요.', 
                     'text-blue-500',
                     () => signOut(auth)
                 );
-            } else {
+            } else { // 'not_found' 또는 기타 오류 (권한 요청이 필요함)
                 this.state.user = user;
                 this.showRequestModal();
             }
@@ -259,19 +266,27 @@ async handlePermissionFlow(user) {
         if (!this.state.user) return;
         const name = this.elements.prNameInput.value.trim();
         const gradeStr = this.elements.prGradeInput.value.trim();
-        const grade = parseInt(gradeStr);
+        const gradeNum = parseInt(gradeStr);
         if (!name) {
             this.elements.prNameInput.focus();
             return;
         }
-        if (isNaN(grade) || ![1, 2, 3].includes(grade)) {
+        if (isNaN(gradeNum) || ![1, 2, 3].includes(gradeNum)) {
             this.elements.prGradeInput.focus();
             return;
         }
+        
+        // Firestore users 문서에 name과 grade 필드 업데이트 (요청 반영)
+        const userRef = doc(db, 'users', this.state.user.uid);
+        await updateDoc(userRef, { name: name, grade: `${gradeNum}y` }).catch(e => console.error("Firestore update failed:", e));
+
         this.elements.prSubmitBtn.disabled = true;
         this.elements.prSubmitBtn.textContent = '요청 중...';
+        
         try {
-            const result = await api.requestPermission(this.state.user.email, name, grade);
+            // 명단 시트에 정보를 기록하는 Apps Script 호출 (학년값에 'y'가 붙여져 저장됨)
+            const result = await api.requestPermission(this.state.user.email, name, gradeNum);
+            
             this.elements.permissionRequestModal.classList.add('hidden');
             if (result.success) {
                 this.showStatusModal(
@@ -305,7 +320,7 @@ async handlePermissionFlow(user) {
         this.elements.psCloseBtn.addEventListener('click', closeHandler);
     },
     showRequestModal() {
-        this.elements.prNameInput.value = '';
+        this.elements.prNameInput.value = this.state.user.displayName; 
         this.elements.prGradeInput.value = '';
         this.elements.prSubmitBtn.disabled = false;
         this.elements.prSubmitBtn.textContent = '권한 요청';
@@ -313,6 +328,7 @@ async handlePermissionFlow(user) {
     },
     async syncOfflineData() {
         if (!app.state.user) return;
+        const userRef = doc(db, 'users', app.state.user.uid);
         for (const grade of ['1y', '2y', '3y']) {
             try {
                 const timeKey = this.state.LOCAL_STORAGE_KEYS.UNSYNCED_TIME(grade);
@@ -422,7 +438,7 @@ async handlePermissionFlow(user) {
         this.elements.prGradeInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.submitPermissionRequest();
         });
-        this.elements.prLogoutBtn.addEventListener('click', () => { // 추가
+        this.elements.prLogoutBtn.addEventListener('click', () => { 
             this.elements.permissionRequestModal.classList.add('hidden');
             signOut(auth);
         });
@@ -898,20 +914,34 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             return null;
         }
     },
-    async checkPermission(email) {
-        const url = new URL(app.config.SCRIPT_URL);
-        url.searchParams.append('action', 'checkPermission');
-        url.searchParams.append('email', email);
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
+    // 명단시트 대신 Firestore에서 권한 상태를 직접 조회하도록 변경
+    async checkPermission(uid) {
+        const userRef = doc(db, 'users', uid);
+        const docSnap = await getDoc(userRef);
+
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            const permission = data.permissions; // Firestore 필드명 'permissions' (소문자)
+
+            if (permission === 'approved') {
+                return 'approved';
+            } else if (permission === 'denied') {
+                return 'denied';
+            } else if (permission === 'pending') {
+                return 'pending';
+            }
+            // Firestore 문서에 permissions 필드가 없거나 다른 값이면 not_found 처리
+            return 'not_found';
+        }
+        return 'not_found';
     },
+    // 명단시트 Apps Script로 요청을 보내는 기능은 유지
     async requestPermission(email, name, grade) {
         const url = new URL(app.config.SCRIPT_URL);
         url.searchParams.append('action', 'requestPermission');
         url.searchParams.append('email', email);
         url.searchParams.append('name', name);
-        url.searchParams.append('grade', grade);
+        url.searchParams.append('grade', grade); // grade는 숫자만 보내고, Apps Script에서 'y'를 붙입니다.
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         return await response.json();
@@ -1217,6 +1247,7 @@ const utils = {
             const data = docSnap.exists() ? docSnap.data() : {};
             const dailyData = data[today] || {};
             const currentSeconds = dailyData[grade] || 0;
+            // setDoc 대신 updateDoc을 사용하여 문서가 존재할 때만 업데이트되도록 합니다. (성능상 이점 없음, 코딩 스타일 유지)
             await setDoc(historyRef, { [today]: { [grade]: currentSeconds + seconds } }, { merge: true });
         } catch(e) {
             console.error("Failed to update study history:", e);
@@ -1268,7 +1299,8 @@ const utils = {
          const progressRef = this._getProgressRef(grade);
          if (!progressRef) return;
          try {
-             await setDoc(progressRef, progressToSync, { merge: true });
+             // progress 문서가 존재하지 않으면 setDoc으로 생성, 존재하면 updateDoc과 동일하게 작동
+             await setDoc(progressRef, progressToSync, { merge: true }); 
          } catch (error) {
              console.error("Firebase progress sync (setDoc merge) failed:", error);
              throw error;
@@ -1974,7 +2006,7 @@ const quizMode = {
         }
         setTimeout(() => {
             if (this.state.sessionAnsweredInSet >= 10) {
-                this.showSessionResultModal();
+                this.showSessionResultModal(true);
             } else {
                 this.displayNextQuiz();
             }
@@ -2125,8 +2157,8 @@ const quizMode = {
         const firstLineSentence = correctWordData.sample.split('\n')[0];
         let sentenceWithBlank = "";
         const placeholderRegex = /\*(.*?)\*/;
-        const match = firstLineSentence.match(placeholderRegex);
         const wordRegex = new RegExp(`\\b${correctWordData.word}\\b`, 'i');
+        const match = firstLineSentence.match(placeholderRegex);
         if (match) {
             sentenceWithBlank = firstLineSentence.replace(placeholderRegex, "＿＿＿＿").trim();
         } else if (firstLineSentence.match(wordRegex)) {
@@ -2502,7 +2534,9 @@ const learningMode = {
         const hasSample = wordData.sample && wordData.sample.trim() !== '';
         const defaultImg = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
         const sampleImg = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
-        this.elements.sampleBtnImg.src = hasSample ? sampleImg : defaultImg;
+        const backImgUrl = 'https://images.icon-icons.com/1055/PNG/128/5-remove-cat_icon-icons.com_76681.png';
+        this.elements.sampleBtnImg.src = this.elements.cardBack.classList.contains('is-slid-up') ? backImgUrl : (hasSample ? sampleImg : defaultImg);
+        
         const grade = app.state.selectedSheet;
         let isFavorite = app.state.currentProgress[wordData.word]?.favorite || false;
         if (grade) {
@@ -2662,9 +2696,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
-
-
-
-
