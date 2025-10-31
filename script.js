@@ -274,6 +274,8 @@ async handlePermissionFlow(user) {
             this.elements.prGradeInput.focus();
             return;
         }
+
+        const gradeWithSuffix = gradeNum + 'y'; // 숫자에 'y'를 붙여 '1y', '2y' 문자열로 만듭니다.
         
         // Firestore users 문서에 name과 grade 필드 업데이트 로직은 RTDB 전환으로 인해 제거됨.
 
@@ -281,8 +283,8 @@ async handlePermissionFlow(user) {
         this.elements.prSubmitBtn.textContent = '요청 중...';
         
         try {
-            // 명단 시트에 정보를 기록하는 Apps Script 호출 (학년값에 'y'가 붙여져 저장됨)
-            const result = await api.requestPermission(this.state.user.email, name, gradeNum);
+            // 명단 시트에 정보를 기록하는 Apps Script 호출
+            const result = await api.requestPermission(this.state.user.email, name, gradeWithSuffix);
             
             this.elements.permissionRequestModal.classList.add('hidden');
             if (result.success) {
@@ -2692,3 +2694,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
