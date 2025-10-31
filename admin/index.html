@@ -70,7 +70,7 @@
                 </div>
                 <div class="flex flex-col items-end space-y-1">
                     <div class="flex items-center space-x-2">
-                         <button id="refresh-data-btn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold p-2 rounded-lg shadow-md transition-transform transform hover:scale-105" title="학생 명단 새로고침">
+                         <button id="refresh-data-btn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold p-2 rounded-lg shadow-md transition-transform transform hover:scale-105" title="학생 명단 및 통계 캐시 새로고침">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                 <polyline points="23 4 23 10 17 10"></polyline>
                                 <polyline points="1 20 1 14 7 14"></polyline>
@@ -116,7 +116,7 @@
 
         <div id="refresh-confirm-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
             <div class="bg-white p-6 rounded-lg shadow-xl text-center w-11/12 max-w-sm">
-                <p class="mb-4 text-lg">학생명단 및 통계자료를 새로고침합니다.<br>계속하시겠습니까?</p>
+                <p class="mb-4 text-lg">기존에 캐싱된 학생들의 통계 데이터를 지웁니다.<br>계속하시겠습니까?</p>
                 <div class="flex justify-center gap-4">
                     <button id="confirm-yes-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg">예</button>
                     <button id="confirm-no-btn" class="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-6 rounded-lg">아니오</button>
@@ -130,7 +130,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
         import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
-        import { getFirestore, collection, doc, getDoc, getDocs } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+        import { getFirestore, collection, doc, getDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBE_Gxd1haPazVK61F9sjCwK0X4Gw5rERM",
@@ -152,9 +152,10 @@
             SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec',
             state: {
                 wordLists: {},
-                allUsers: {},
-                studentNameMap: {},
-                gradeStudentMap: {},
+                allUsers: {}, // 모든 Firestore users 문서 데이터 (key: uid)
+                approvedUsers: {}, // 승인된 사용자 데이터 (key: email)
+                studentNameMap: {}, // name을 위한 맵 (key: email)
+                gradeStudentMap: { '1y': [], '2y': [], '3y': [], 'unassigned': [] }, // grade별 email 목록
                 selectedGrade: null,
                 studentsForSelectedGrade: [],
                 charts: {},
@@ -244,30 +245,33 @@
                 });
             },
 
+            // 새로고침 버튼 기능 수정 (요청 반영)
             async forceRefreshAdminConfig() {
                 this.elements.refreshConfirmModal.classList.add('hidden');
-                this.elements.initialLoaderText.textContent = '최신 학생 명단 및 통계 캐시 삭제 중...';
+                this.elements.initialLoaderText.textContent = '통계 캐시 삭제 중...';
                 this.elements.initialLoader.classList.remove('hidden');
 
-                const cacheKey = this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE;
-                localStorage.removeItem(cacheKey);
-
-                await this.loadAdminConfig(true);
-
                 try {
+                    // 1. 통계 관련 캐시만 삭제 (명단은 Firestore에서 실시간 조회하므로)
                     for (let i = 0; i < localStorage.length; i++){
                         const key = localStorage.key(i);
-                        if (key && (key.startsWith('admin_rankingCache_') || key.startsWith('admin_studentDetail_'))) {
+                        if (key && (key.startsWith('admin_rankingCache_') || key.startsWith('admin_studentDetail_') || key === this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE)) {
                             localStorage.removeItem(key);
                             i--;
                         }
                     }
+                    
+                    // 2. 명단 데이터 (Firestore)를 새로 로드
+                    await this.loadAdminUsersFromFirestore();
+
+                    // 3. 업데이트 시간 기록
                     const updateTime = Date.now();
                     localStorage.setItem(this.state.LOCAL_STORAGE_KEYS.ADMIN_LAST_UPDATE_TIME, updateTime.toString());
                     this.updateLastUpdatedAdminText(updateTime);
 
                 } catch (e) {
-                    console.error("Error clearing Firebase caches from localStorage", e);
+                    alert(`캐시 삭제 또는 Firestore 명단 로드에 실패했습니다: ${e.message}`);
+                    console.error("Error clearing caches or loading users:", e);
                 }
 
                 this.handleHashChange();
@@ -302,7 +306,9 @@
                 } else if (view === 'student' && email) {
                      if (this.elements.studentDropdown.value !== email) this.elements.studentDropdown.value = email;
                     const studentData = this.state.studentsForSelectedGrade.find(s => s.email === email);
-                    if(studentData) this.loadAndDisplayStudentDetails(studentData);
+                    // 미배정 학생은 studentsForSelectedGrade에 없을 수 있으므로 approvedUsers와 allUsers 모두 확인
+                    const userDetail = studentData || this.state.approvedUsers[email] || this.state.allUsers[this.findUserUidByEmail(email)];
+                    if(userDetail) this.loadAndDisplayStudentDetails(userDetail);
                 } else {
                     if (this.elements.studentDropdown.value !== '') this.elements.studentDropdown.value = '';
                     this.elements.detailsPrompt.classList.remove('hidden');
@@ -322,7 +328,8 @@
                 const lastUpdateTime = localStorage.getItem(this.state.LOCAL_STORAGE_KEYS.ADMIN_LAST_UPDATE_TIME);
                 this.updateLastUpdatedAdminText(lastUpdateTime ? parseInt(lastUpdateTime) : null);
 
-                await Promise.all([this.loadAdminConfig(), this.cacheAllUsers()]);
+                // Sheets Apps Script 대신 Firestore에서 직접 명단을 가져옵니다. (요청 반영)
+                await this.loadAdminUsersFromFirestore();
 
                 this.elements.initialLoader.classList.add('hidden');
                 this.elements.dashboard.classList.remove('hidden');
@@ -330,40 +337,58 @@
                 this.handleHashChange();
             },
 
-            async loadAdminConfig(forceRefresh = false) {
-                const cacheKey = this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE;
-
-                if (!forceRefresh) {
-                    try {
-                        const cachedItem = localStorage.getItem(cacheKey);
-                        if (cachedItem) {
-                            const data = JSON.parse(cachedItem);
-                            this.state.studentNameMap = data.studentNameMap;
-                            this.state.gradeStudentMap = data.gradeStudentMap;
-                            return;
-                        }
-                    } catch (e) {
-                         localStorage.removeItem(cacheKey);
-                    }
-                }
-
+            // Google Sheets 대신 Firestore에서 사용자 명단 가져오는 함수 (요청 반영)
+            async loadAdminUsersFromFirestore() {
                 try {
-                    const url = new URL(this.SCRIPT_URL);
-                    url.searchParams.append('action', 'getStudentAdminData');
-                    const response = await fetch(url);
-                    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-                    const data = await response.json();
-                    if (data.success) {
-                        this.state.studentNameMap = data.studentNameMap;
-                        this.state.gradeStudentMap = data.gradeStudentMap;
-                        localStorage.setItem(cacheKey, JSON.stringify({
-                            studentNameMap: data.studentNameMap,
-                            gradeStudentMap: data.gradeStudentMap
-                        }));
-                    } else { throw new Error(data.message); }
-                } catch(e) {
-                    alert(`Google Sheets에서 학생 명단을 불러오는 데 실패했습니다: ${e.message}`);
+                    this.state.allUsers = {};
+                    this.state.approvedUsers = {};
+                    this.state.studentNameMap = {};
+                    this.state.gradeStudentMap = { '1y': [], '2y': [], '3y': [], 'unassigned': [] };
+
+                    const usersCollection = collection(db, 'users');
+                    const q = query(usersCollection); // 모든 user 문서 쿼리
+
+                    const snapshot = await getDocs(q);
+                    
+                    snapshot.docs.forEach(doc => {
+                        const data = { id: doc.id, ...doc.data() };
+                        const email = data.email ? data.email.toLowerCase() : null;
+                        const grade = data.grade ? data.grade.toLowerCase() : 'unassigned';
+                        const permissions = data.permissions ? data.permissions.toLowerCase() : 'not_found';
+                        
+                        if (!email) return;
+
+                        this.state.allUsers[data.id] = data; // UID로 전체 사용자 저장
+
+                        // Name 맵 생성 (name 필드 우선, 없으면 displayName)
+                        this.state.studentNameMap[email] = data.name || data.displayName;
+                        
+                        // 승인된 사용자만 대상으로 명단 분류
+                        if (permissions === 'approved') {
+                            this.state.approvedUsers[email] = data;
+                            const gradeKey = ['1y', '2y', '3y'].includes(grade) ? grade : 'unassigned';
+                            
+                            this.state.gradeStudentMap[gradeKey].push(email);
+                        } else if (grade === 'unassigned') {
+                             // 미승인/대기 중인 사용자도 미배정 목록에는 포함 (Google Sheets에서 명단만 가져오던 기존 로직과의 차이점)
+                             this.state.gradeStudentMap['unassigned'].push(email);
+                        }
+                    });
+
+                } catch(e) { 
+                    alert("Firestore에서 학생 명단 정보를 불러오는 데 실패했습니다.");
+                    console.error("Firestore users loading failed:", e); 
                 }
+            },
+
+            findUserUidByEmail(email) {
+                 const lowerEmail = email.toLowerCase();
+                 for (const uid in this.state.allUsers) {
+                     if (this.state.allUsers[uid].email?.toLowerCase() === lowerEmail) {
+                         return uid;
+                     }
+                 }
+                 return null;
             },
 
             showLoginScreen() {
@@ -392,24 +417,16 @@
                  Object.keys(this.state.charts).forEach(grade => this.destroyGradeCharts(grade));
             },
 
-            async cacheAllUsers() {
-                try {
-                    const usersCollection = collection(db, 'users');
-                    const snapshot = await getDocs(usersCollection);
-                    snapshot.docs.forEach(doc => { this.state.allUsers[doc.data().email] = { id: doc.id, ...doc.data() }; });
-                } catch(e) { console.error("전체 사용자 정보 캐시 실패:", e); }
-            },
-
             displayStudentsForGrade(grade) {
                 this.elements.studentDropdown.innerHTML = '';
 
-                let studentsToDisplay = [];
+                // Firestore에서 가져온 approvedUsers와 gradeStudentMap 사용
+                const studentEmails = this.state.gradeStudentMap[grade] || [];
+                let studentsToDisplay = studentEmails.map(email => this.state.approvedUsers[email] || this.state.allUsers[this.findUserUidByEmail(email)]).filter(Boolean);
+                
+                // 'unassigned'의 경우, 미승인/대기 중인 사용자까지 모두 포함될 수 있습니다.
                 if (grade === 'unassigned') {
-                    const assignedEmails = Object.keys(this.state.studentNameMap);
-                    studentsToDisplay = Object.values(this.state.allUsers).filter(user => !assignedEmails.includes(user.email));
-                } else {
-                    const studentEmails = this.state.gradeStudentMap[grade] || [];
-                    studentsToDisplay = studentEmails.map(email => this.state.allUsers[email]).filter(Boolean);
+                     studentsToDisplay = studentEmails.map(email => this.state.allUsers[this.findUserUidByEmail(email)]).filter(Boolean);
                 }
 
                 this.state.studentsForSelectedGrade = studentsToDisplay;
@@ -433,10 +450,11 @@
                 }
 
                 studentsToDisplay.forEach(studentData => {
-                    const displayName = this.state.studentNameMap[studentData.email] || studentData.displayName;
+                    const email = studentData.email.toLowerCase();
+                    const displayName = this.state.studentNameMap[email] || studentData.displayName;
                     const option = document.createElement('option');
-                    option.value = studentData.email;
-                    option.textContent = `${displayName} (${studentData.email})`;
+                    option.value = email;
+                    option.textContent = `${displayName} (${email})`;
                     this.elements.studentDropdown.appendChild(option);
                 });
             },
@@ -561,7 +579,6 @@
             },
 
             appendSummaryCards(block, grade, studyHistory, quizHistory) {
-                // const stats7 = this.getStatsForPeriod(7, grade, studyHistory, quizHistory); // 7일 통계는 차트로 표시
                 const stats30 = this.getStatsForPeriod(30, grade, studyHistory, quizHistory);
                 const totalStats = this.getStatsForPeriod(3650, grade, studyHistory, quizHistory);
 
@@ -855,16 +872,22 @@
                     console.error("Error reading ranking cache:", e);
                     localStorage.removeItem(cacheKey);
                 }
+                
+                // Firestore에서 명단을 가져오는 로직이 이미 loadAdminUsersFromFirestore에 있으므로,
+                // 여기서는 승인된 사용자 목록 (this.state.approvedUsers)을 사용합니다.
+                const students = Object.values(this.state.approvedUsers).filter(s => {
+                    const studentGrade = s.grade || 'unassigned';
+                    return grade === 'unassigned' ? studentGrade !== '1y' && studentGrade !== '2y' && studentGrade !== '3y' : studentGrade === grade;
+                });
+                
+                if (students.length === 0) {
+                    this.elements.studentDetails.innerHTML = '<p class="text-center text-gray-500">랭킹을 표시할 승인된 학생이 없습니다.</p>';
+                    this.elements.studentDetailsLoader.classList.add('hidden');
+                    this.elements.studentDetails.classList.remove('hidden');
+                    return;
+                }
 
                 if (!allStats) {
-                    const students = this.state.studentsForSelectedGrade;
-                    if (students.length === 0) {
-                        this.elements.studentDetails.innerHTML = '<p class="text-center text-gray-500">랭킹을 표시할 학생이 없습니다.</p>';
-                        this.elements.studentDetailsLoader.classList.add('hidden');
-                        this.elements.studentDetails.classList.remove('hidden');
-                        return;
-                    }
-
                     try {
                         const studentStatsPromises = students.map(async (student) => {
                             const studyDoc = await getDoc(doc(db, 'users', student.id, 'history', 'study'));
@@ -896,7 +919,7 @@
                             }
                             const accuracy = totalQuizzes > 0 ? (totalCorrect / totalQuizzes) * 100 : 0;
                             const displayName = this.state.studentNameMap[student.email] || student.displayName;
-                            return { name: displayName, email: student.email, time: totalSeconds, accuracy: accuracy, totalQuizzes, totalCorrect };
+                            return { name: displayName, email: student.email, time: totalSeconds, accuracy: accuracy, totalQuizzes, totalCorrect, id: student.id };
                         });
 
                         allStats = await Promise.all(studentStatsPromises);
