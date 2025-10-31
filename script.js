@@ -196,16 +196,15 @@ async handlePermissionFlow(user) {
         this.elements.loginScreen.classList.add('hidden');
         this.elements.mainContainer.classList.add('hidden');
         document.body.classList.add('items-center');
-        const email = user.email;
         const userRef = doc(db, 'users', user.uid);
         
-        // 1. Firestore에 기본 사용자 정보 저장/업데이트
-        // 이 단계는 사용자가 승인된 후에도 이름, 학년 등을 업데이트할 때 필요하므로 유지합니다.
+        // 1. Firestore에 기본 사용자 정보만 저장 (통계 문서 연결용)
+        // RTDB로 전환했으므로, Firestore에는 통계 연결에 필수적인 email/displayName만 남깁니다.
         await setDoc(userRef, { displayName: user.displayName, email: user.email }, { merge: true });
 
         try {
-            // 2. Firestore에서 권한 상태 직접 확인
-            const permissionStatus = await api.checkPermission(user.uid); 
+            // 2. RTDB에서 권한 상태 확인 (RTDB로 전환된 로직)
+            const permissionStatus = await api.checkPermission(user.email); 
 
             if (permissionStatus === 'approved') {
                 this.state.user = user;
@@ -245,14 +244,14 @@ async handlePermissionFlow(user) {
                     'text-red-500',
                     () => signOut(auth)
                 );
-            } else if (permissionStatus === 'pending') { // '확인 중' 상태 추가
+            } else if (permissionStatus === 'pending') { 
                 this.showStatusModal(
                     '확인 중', 
                     '관리자가 확인 중이니 기다려주세요.', 
                     'text-blue-500',
                     () => signOut(auth)
                 );
-            } else { // 'not_found' 또는 기타 오류 (권한 요청이 필요함)
+            } else { // 'not_found'
                 this.state.user = user;
                 this.showRequestModal();
             }
@@ -276,9 +275,7 @@ async handlePermissionFlow(user) {
             return;
         }
         
-        // Firestore users 문서에 name과 grade 필드 업데이트 (요청 반영)
-        const userRef = doc(db, 'users', this.state.user.uid);
-        await updateDoc(userRef, { name: name, grade: `${gradeNum}y` }).catch(e => console.error("Firestore update failed:", e));
+        // Firestore users 문서에 name과 grade 필드 업데이트 로직은 RTDB 전환으로 인해 제거됨.
 
         this.elements.prSubmitBtn.disabled = true;
         this.elements.prSubmitBtn.textContent = '요청 중...';
@@ -914,26 +911,25 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             return null;
         }
     },
-    // 명단시트 대신 Firestore에서 권한 상태를 직접 조회하도록 변경
-    async checkPermission(uid) {
-        const userRef = doc(db, 'users', uid);
-        const docSnap = await getDoc(userRef);
+    // 권한 확인을 RTDB에서 수행하도록 변경
+    async checkPermission(email) {
+        const rtdbKey = email.toLowerCase().replace(/\./g, '_');
+        const rtdbRef = ref(rt_db, `roster/${rtdbKey}`);
 
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            const permission = data.permissions; // Firestore 필드명 'permissions' (소문자)
+        try {
+            const snapshot = await get(rtdbRef);
+            const data = snapshot.val();
 
-            if (permission === 'approved') {
-                return 'approved';
-            } else if (permission === 'denied') {
-                return 'denied';
-            } else if (permission === 'pending') {
-                return 'pending';
+            if (data && data.permissions) {
+                return data.permissions; // approved, denied, pending
             }
-            // Firestore 문서에 permissions 필드가 없거나 다른 값이면 not_found 처리
+            // RTDB에 명단 자체가 없으면 not_found
+            return 'not_found';
+        } catch (error) {
+            console.error("RTDB Permission Check Error:", error);
+            // 오류 발생 시 앱 사용을 막기 위해 denied나 pending으로 처리하는 대신, not_found를 반환하여 권한 요청을 유도합니다.
             return 'not_found';
         }
-        return 'not_found';
     },
     // 명단시트 Apps Script로 요청을 보내는 기능은 유지
     async requestPermission(email, name, grade) {
@@ -941,7 +937,7 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         url.searchParams.append('action', 'requestPermission');
         url.searchParams.append('email', email);
         url.searchParams.append('name', name);
-        url.searchParams.append('grade', grade); // grade는 숫자만 보내고, Apps Script에서 'y'를 붙입니다.
+        url.searchParams.append('grade', grade); 
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         return await response.json();
