@@ -205,6 +205,10 @@ async handlePermissionFlow(user) {
         try {
             // 2. RTDB에서 권한 상태 확인 (RTDB로 전환된 로직)
             const permissionStatus = await api.checkPermission(user.email); 
+            
+            // Firestore에서 permissionRequested 플래그를 미리 가져옴
+            const userDoc = await getDoc(userRef);
+            const isRequested = userDoc.exists() && userDoc.data().permissionRequested === true;
 
             if (permissionStatus === 'approved') {
                 this.state.user = user;
@@ -254,10 +258,6 @@ async handlePermissionFlow(user) {
             } else { // 'not_found'
                 this.state.user = user;
                 
-                // Firestore에서 permissionRequested 플래그를 확인하여 요청 재시도 여부를 판단
-                const userDoc = await getDoc(userRef);
-                const isRequested = userDoc.exists() && userDoc.data().permissionRequested === true;
-
                 if (isRequested) {
                     // 2차 접속: 이전에 요청했으나 RTDB에 아직 미동기화된 경우 -> Pending 처리
                     this.showStatusModal(
@@ -2716,6 +2716,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
