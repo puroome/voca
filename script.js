@@ -262,7 +262,7 @@ async handlePermissionFlow(user) {
                     // 2차 접속: 이전에 요청했으나 RTDB에 아직 미동기화된 경우 -> Pending 처리
                     this.showStatusModal(
                         '확인 중', 
-                        '관리자가 확인 중입니다.', 
+                        '관리자가 확인 중이니 기다려주세요.', 
                         'text-blue-500',
                         () => signOut(auth)
                     );
@@ -2714,6 +2714,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
