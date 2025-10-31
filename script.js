@@ -299,8 +299,6 @@ async handlePermissionFlow(user) {
         this.elements.prSubmitBtn.textContent = '요청 중...';
         
         try {
-            // 명단 시트에 정보를 기록하는 Apps Script 호출
-            // 명단 시트에 정보를 기록하는 Apps Script 호출
             const result = await api.requestPermission(this.state.user.email, name, gradeWithSuffix);
             
             if (result.success) {
@@ -2716,6 +2714,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
