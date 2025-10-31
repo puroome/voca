@@ -300,8 +300,14 @@ async handlePermissionFlow(user) {
         
         try {
             // 명단 시트에 정보를 기록하는 Apps Script 호출
+            // 명단 시트에 정보를 기록하는 Apps Script 호출
             const result = await api.requestPermission(this.state.user.email, name, gradeWithSuffix);
             
+            if (result.success) {
+                // 권한 요청 성공 시, Firestore에 플래그를 설정하여 재접속 시 pending 처리의 근거로 사용
+                await updateDoc(doc(db, 'users', this.state.user.uid), { permissionRequested: true });
+            }
+
             this.elements.permissionRequestModal.classList.add('hidden');
             if (result.success) {
                 this.showStatusModal(
@@ -2710,5 +2716,6 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
