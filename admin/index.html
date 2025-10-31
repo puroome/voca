@@ -130,6 +130,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
         import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+        // Firestore에서 user UID 및 통계 정보를 가져오는 것은 유지
         import { getFirestore, collection, doc, getDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -152,7 +153,8 @@
             SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec',
             state: {
                 wordLists: {},
-                allUsers: {}, // 모든 Firestore users 문서 데이터 (key: uid)
+                allUsers: {}, // Firestore users 문서 데이터 (key: uid)
+                rosterData: {}, // RTDB roster 데이터 (key: email)
                 approvedUsers: {}, // 승인된 사용자 데이터 (key: email)
                 studentNameMap: {}, // name을 위한 맵 (key: email)
                 gradeStudentMap: { '1y': [], '2y': [], '3y': [], 'unassigned': [] }, // grade별 email 목록
@@ -162,7 +164,7 @@
                 LOCAL_STORAGE_KEYS: {
                     RANKING_CACHE: (grade) => `admin_rankingCache_${grade}`,
                     STUDENT_DETAIL_CACHE: (email) => `admin_studentDetail_${email}`,
-                    ADMIN_CONFIG_CACHE: 'adminConfigCache',
+                    ADMIN_CONFIG_CACHE: 'adminConfigCache', // 기존 명단 Sheets 캐시 키는 통계 캐시 삭제 시 사용
                     ADMIN_LAST_UPDATE_TIME: 'adminLastUpdateTime'
                 }
             },
@@ -245,14 +247,14 @@
                 });
             },
 
-            // 새로고침 버튼 기능 수정 (요청 반영)
+            // 새로고침 버튼 기능 수정 (명단 재조회 로직 제거 및 캐시 삭제만 남김 - 요청 반영)
             async forceRefreshAdminConfig() {
                 this.elements.refreshConfirmModal.classList.add('hidden');
                 this.elements.initialLoaderText.textContent = '통계 캐시 삭제 중...';
                 this.elements.initialLoader.classList.remove('hidden');
 
                 try {
-                    // 1. 통계 관련 캐시만 삭제 (명단은 Firestore에서 실시간 조회하므로)
+                    // 1. 통계 관련 캐시만 삭제 (명단은 RTDB에서 실시간 조회)
                     for (let i = 0; i < localStorage.length; i++){
                         const key = localStorage.key(i);
                         if (key && (key.startsWith('admin_rankingCache_') || key.startsWith('admin_studentDetail_') || key === this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE)) {
@@ -261,8 +263,8 @@
                         }
                     }
                     
-                    // 2. 명단 데이터 (Firestore)를 새로 로드
-                    await this.loadAdminUsersFromFirestore();
+                    // 2. 명단 데이터 (RTDB & Firestore)를 새로 로드 (캐시 제거했으므로 다시 로드)
+                    await this.loadAdminUsers();
 
                     // 3. 업데이트 시간 기록
                     const updateTime = Date.now();
@@ -270,7 +272,7 @@
                     this.updateLastUpdatedAdminText(updateTime);
 
                 } catch (e) {
-                    alert(`캐시 삭제 또는 Firestore 명단 로드에 실패했습니다: ${e.message}`);
+                    alert(`캐시 삭제 또는 명단 로드에 실패했습니다: ${e.message}`);
                     console.error("Error clearing caches or loading users:", e);
                 }
 
@@ -306,7 +308,6 @@
                 } else if (view === 'student' && email) {
                      if (this.elements.studentDropdown.value !== email) this.elements.studentDropdown.value = email;
                     const studentData = this.state.studentsForSelectedGrade.find(s => s.email === email);
-                    // 미배정 학생은 studentsForSelectedGrade에 없을 수 있으므로 approvedUsers와 allUsers 모두 확인
                     const userDetail = studentData || this.state.approvedUsers[email] || this.state.allUsers[this.findUserUidByEmail(email)];
                     if(userDetail) this.loadAndDisplayStudentDetails(userDetail);
                 } else {
@@ -328,8 +329,7 @@
                 const lastUpdateTime = localStorage.getItem(this.state.LOCAL_STORAGE_KEYS.ADMIN_LAST_UPDATE_TIME);
                 this.updateLastUpdatedAdminText(lastUpdateTime ? parseInt(lastUpdateTime) : null);
 
-                // Sheets Apps Script 대신 Firestore에서 직접 명단을 가져옵니다. (요청 반영)
-                await this.loadAdminUsersFromFirestore();
+                await this.loadAdminUsers();
 
                 this.elements.initialLoader.classList.add('hidden');
                 this.elements.dashboard.classList.remove('hidden');
@@ -337,50 +337,73 @@
                 this.handleHashChange();
             },
 
-            // Google Sheets 대신 Firestore에서 사용자 명단 가져오는 함수 (요청 반영)
-            async loadAdminUsersFromFirestore() {
+            // RTDB와 Firestore에서 명단 및 UID 정보를 통합하여 가져오는 함수 (RTDB 전환 반영)
+            async loadAdminUsers() {
                 try {
                     this.state.allUsers = {};
+                    this.state.rosterData = {};
                     this.state.approvedUsers = {};
                     this.state.studentNameMap = {};
                     this.state.gradeStudentMap = { '1y': [], '2y': [], '3y': [], 'unassigned': [] };
 
+                    // 1. Firestore에서 모든 UID와 Email 정보 가져오기 (통계 연결용)
                     const usersCollection = collection(db, 'users');
-                    const q = query(usersCollection); // 모든 user 문서 쿼리
-
-                    const snapshot = await getDocs(q);
+                    const fsSnapshot = await getDocs(usersCollection);
                     
-                    snapshot.docs.forEach(doc => {
+                    fsSnapshot.docs.forEach(doc => {
                         const data = { id: doc.id, ...doc.data() };
                         const email = data.email ? data.email.toLowerCase() : null;
-                        const grade = data.grade ? data.grade.toLowerCase() : 'unassigned';
-                        const permissions = data.permissions ? data.permissions.toLowerCase() : 'not_found';
-                        
-                        if (!email) return;
-
-                        this.state.allUsers[data.id] = data; // UID로 전체 사용자 저장
-
-                        // Name 맵 생성 (name 필드 우선, 없으면 displayName)
-                        this.state.studentNameMap[email] = data.name || data.displayName;
-                        
-                        // 승인된 사용자만 대상으로 명단 분류
-                        if (permissions === 'approved') {
-                            this.state.approvedUsers[email] = data;
-                            const gradeKey = ['1y', '2y', '3y'].includes(grade) ? grade : 'unassigned';
-                            
-                            this.state.gradeStudentMap[gradeKey].push(email);
-                        } else if (grade === 'unassigned') {
-                             // 미승인/대기 중인 사용자도 미배정 목록에는 포함 (Google Sheets에서 명단만 가져오던 기존 로직과의 차이점)
-                             this.state.gradeStudentMap['unassigned'].push(email);
-                        }
+                        if (email) this.state.allUsers[data.id] = data; // UID로 Firestore 문서 저장
                     });
 
+                    // 2. RTDB에서 명단 및 권한 정보 가져오기
+                    const rtdbRef = ref(rt_db, 'roster');
+                    const rtdbSnapshot = await get(rtdbRef);
+                    this.state.rosterData = rtdbSnapshot.val() || {};
+                    
+                    // 3. 데이터 통합 및 분류
+                    for (const rtdbKey in this.state.rosterData) {
+                        const rosterEntry = this.state.rosterData[rtdbKey];
+                        const email = rosterEntry.email ? rosterEntry.email.toLowerCase() : null;
+                        const grade = rosterEntry.grade ? rosterEntry.grade.toLowerCase() : 'unassigned';
+                        const permissions = rosterEntry.permissions ? rosterEntry.permissions.toLowerCase() : 'pending';
+                        const name = rosterEntry.name;
+
+                        if (!email) continue;
+                        
+                        // Firestore UID 찾기 (통계 문서 연결을 위해 필요)
+                        const userUid = this.findUserUidByEmail(email);
+                        
+                        // Name 맵 생성 (RTDB의 name 필드를 사용)
+                        this.state.studentNameMap[email] = name;
+                        
+                        // 승인된 사용자만 통계 대상으로 분류
+                        if (permissions === 'approved' && userUid) {
+                            const gradeKey = ['1y', '2y', '3y'].includes(grade) ? grade : 'unassigned';
+                            
+                            // approvedUsers에는 RTDB 정보 + Firestore UID를 합친 최종 객체 저장
+                            this.state.approvedUsers[email] = {
+                                id: userUid, // Firestore UID
+                                email: email,
+                                grade: grade,
+                                name: name,
+                                permissions: permissions
+                            };
+                            this.state.gradeStudentMap[gradeKey].push(email);
+
+                        } else if (grade === 'unassigned' && userUid) {
+                            // 미배정 목록에는 미승인/대기 중인 사용자 중 Firestore 기록이 있는 사용자도 포함
+                            this.state.gradeStudentMap['unassigned'].push(email);
+                        }
+                    }
+
                 } catch(e) { 
-                    alert("Firestore에서 학생 명단 정보를 불러오는 데 실패했습니다.");
-                    console.error("Firestore users loading failed:", e); 
+                    alert("명단 정보를 불러오는 데 실패했습니다.");
+                    console.error("User data loading failed:", e); 
                 }
             },
 
+            // 이메일로 Firestore UID를 찾는 헬퍼 함수
             findUserUidByEmail(email) {
                  const lowerEmail = email.toLowerCase();
                  for (const uid in this.state.allUsers) {
@@ -390,6 +413,7 @@
                  }
                  return null;
             },
+
 
             showLoginScreen() {
                 this.elements.dashboard.classList.add('hidden');
@@ -420,15 +444,26 @@
             displayStudentsForGrade(grade) {
                 this.elements.studentDropdown.innerHTML = '';
 
-                // Firestore에서 가져온 approvedUsers와 gradeStudentMap 사용
+                // RTDB에서 가져온 approvedUsers와 gradeStudentMap 사용
                 const studentEmails = this.state.gradeStudentMap[grade] || [];
-                let studentsToDisplay = studentEmails.map(email => this.state.approvedUsers[email] || this.state.allUsers[this.findUserUidByEmail(email)]).filter(Boolean);
+                let studentsToDisplay = studentEmails
+                    .map(email => this.state.approvedUsers[email] || this.state.rosterData[email.replace(/\./g, '_')])
+                    .filter(Boolean);
                 
-                // 'unassigned'의 경우, 미승인/대기 중인 사용자까지 모두 포함될 수 있습니다.
+                // 미배정 학생은 rosterData에서 직접 가져와서 Firestore UID를 연결 시도
                 if (grade === 'unassigned') {
-                     studentsToDisplay = studentEmails.map(email => this.state.allUsers[this.findUserUidByEmail(email)]).filter(Boolean);
+                     studentsToDisplay = studentEmails
+                        .map(email => {
+                            const roster = this.state.rosterData[email.replace(/\./g, '_')];
+                            if (roster) {
+                                const uid = this.findUserUidByEmail(email);
+                                return { ...roster, id: uid }; // 통계 조회를 위해 id(UID) 추가
+                            }
+                            return null;
+                        })
+                        .filter(s => s && s.id); // Firestore 기록이 있는 경우만 포함
                 }
-
+                
                 this.state.studentsForSelectedGrade = studentsToDisplay;
 
                 const defaultOption = document.createElement('option');
@@ -451,7 +486,7 @@
 
                 studentsToDisplay.forEach(studentData => {
                     const email = studentData.email.toLowerCase();
-                    const displayName = this.state.studentNameMap[email] || studentData.displayName;
+                    const displayName = studentData.name || studentData.email; // RTDB의 name 필드를 사용
                     const option = document.createElement('option');
                     option.value = email;
                     option.textContent = `${displayName} (${email})`;
@@ -464,6 +499,15 @@
                 this.elements.studentDetails.classList.add('hidden');
                 this.elements.studentDetailsLoader.classList.remove('hidden');
                 this.elements.studentDetails.innerHTML = '';
+                
+                // Firestore UID가 없으면 통계 로드 불가
+                if (!student.id) {
+                    this.elements.studentDetails.innerHTML = `<p class="text-red-500 text-center">학생 통계 정보를 불러올 수 없습니다. Firestore에 해당 학생의 학습 기록이 없습니다.</p>`;
+                     this.elements.studentDetailsLoader.classList.add('hidden');
+                     this.elements.studentDetails.classList.remove('hidden');
+                     return;
+                }
+
 
                 Object.keys(this.state.charts).forEach(grade => this.destroyGradeCharts(grade));
 
@@ -508,10 +552,12 @@
                 }
 
                 try {
+                    // RTDB에서 가져온 grade 정보를 활용하여 통계 표시 순서를 결정합니다.
+                    const rtdbGrade = student.grade || 'unassigned';
                     let gradesToShow = ['1y', '2y', '3y'];
-                    const selectedGradeFilter = this.state.selectedGrade;
-                    if (selectedGradeFilter && selectedGradeFilter !== 'unassigned') {
-                        gradesToShow = [selectedGradeFilter, ...gradesToShow.filter(g => g !== selectedGradeFilter)];
+                    
+                    if (rtdbGrade && ['1y', '2y', '3y'].includes(rtdbGrade)) {
+                        gradesToShow = [rtdbGrade, ...gradesToShow.filter(g => g !== rtdbGrade)];
                     }
 
                     const gradeColors = { '1y': 'bg-yellow-50', '2y': 'bg-blue-50', '3y': 'bg-red-50' };
@@ -873,8 +919,7 @@
                     localStorage.removeItem(cacheKey);
                 }
                 
-                // Firestore에서 명단을 가져오는 로직이 이미 loadAdminUsersFromFirestore에 있으므로,
-                // 여기서는 승인된 사용자 목록 (this.state.approvedUsers)을 사용합니다.
+                // RTDB에서 가져온 approvedUsers 목록 사용
                 const students = Object.values(this.state.approvedUsers).filter(s => {
                     const studentGrade = s.grade || 'unassigned';
                     return grade === 'unassigned' ? studentGrade !== '1y' && studentGrade !== '2y' && studentGrade !== '3y' : studentGrade === grade;
@@ -886,10 +931,13 @@
                     this.elements.studentDetails.classList.remove('hidden');
                     return;
                 }
+                
+                // Firestore UID가 없는 학생 필터링
+                const studentsWithUid = students.filter(s => s.id);
 
                 if (!allStats) {
                     try {
-                        const studentStatsPromises = students.map(async (student) => {
+                        const studentStatsPromises = studentsWithUid.map(async (student) => {
                             const studyDoc = await getDoc(doc(db, 'users', student.id, 'history', 'study'));
                             const quizDoc = await getDoc(doc(db, 'users', student.id, 'history', 'quiz'));
                             const studyHistory = studyDoc.exists() ? studyDoc.data() : {};
@@ -918,7 +966,7 @@
                                 }
                             }
                             const accuracy = totalQuizzes > 0 ? (totalCorrect / totalQuizzes) * 100 : 0;
-                            const displayName = this.state.studentNameMap[student.email] || student.displayName;
+                            const displayName = student.name || student.email;
                             return { name: displayName, email: student.email, time: totalSeconds, accuracy: accuracy, totalQuizzes, totalCorrect, id: student.id };
                         });
 
@@ -931,6 +979,13 @@
                         this.elements.studentDetails.classList.remove('hidden');
                         return;
                     }
+                }
+                
+                if (allStats.length === 0) {
+                     this.elements.studentDetails.innerHTML = '<p class="text-center text-gray-500">통계를 표시할 학습 기록이 있는 학생이 없습니다.</p>';
+                     this.elements.studentDetailsLoader.classList.add('hidden');
+                     this.elements.studentDetails.classList.remove('hidden');
+                     return;
                 }
 
                 try {
