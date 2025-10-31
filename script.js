@@ -253,7 +253,23 @@ async handlePermissionFlow(user) {
                 );
             } else { // 'not_found'
                 this.state.user = user;
-                this.showRequestModal();
+                
+                // Firestore에서 permissionRequested 플래그를 확인하여 요청 재시도 여부를 판단
+                const userDoc = await getDoc(userRef);
+                const isRequested = userDoc.exists() && userDoc.data().permissionRequested === true;
+
+                if (isRequested) {
+                    // 2차 접속: 이전에 요청했으나 RTDB에 아직 미동기화된 경우 -> Pending 처리
+                    this.showStatusModal(
+                        '확인 중', 
+                        '관리자가 확인 중입니다. 재요청이 필요 없습니다.', 
+                        'text-blue-500',
+                        () => signOut(auth)
+                    );
+                } else {
+                    // 1차 접속: Name/Grade 요청이 필요한 경우
+                    this.showRequestModal();
+                }
             }
         } catch (error) {
             console.error("Permission Check Error:", error);
@@ -2694,4 +2710,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
