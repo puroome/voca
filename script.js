@@ -339,7 +339,7 @@ async handlePermissionFlow(user) {
         this.elements.psCloseBtn.addEventListener('click', closeHandler);
     },
     showRequestModal() {
-        this.elements.prNameInput.value = this.state.user.displayName; 
+        this.elements.prNameInput.value = ''; 
         this.elements.prGradeInput.value = '';
         this.elements.prSubmitBtn.disabled = false;
         this.elements.prSubmitBtn.textContent = '권한 요청';
@@ -2714,6 +2714,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
