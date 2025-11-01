@@ -2626,7 +2626,7 @@ const learningMode = {
     handleKeyDown(e) {
         if (!this.isLearningModeActive() || document.activeElement.tagName.match(/INPUT|TEXTAREA/)) return;
         activityTracker.recordActivity();
-        const keyMap = { 'ArrowLeft': -1, 'ArrowRight': 1, 'ArrowUp': -1, 'ArrowDown': 1 };
+        const keyMap = { 'ArrowLeft': -1, 'ArrowRight': 1, 'ArrowUp': 1, 'ArrowDown': -1 };
         if (keyMap[e.key] !== undefined) { e.preventDefault(); this.navigate(keyMap[e.key]); }
         else if (e.key === 'Enter') { e.preventDefault(); this.handleFlip(); }
         else if (e.key === ' ') { e.preventDefault(); if (!this.elements.cardBack.classList.contains('is-slid-up')) api.speak(this.elements.wordDisplay.textContent); }
@@ -2714,6 +2714,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
