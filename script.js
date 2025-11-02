@@ -198,11 +198,15 @@ async handlePermissionFlow(user) {
         document.body.classList.add('items-center');
         const userRef = doc(db, 'users', user.uid);
         
+        // 1. Firestore에 기본 사용자 정보만 저장 (통계 문서 연결용)
+        // RTDB로 전환했으므로, Firestore에는 통계 연결에 필수적인 email/displayName만 남깁니다.
         await setDoc(userRef, { displayName: user.displayName, email: user.email }, { merge: true });
 
         try {
+            // 2. RTDB에서 권한 상태 확인 (RTDB로 전환된 로직)
             const permissionStatus = await api.checkPermission(user.email); 
             
+            // Firestore에서 permissionRequested 플래그를 미리 가져옴
             const userDoc = await getDoc(userRef);
             const isRequested = userDoc.exists() && userDoc.data().permissionRequested === true;
 
@@ -251,10 +255,11 @@ async handlePermissionFlow(user) {
                     'text-blue-500',
                     () => signOut(auth)
                 );
-            } else { 
+            } else { // 'not_found'
                 this.state.user = user;
                 
                 if (isRequested) {
+                    // 2차 접속: 이전에 요청했으나 RTDB에 아직 미동기화된 경우 -> Pending 처리
                     this.showStatusModal(
                         '확인 중', 
                         '관리자가 확인 중이니 기다려주세요.', 
@@ -262,6 +267,7 @@ async handlePermissionFlow(user) {
                         () => signOut(auth)
                     );
                 } else {
+                    // 1차 접속: Name/Grade 요청이 필요한 경우
                     this.showRequestModal();
                 }
             }
@@ -285,8 +291,10 @@ async handlePermissionFlow(user) {
             return;
         }
 
-        const gradeWithSuffix = gradeNum + 'y'; 
+        const gradeWithSuffix = gradeNum + 'y'; // 숫자에 'y'를 붙여 '1y', '2y' 문자열로 만듭니다.
         
+        // Firestore users 문서에 name과 grade 필드 업데이트 로직은 RTDB 전환으로 인해 제거됨.
+
         this.elements.prSubmitBtn.disabled = true;
         this.elements.prSubmitBtn.textContent = '요청 중...';
         
@@ -294,6 +302,7 @@ async handlePermissionFlow(user) {
             const result = await api.requestPermission(this.state.user.email, name, gradeWithSuffix);
             
             if (result.success) {
+                // 권한 요청 성공 시, Firestore에 플래그를 설정하여 재접속 시 pending 처리의 근거로 사용
                 await updateDoc(doc(db, 'users', this.state.user.uid), { permissionRequested: true });
             }
 
@@ -484,9 +493,6 @@ async handlePermissionFlow(user) {
     },
     async _renderView(view, grade, options = {}) {
         activityTracker.stopAndSave();
-        learningMode.unbindModeEvents();
-        quizMode.unbindQuizPlayEvents();
-
         this.elements.gradeSelectionScreen.classList.add('hidden');
         this.elements.selectionScreen.classList.add('hidden');
         this.elements.quizModeContainer.classList.add('hidden');
@@ -536,7 +542,6 @@ async handlePermissionFlow(user) {
                 this.elements.homeBtn.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
                 this.elements.practiceModeControl.classList.remove('hidden');
-                quizMode.bindQuizPlayEvents();
                 quizMode.reset(false);
                 if (!learningMode.state.isWordListReady[app.state.selectedSheet]) {
                     await learningMode.loadWordList();
@@ -752,7 +757,7 @@ const audioDBCache = {
     getAudio: key => new Promise((resolve) => {
         if (!audioDBCache.db) return resolve(null);
          try {
-            const request = audioDBCache.db.transaction([audioDBCache.storeName]).objectStore(audioDBCache.storeStore).get(key);
+            const request = audioDBCache.db.transaction([audioDBCache.storeName]).objectStore(audioDBCache.storeName).get(key);
             request.onsuccess = () => resolve(request.result);
             request.onerror = (e) => { console.error("IndexedDB getAudio error:", e.target.error); resolve(null); };
         } catch (e) {
@@ -928,6 +933,7 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             return null;
         }
     },
+    // 권한 확인을 RTDB에서 수행하도록 변경
     async checkPermission(email) {
         const rtdbKey = email.toLowerCase().replace(/\./g, '_');
         const rtdbRef = ref(rt_db, `roster/${rtdbKey}`);
@@ -937,14 +943,17 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             const data = snapshot.val();
 
             if (data && data.permissions) {
-                return data.permissions; 
+                return data.permissions; // approved, denied, pending
             }
+            // RTDB에 명단 자체가 없으면 not_found
             return 'not_found';
         } catch (error) {
             console.error("RTDB Permission Check Error:", error);
+            // 오류 발생 시 앱 사용을 막기 위해 denied나 pending으로 처리하는 대신, not_found를 반환하여 권한 요청을 유도합니다.
             return 'not_found';
         }
     },
+    // 명단시트 Apps Script로 요청을 보내는 기능은 유지
     async requestPermission(email, name, grade) {
         const url = new URL(app.config.SCRIPT_URL);
         url.searchParams.append('action', 'requestPermission');
@@ -1256,6 +1265,7 @@ const utils = {
             const data = docSnap.exists() ? docSnap.data() : {};
             const dailyData = data[today] || {};
             const currentSeconds = dailyData[grade] || 0;
+            // setDoc 대신 updateDoc을 사용하여 문서가 존재할 때만 업데이트되도록 합니다. (성능상 이점 없음, 코딩 스타일 유지)
             await setDoc(historyRef, { [today]: { [grade]: currentSeconds + seconds } }, { merge: true });
         } catch(e) {
             console.error("Failed to update study history:", e);
@@ -1307,6 +1317,7 @@ const utils = {
          const progressRef = this._getProgressRef(grade);
          if (!progressRef) return;
          try {
+             // progress 문서가 존재하지 않으면 setDoc으로 생성, 존재하면 updateDoc과 동일하게 작동
              await setDoc(progressRef, progressToSync, { merge: true }); 
          } catch (error) {
              console.error("Firebase progress sync (setDoc merge) failed:", error);
@@ -1634,32 +1645,6 @@ const quizMode = {
         };
         this.bindEvents();
     },
-    quizKeydownHandler(e) {
-        const isQuizModeActive = !quizMode.elements.contentContainer.classList.contains('hidden') && !quizMode.elements.choices.classList.contains('disabled');
-        if (!isQuizModeActive) return;
-        activityTracker.recordActivity();
-        const choiceCount = Array.from(quizMode.elements.choices.children).filter(el => !el.textContent.includes('PASS')).length;
-        if (e.key.toLowerCase() === 'p' || e.key === '0') {
-             e.preventDefault();
-             const passButton = Array.from(quizMode.elements.choices.children).find(el => el.textContent.includes('PASS'));
-             if(passButton) passButton.click();
-        } else {
-            const choiceIndex = parseInt(e.key);
-            if (choiceIndex >= 1 && choiceIndex <= choiceCount) {
-                e.preventDefault();
-                const targetLi = quizMode.elements.choices.children[choiceIndex - 1];
-                targetLi.classList.add('bg-gray-200');
-                setTimeout(() => targetLi.classList.remove('bg-gray-200'), 150);
-                targetLi.click();
-            }
-        }
-    },
-    bindQuizPlayEvents() {
-        document.addEventListener('keydown', this.quizKeydownHandler);
-    },
-    unbindQuizPlayEvents() {
-        document.removeEventListener('keydown', this.quizKeydownHandler);
-    },
     bindEvents() {
         this.elements.startMeaningQuizBtn.addEventListener('click', () => this.start('MULTIPLE_CHOICE_MEANING'));
         this.elements.startBlankQuizBtn.addEventListener('click', () => this.start('FILL_IN_THE_BLANK'));
@@ -1676,6 +1661,26 @@ const quizMode = {
         this.elements.quizRangeLabel.addEventListener('click', () => this.resetQuizRange());
         this.elements.quizResultContinueBtn.addEventListener('click', () => this.continueAfterResult());
         this.elements.quizResultMistakesBtn.addEventListener('click', () => this.reviewSessionMistakes());
+        document.addEventListener('keydown', (e) => {
+            const isQuizModeActive = !this.elements.contentContainer.classList.contains('hidden') && !this.elements.choices.classList.contains('disabled');
+            if (!isQuizModeActive) return;
+            activityTracker.recordActivity();
+            const choiceCount = Array.from(this.elements.choices.children).filter(el => !el.textContent.includes('PASS')).length;
+            if (e.key.toLowerCase() === 'p' || e.key === '0') {
+                 e.preventDefault();
+                 const passButton = Array.from(this.elements.choices.children).find(el => el.textContent.includes('PASS'));
+                 if(passButton) passButton.click();
+            } else {
+                const choiceIndex = parseInt(e.key);
+                if (choiceIndex >= 1 && choiceIndex <= choiceCount) {
+                    e.preventDefault();
+                    const targetLi = this.elements.choices.children[choiceIndex - 1];
+                    targetLi.classList.add('bg-gray-200');
+                    setTimeout(() => targetLi.classList.remove('bg-gray-200'), 150);
+                    targetLi.click();
+                }
+            }
+        });
     },
     promptForRangeValue(targetButton) {
         if (!targetButton) return;
@@ -2035,7 +2040,6 @@ const quizMode = {
         this.elements.quizResultModal.classList.add('hidden');
         if (this.elements.quizResultContinueBtn.textContent === "퀴즈 유형으로") {
             app.syncOfflineData();
-            this.unbindQuizPlayEvents();
             app.navigateTo('quiz', app.state.selectedSheet);
             return;
         }
@@ -2051,7 +2055,6 @@ const quizMode = {
         this.state.sessionCorrectInSet = 0;
         this.state.sessionMistakes = [];
         app.syncOfflineData();
-        this.unbindQuizPlayEvents();
         app.navigateTo('mistakeReview', app.state.selectedSheet, { mistakeWords: mistakes });
     },
     async preloadInitialQuizzesBasedOnSavedRange() {
@@ -2233,7 +2236,6 @@ const learningMode = {
         touchstartX: 0, touchstartY: 0,
         currentDisplayList: [],
         isDragging: false,
-        wordDisplayTouchMove: false,
     },
     elements: {},
     init() {
@@ -2271,96 +2273,6 @@ const learningMode = {
         };
         this.bindEvents();
     },
-    handleMiddleClick(e) { if (learningMode.isLearningModeActive() && e.button === 1) { e.preventDefault(); learningMode.elements.sampleBtn.click(); } },
-    handleKeyDown(e) {
-        if (!learningMode.isLearningModeActive() || document.activeElement.tagName.match(/INPUT|TEXTAREA/)) return;
-        activityTracker.recordActivity();
-        const keyMap = { 'ArrowLeft': -1, 'ArrowRight': 1, 'ArrowUp': 1, 'ArrowDown': -1 };
-        if (keyMap[e.key] !== undefined) { e.preventDefault(); learningMode.navigate(keyMap[e.key]); }
-        else if (e.key === 'Enter') { e.preventDefault(); learningMode.handleFlip(); }
-        else if (e.key === ' ') { e.preventDefault(); if (!learningMode.elements.cardBack.classList.contains('is-slid-up')) api.speak(learningMode.elements.wordDisplay.textContent); }
-    },
-    handleTouchStart(e) {
-        if (!learningMode.isLearningModeActive() || e.target.closest('.interactive-word, #word-display, #favorite-btn, #progress-bar-track, #sample-btn, #prev-btn, #next-btn')) return;
-        learningMode.state.touchstartX = e.changedTouches[0].screenX; learningMode.state.touchstartY = e.changedTouches[0].screenY;
-    },
-    handleTouchEnd(e) {
-        if (!learningMode.isLearningModeActive() || learningMode.state.touchstartX === 0 || e.target.closest('button, a, input, [onclick], #progress-bar-track')) { learningMode.state.touchstartX = learningMode.state.touchstartY = 0; return; }
-        const deltaX = e.changedTouches[0].screenX - learningMode.state.touchstartX;
-        const deltaY = e.changedTouches[0].screenY - learningMode.state.touchstartY;
-        if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) learningMode.navigate(deltaX > 0 ? -1 : 1);
-        learningMode.state.touchstartX = learningMode.state.touchstartY = 0;
-    },
-    wordDisplaySpeak() {
-        const word = this.state.currentDisplayList[this.state.currentIndex]?.word;
-        if (word) { api.speak(word); }
-    },
-    wordDisplayContextMenu(e) {
-        e.preventDefault();
-        const wordData = this.state.currentDisplayList[this.state.currentIndex];
-        if(wordData) ui.showWordContextMenu(e, wordData.word);
-    },
-    wordDisplayTouchStart(e) {
-        this.state.wordDisplayTouchMove = false; 
-        clearTimeout(app.state.longPressTimer); 
-        app.state.longPressTimer = setTimeout(() => { 
-            const wordData = this.state.currentDisplayList[this.state.currentIndex]; 
-            if (!this.state.wordDisplayTouchMove && wordData) {
-                ui.showWordContextMenu(e, wordData.word);
-            }
-        }, 700);
-    },
-    wordDisplayTouchMove() { 
-        this.state.wordDisplayTouchMove = true; 
-        clearTimeout(app.state.longPressTimer); 
-    },
-    wordDisplayTouchEnd() { 
-        clearTimeout(app.state.longPressTimer); 
-    },
-    bindModeEvents() {
-        this.elements.nextBtn.addEventListener('click', this.navigate.bind(this, 1));
-        this.elements.prevBtn.addEventListener('click', this.navigate.bind(this, -1));
-        this.elements.sampleBtn.addEventListener('click', this.handleFlip.bind(this));
-        this.elements.favoriteBtn.addEventListener('click', this.toggleFavorite.bind(this));
-        this.elements.wordDisplay.addEventListener('click', this.wordDisplaySpeak.bind(this));
-        this.elements.wordDisplay.addEventListener('contextmenu', this.wordDisplayContextMenu.bind(this));
-        this.elements.wordDisplay.addEventListener('touchstart', this.wordDisplayTouchStart.bind(this), { passive: true });
-        this.elements.wordDisplay.addEventListener('touchmove', this.wordDisplayTouchMove.bind(this));
-        this.elements.wordDisplay.addEventListener('touchend', this.wordDisplayTouchEnd.bind(this));
-        this.elements.progressBarTrack.addEventListener('mousedown', this.handleProgressBarInteraction.bind(this));
-        document.addEventListener('mousemove', this.handleProgressBarInteraction.bind(this));
-        document.addEventListener('mouseup', this.handleProgressBarInteraction.bind(this));
-        this.elements.progressBarTrack.addEventListener('touchstart', this.handleProgressBarInteraction.bind(this), { passive: false });
-        document.addEventListener('touchmove', this.handleProgressBarInteraction.bind(this));
-        document.addEventListener('touchend', this.handleProgressBarInteraction.bind(this));
-
-        document.addEventListener('mousedown', this.handleMiddleClick.bind(this));
-        document.addEventListener('keydown', this.handleKeyDown.bind(this));
-        document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
-        document.addEventListener('touchend', this.handleTouchEnd.bind(this));
-    },
-    unbindModeEvents() {
-        this.elements.nextBtn.removeEventListener('click', this.navigate.bind(this, 1));
-        this.elements.prevBtn.removeEventListener('click', this.navigate.bind(this, -1));
-        this.elements.sampleBtn.removeEventListener('click', this.handleFlip.bind(this));
-        this.elements.favoriteBtn.removeEventListener('click', this.toggleFavorite.bind(this));
-        this.elements.wordDisplay.removeEventListener('click', this.wordDisplaySpeak.bind(this));
-        this.elements.wordDisplay.removeEventListener('contextmenu', this.wordDisplayContextMenu.bind(this));
-        this.elements.wordDisplay.removeEventListener('touchstart', this.wordDisplayTouchStart.bind(this));
-        this.elements.wordDisplay.removeEventListener('touchmove', this.wordDisplayTouchMove.bind(this));
-        this.elements.wordDisplay.removeEventListener('touchend', this.wordDisplayTouchEnd.bind(this));
-        this.elements.progressBarTrack.removeEventListener('mousedown', this.handleProgressBarInteraction.bind(this));
-        document.removeEventListener('mousemove', this.handleProgressBarInteraction.bind(this));
-        document.removeEventListener('mouseup', this.handleProgressBarInteraction.bind(this));
-        this.elements.progressBarTrack.removeEventListener('touchstart', this.handleProgressBarInteraction.bind(this));
-        document.removeEventListener('touchmove', this.handleProgressBarInteraction.bind(this));
-        document.removeEventListener('touchend', this.handleProgressBarInteraction.bind(this));
-
-        document.removeEventListener('mousedown', this.handleMiddleClick.bind(this));
-        document.removeEventListener('keydown', this.handleKeyDown.bind(this));
-        document.removeEventListener('touchstart', this.handleTouchStart.bind(this));
-        document.removeEventListener('touchend', this.handleTouchEnd.bind(this));
-    },
     bindEvents() {
         this.elements.startBtn.addEventListener('click', () => this.start());
         this.elements.startWordInput.addEventListener('keydown', e => { if (e.key === 'Enter') this.start(); });
@@ -2371,6 +2283,33 @@ const learningMode = {
             e.target.value = sanitizedValue;
         });
         this.elements.backToStartBtn.addEventListener('click', () => this.resetStartScreen());
+        this.elements.nextBtn.addEventListener('click', () => this.navigate(1));
+        this.elements.prevBtn.addEventListener('click', () => this.navigate(-1));
+        this.elements.sampleBtn.addEventListener('click', () => this.handleFlip());
+        this.elements.wordDisplay.addEventListener('click', () => {
+            const word = this.state.currentDisplayList[this.state.currentIndex]?.word;
+            if (word) { api.speak(word); }
+        });
+        this.elements.wordDisplay.oncontextmenu = e => {
+            e.preventDefault();
+            const wordData = this.state.currentDisplayList[this.state.currentIndex];
+            if(wordData) ui.showWordContextMenu(e, wordData.word);
+        };
+        this.elements.favoriteBtn.addEventListener('click', () => this.toggleFavorite());
+        let wordDisplayTouchMove = false;
+        this.elements.wordDisplay.addEventListener('touchstart', e => { wordDisplayTouchMove = false; clearTimeout(app.state.longPressTimer); app.state.longPressTimer = setTimeout(() => { const wordData = this.state.currentDisplayList[this.state.currentIndex]; if (!wordDisplayTouchMove && wordData) ui.showWordContextMenu(e, wordData.word); }, 700); }, { passive: true });
+        this.elements.wordDisplay.addEventListener('touchmove', () => { wordDisplayTouchMove = true; clearTimeout(app.state.longPressTimer); });
+        this.elements.wordDisplay.addEventListener('touchend', () => { clearTimeout(app.state.longPressTimer); });
+        document.addEventListener('mousedown', this.handleMiddleClick.bind(this));
+        document.addEventListener('keydown', this.handleKeyDown.bind(this));
+        document.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
+        document.addEventListener('touchend', this.handleTouchEnd.bind(this));
+        this.elements.progressBarTrack.addEventListener('mousedown', this.handleProgressBarInteraction.bind(this));
+        document.addEventListener('mousemove', this.handleProgressBarInteraction.bind(this));
+        document.addEventListener('mouseup', this.handleProgressBarInteraction.bind(this));
+        this.elements.progressBarTrack.addEventListener('touchstart', this.handleProgressBarInteraction.bind(this), { passive: false });
+        document.addEventListener('touchmove', this.handleProgressBarInteraction.bind(this));
+        document.addEventListener('touchend', this.handleProgressBarInteraction.bind(this));
     },
     async loadWordList(force = false, grade = app.state.selectedSheet) {
         if (!grade) return;
@@ -2560,7 +2499,6 @@ const learningMode = {
         this.elements.suggestionsContainer.classList.remove('hidden');
     },
     reset() {
-        this.unbindModeEvents();
         this.elements.appContainer.classList.add('hidden');
         this.elements.loader.classList.add('hidden');
         this.elements.fixedButtons.classList.add('hidden');
@@ -2590,7 +2528,6 @@ const learningMode = {
         this.elements.appContainer.classList.remove('hidden');
         this.elements.fixedButtons.classList.remove('hidden');
         app.elements.progressBarContainer.classList.remove('hidden');
-        this.bindModeEvents();
         this.displayWord(this.state.currentIndex);
     },
     async displayWord(index) {
@@ -2671,7 +2608,7 @@ const learningMode = {
         const wordData = this.state.currentDisplayList[this.state.currentIndex];
         const hasSample = wordData && wordData.sample && wordData.sample.trim() !== '';
         const backImgUrl = 'https://images.icon-icons.com/1055/PNG/128/5-remove-cat_icon-icons.com_76681.png';
-        const sampleImg = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
+        const sampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
         const noSampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
         if (!isBackVisible) {
             if (!hasSample) { app.showNoSampleMessage(); return; }
@@ -2685,6 +2622,26 @@ const learningMode = {
         }
     },
     isLearningModeActive() { return !this.elements.appContainer.classList.contains('hidden'); },
+    handleMiddleClick(e) { if (this.isLearningModeActive() && e.button === 1) { e.preventDefault(); this.elements.sampleBtn.click(); } },
+    handleKeyDown(e) {
+        if (!this.isLearningModeActive() || document.activeElement.tagName.match(/INPUT|TEXTAREA/)) return;
+        activityTracker.recordActivity();
+        const keyMap = { 'ArrowLeft': -1, 'ArrowRight': 1, 'ArrowUp': 1, 'ArrowDown': -1 };
+        if (keyMap[e.key] !== undefined) { e.preventDefault(); this.navigate(keyMap[e.key]); }
+        else if (e.key === 'Enter') { e.preventDefault(); this.handleFlip(); }
+        else if (e.key === ' ') { e.preventDefault(); if (!this.elements.cardBack.classList.contains('is-slid-up')) api.speak(this.elements.wordDisplay.textContent); }
+    },
+    handleTouchStart(e) {
+        if (!this.isLearningModeActive() || e.target.closest('.interactive-word, #word-display, #favorite-btn, #progress-bar-track, #sample-btn, #prev-btn, #next-btn')) return;
+        this.state.touchstartX = e.changedTouches[0].screenX; this.state.touchstartY = e.changedTouches[0].screenY;
+    },
+    handleTouchEnd(e) {
+        if (!this.isLearningModeActive() || this.state.touchstartX === 0 || e.target.closest('button, a, input, [onclick], #progress-bar-track')) { this.state.touchstartX = this.state.touchstartY = 0; return; }
+        const deltaX = e.changedTouches[0].screenX - this.state.touchstartX;
+        const deltaY = e.changedTouches[0].screenY - this.state.touchstartY;
+        if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) this.navigate(deltaX > 0 ? -1 : 1);
+        this.state.touchstartX = this.state.touchstartY = 0;
+    },
     updateProgressBar(index) {
         const total = this.state.currentDisplayList.length;
         if (total <= 1) {
