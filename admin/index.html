@@ -132,7 +132,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
         import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
-        // Firestore에서 user UID 및 통계 정보를 가져오는 것은 유지
         import { getFirestore, collection, doc, getDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -155,18 +154,18 @@
             SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec',
             state: {
                 wordLists: {},
-                allUsers: {}, // Firestore users 문서 데이터 (key: uid)
-                rosterData: {}, // RTDB roster 데이터 (key: email)
-                approvedUsers: {}, // 승인된 사용자 데이터 (key: email)
-                studentNameMap: {}, // name을 위한 맵 (key: email)
-                gradeStudentMap: { '1y': [], '2y': [], '3y': [], 'unassigned': [] }, // grade별 email 목록
+                allUsers: {}, 
+                rosterData: {}, 
+                approvedUsers: {}, 
+                studentNameMap: {}, 
+                gradeStudentMap: { '1y': [], '2y': [], '3y': [], 'unassigned': [] }, 
                 selectedGrade: null,
                 studentsForSelectedGrade: [],
                 charts: {},
                 LOCAL_STORAGE_KEYS: {
                     RANKING_CACHE: (grade) => `admin_rankingCache_${grade}`,
                     STUDENT_DETAIL_CACHE: (email) => `admin_studentDetail_${email}`,
-                    ADMIN_CONFIG_CACHE: 'adminConfigCache', // 기존 명단 Sheets 캐시 키는 통계 캐시 삭제 시 사용
+                    ADMIN_CONFIG_CACHE: 'adminConfigCache', 
                     ADMIN_LAST_UPDATE_TIME: 'adminLastUpdateTime'
                 }
             },
@@ -249,14 +248,12 @@
                 });
             },
 
-            // 새로고침 버튼 기능 수정 (명단 재조회 로직 제거 및 캐시 삭제만 남김 - 요청 반영)
             async forceRefreshAdminConfig() {
                 this.elements.refreshConfirmModal.classList.add('hidden');
                 this.elements.initialLoaderText.textContent = '통계 캐시 삭제 중...';
                 this.elements.initialLoader.classList.remove('hidden');
 
                 try {
-                    // 1. 통계 관련 캐시만 삭제 (명단은 RTDB에서 실시간 조회)
                     for (let i = 0; i < localStorage.length; i++){
                         const key = localStorage.key(i);
                         if (key && (key.startsWith('admin_rankingCache_') || key.startsWith('admin_studentDetail_') || key === this.state.LOCAL_STORAGE_KEYS.ADMIN_CONFIG_CACHE)) {
@@ -265,10 +262,8 @@
                         }
                     }
                     
-                    // 2. 명단 데이터 (RTDB & Firestore)를 새로 로드 (캐시 제거했으므로 다시 로드)
                     await this.loadAdminUsers();
 
-                    // 3. 업데이트 시간 기록
                     const updateTime = Date.now();
                     localStorage.setItem(this.state.LOCAL_STORAGE_KEYS.ADMIN_LAST_UPDATE_TIME, updateTime.toString());
                     this.updateLastUpdatedAdminText(updateTime);
@@ -339,7 +334,6 @@
                 this.handleHashChange();
             },
 
-            // RTDB와 Firestore에서 명단 및 UID 정보를 통합하여 가져오는 함수 (RTDB 전환 반영)
             async loadAdminUsers() {
                 try {
                     this.state.allUsers = {};
@@ -348,22 +342,19 @@
                     this.state.studentNameMap = {};
                     this.state.gradeStudentMap = { '1y': [], '2y': [], '3y': [], 'unassigned': [] };
 
-                    // 1. Firestore에서 모든 UID와 Email 정보 가져오기 (통계 연결용)
                     const usersCollection = collection(db, 'users');
                     const fsSnapshot = await getDocs(usersCollection);
                     
                     fsSnapshot.docs.forEach(doc => {
                         const data = { id: doc.id, ...doc.data() };
                         const email = data.email ? data.email.toLowerCase() : null;
-                        if (email) this.state.allUsers[data.id] = data; // UID로 Firestore 문서 저장
+                        if (email) this.state.allUsers[data.id] = data; 
                     });
 
-                    // 2. RTDB에서 명단 및 권한 정보 가져오기
                     const rtdbRef = ref(rt_db, 'roster');
                     const rtdbSnapshot = await get(rtdbRef);
                     this.state.rosterData = rtdbSnapshot.val() || {};
                     
-                    // 3. 데이터 통합 및 분류
                     for (const rtdbKey in this.state.rosterData) {
                         const rosterEntry = this.state.rosterData[rtdbKey];
                         const email = rosterEntry.email ? rosterEntry.email.toLowerCase() : null;
@@ -373,19 +364,15 @@
 
                         if (!email) continue;
                         
-                        // Firestore UID 찾기 (통계 문서 연결을 위해 필요)
                         const userUid = this.findUserUidByEmail(email);
                         
-                        // Name 맵 생성 (RTDB의 name 필드를 사용)
                         this.state.studentNameMap[email] = name;
                         
-                        // 승인된 사용자만 통계 대상으로 분류
                         if (permissions === 'approved' && userUid) {
                             const gradeKey = ['1y', '2y', '3y'].includes(grade) ? grade : 'unassigned';
                             
-                            // approvedUsers에는 RTDB 정보 + Firestore UID를 합친 최종 객체 저장
                             this.state.approvedUsers[email] = {
-                                id: userUid, // Firestore UID
+                                id: userUid, 
                                 email: email,
                                 grade: grade,
                                 name: name,
@@ -393,9 +380,11 @@
                             };
                             this.state.gradeStudentMap[gradeKey].push(email);
 
-                        } else if (grade === 'unassigned' && userUid) {
-                            // 미배정 목록에는 미승인/대기 중인 사용자 중 Firestore 기록이 있는 사용자도 포함
-                            this.state.gradeStudentMap['unassigned'].push(email);
+                        } else if (userUid) {
+                            const gradeKey = ['1y', '2y', '3y'].includes(grade) ? grade : 'unassigned';
+                             if (!this.state.gradeStudentMap[gradeKey].includes(email)) {
+                                 this.state.gradeStudentMap[gradeKey].push(email);
+                             }
                         }
                     }
 
@@ -405,7 +394,6 @@
                 }
             },
 
-            // 이메일로 Firestore UID를 찾는 헬퍼 함수
             findUserUidByEmail(email) {
                  const lowerEmail = email.toLowerCase();
                  for (const uid in this.state.allUsers) {
@@ -446,24 +434,22 @@
             displayStudentsForGrade(grade) {
                 this.elements.studentDropdown.innerHTML = '';
 
-                // RTDB에서 가져온 approvedUsers와 gradeStudentMap 사용
                 const studentEmails = this.state.gradeStudentMap[grade] || [];
                 let studentsToDisplay = studentEmails
                     .map(email => this.state.approvedUsers[email] || this.state.rosterData[email.replace(/\./g, '_')])
                     .filter(Boolean);
                 
-                // 미배정 학생은 rosterData에서 직접 가져와서 Firestore UID를 연결 시도
                 if (grade === 'unassigned') {
                      studentsToDisplay = studentEmails
                         .map(email => {
                             const roster = this.state.rosterData[email.replace(/\./g, '_')];
                             if (roster) {
                                 const uid = this.findUserUidByEmail(email);
-                                return { ...roster, id: uid }; // 통계 조회를 위해 id(UID) 추가
+                                return { ...roster, id: uid }; 
                             }
                             return null;
                         })
-                        .filter(s => s && s.id); // Firestore 기록이 있는 경우만 포함
+                        .filter(s => s && s.id); 
                 }
                 
                 this.state.studentsForSelectedGrade = studentsToDisplay;
@@ -488,7 +474,7 @@
 
                 studentsToDisplay.forEach(studentData => {
                     const email = studentData.email.toLowerCase();
-                    const displayName = studentData.name || studentData.email; // RTDB의 name 필드를 사용
+                    const displayName = studentData.name || studentData.email; 
                     const option = document.createElement('option');
                     option.value = email;
                     option.textContent = `${displayName} (${email})`;
@@ -502,7 +488,6 @@
                 this.elements.studentDetailsLoader.classList.remove('hidden');
                 this.elements.studentDetails.innerHTML = '';
                 
-                // Firestore UID가 없으면 통계 로드 불가
                 if (!student.id) {
                     this.elements.studentDetails.innerHTML = `<p class="text-red-500 text-center">학생 통계 정보를 불러올 수 없습니다. Firestore에 해당 학생의 학습 기록이 없습니다.</p>`;
                      this.elements.studentDetailsLoader.classList.add('hidden');
@@ -554,7 +539,6 @@
                 }
 
                 try {
-                    // RTDB에서 가져온 grade 정보를 활용하여 통계 표시 순서를 결정합니다.
                     const rtdbGrade = student.grade || 'unassigned';
                     let gradesToShow = ['1y', '2y', '3y'];
                     
@@ -565,7 +549,7 @@
                     const gradeColors = { '1y': 'bg-yellow-50', '2y': 'bg-blue-50', '3y': 'bg-red-50' };
 
                     for (const grade of gradesToShow) {
-                        const gradeBlock = this.createGradeStatisticsBlock(
+                        const gradeBlock = await this.createGradeStatisticsBlock(
                             student,
                             grade,
                             studentDetailsData.studyHistory,
@@ -592,33 +576,31 @@
                 }
             },
 
-            createGradeStatisticsBlock(student, grade, studyHistory, quizHistory, progressData, bgColor) {
+            async createGradeStatisticsBlock(student, grade, studyHistory, quizHistory, progressData, bgColor) {
                 const block = document.createElement('div');
                 block.className = `p-6 rounded-lg shadow-lg ${bgColor} chart-container-block`;
                 block.dataset.grade = grade;
-
+                block.innerHTML = `<h3 class="text-xl font-bold text-gray-700">${grade.replace('y','')}학년 통계</h3><div class="loader mx-auto my-4"></div>`;
+                
+                let wordList;
                 if (!this.state.wordLists[grade]) {
                     try {
                         const dbRef = ref(rt_db, `${grade}/vocabulary`);
-                        const snapshot = get(dbRef).then(snapshot => {
-                            const data = snapshot.val();
-                            if (!data) throw new Error('단어 데이터 없음');
-                            this.state.wordLists[grade] = Object.values(data).sort((a, b) => a.id - b.id);
-                             const progressStats = this.calculateProgressStats(this.state.wordLists[grade], progressData);
-                             block.innerHTML = this.renderProgressBarsHTML(progressStats, grade);
-                             this.render7DayCharts(block, grade, studyHistory, quizHistory);
-                             this.appendSummaryCards(block, grade, studyHistory, quizHistory);
-                        });
+                        const snapshot = await get(dbRef); 
+                        const data = snapshot.val();
+                        if (!data) throw new Error('단어 데이터 없음');
+                        wordList = Object.values(data).sort((a, b) => a.id - b.id);
+                        this.state.wordLists[grade] = wordList;
                     } catch(e) {
                          block.innerHTML = `<h3 class="text-xl font-bold text-gray-700">${grade.replace('y','')}학년 통계</h3><p class="text-red-500 mt-2">단어 목록 로딩 실패</p>`;
                          return block;
                     }
-                     block.innerHTML = `<h3 class="text-xl font-bold text-gray-700">${grade.replace('y','')}학년 통계</h3><div class="loader mx-auto my-4"></div>`;
-                     return block;
+                } else {
+                    wordList = this.state.wordLists[grade];
                 }
 
                 this.destroyGradeCharts(grade);
-                const progressStats = this.calculateProgressStats(this.state.wordLists[grade], progressData);
+                const progressStats = this.calculateProgressStats(wordList, progressData);
                 block.innerHTML = this.renderProgressBarsHTML(progressStats, grade);
                 this.render7DayCharts(block, grade, studyHistory, quizHistory);
                 this.appendSummaryCards(block, grade, studyHistory, quizHistory);
@@ -921,7 +903,6 @@
                     localStorage.removeItem(cacheKey);
                 }
                 
-                // RTDB에서 가져온 approvedUsers 목록 사용
                 const students = Object.values(this.state.approvedUsers).filter(s => {
                     const studentGrade = s.grade || 'unassigned';
                     return grade === 'unassigned' ? studentGrade !== '1y' && studentGrade !== '2y' && studentGrade !== '3y' : studentGrade === grade;
@@ -934,7 +915,6 @@
                     return;
                 }
                 
-                // Firestore UID가 없는 학생 필터링
                 const studentsWithUid = students.filter(s => s.id);
 
                 if (!allStats) {
