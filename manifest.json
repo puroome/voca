@@ -1,5 +1,5 @@
 {
-  "name": "voca",
+  "name": "vocabulary",
   "short_name": "Voca",
   "start_url": "https://puroome.github.io/voca/index.html",
   "display": "standalone",
@@ -21,6 +21,7 @@
   ]
 
 }
+
 
 
 
