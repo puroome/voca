@@ -94,6 +94,7 @@ const app = {
     },
     state: {
         user: null,
+        canEdit: false, // [수정] 편집 권한 상태 추가
         currentProgress: {},
         selectedSheet: '',
         isAppReady: false,
@@ -184,6 +185,7 @@ const app = {
                 await this.handlePermissionFlow(user);
             } else {
                 this.state.user = null;
+                this.state.canEdit = false; // [수정] 로그아웃 시 권한 초기화
                 this.state.currentProgress = {};
                 this.elements.loginScreen.classList.remove('hidden');
                 this.elements.mainContainer.classList.add('hidden');
@@ -198,20 +200,18 @@ async handlePermissionFlow(user) {
         document.body.classList.add('items-center');
         const userRef = doc(db, 'users', user.uid);
         
-        // 1. Firestore에 기본 사용자 정보만 저장 (통계 문서 연결용)
-        // RTDB로 전환했으므로, Firestore에는 통계 연결에 필수적인 email/displayName만 남깁니다.
         await setDoc(userRef, { displayName: user.displayName, email: user.email }, { merge: true });
 
         try {
-            // 2. RTDB에서 권한 상태 확인 (RTDB로 전환된 로직)
-            const permissionStatus = await api.checkPermission(user.email); 
+            // [수정] checkPermission이 이제 객체({status, canEdit})를 반환합니다.
+            const { status, canEdit } = await api.checkPermission(user.email); 
             
-            // Firestore에서 permissionRequested 플래그를 미리 가져옴
             const userDoc = await getDoc(userRef);
             const isRequested = userDoc.exists() && userDoc.data().permissionRequested === true;
 
-            if (permissionStatus === 'approved') {
+            if (status === 'approved') {
                 this.state.user = user;
+                this.state.canEdit = canEdit; // [수정] 편집 권한 저장
                 
                 this.elements.mainContainer.classList.remove('hidden');
                 document.body.classList.remove('items-center');
@@ -241,14 +241,14 @@ async handlePermissionFlow(user) {
                 }
                 history.replaceState(initialState, '');
                 this._renderView(initialState.view, initialState.grade);
-            } else if (permissionStatus === 'denied') {
+            } else if (status === 'denied') {
                 this.showStatusModal(
                     '접근 제한', 
                     '관리자에 의해 앱 접근이 제한되었습니다.', 
                     'text-red-500',
                     () => signOut(auth)
                 );
-            } else if (permissionStatus === 'pending') { 
+            } else if (status === 'pending') { 
                 this.showStatusModal(
                     '확인 중', 
                     '관리자가 확인 중이니 기다려주세요.', 
@@ -259,7 +259,6 @@ async handlePermissionFlow(user) {
                 this.state.user = user;
                 
                 if (isRequested) {
-                    // 2차 접속: 이전에 요청했으나 RTDB에 아직 미동기화된 경우 -> Pending 처리
                     this.showStatusModal(
                         '확인 중', 
                         '관리자가 확인 중이니 기다려주세요.', 
@@ -267,7 +266,6 @@ async handlePermissionFlow(user) {
                         () => signOut(auth)
                     );
                 } else {
-                    // 1차 접속: Name/Grade 요청이 필요한 경우
                     this.showRequestModal();
                 }
             }
@@ -291,10 +289,8 @@ async handlePermissionFlow(user) {
             return;
         }
 
-        const gradeWithSuffix = gradeNum + 'y'; // 숫자에 'y'를 붙여 '1y', '2y' 문자열로 만듭니다.
+        const gradeWithSuffix = gradeNum + 'y'; 
         
-        // Firestore users 문서에 name과 grade 필드 업데이트 로직은 RTDB 전환으로 인해 제거됨.
-
         this.elements.prSubmitBtn.disabled = true;
         this.elements.prSubmitBtn.textContent = '요청 중...';
         
@@ -302,7 +298,6 @@ async handlePermissionFlow(user) {
             const result = await api.requestPermission(this.state.user.email, name, gradeWithSuffix);
             
             if (result.success) {
-                // 권한 요청 성공 시, Firestore에 플래그를 설정하여 재접속 시 pending 처리의 근거로 사용
                 await updateDoc(doc(db, 'users', this.state.user.uid), { permissionRequested: true });
             }
 
@@ -515,8 +510,15 @@ async handlePermissionFlow(user) {
             const needsProgressLoad = this.state.selectedSheet !== grade;
             this.state.selectedSheet = grade;
             if (needsProgressLoad) await utils.loadUserProgress();
-            this.elements.sheetLink.href = this.config.sheetLinks[grade];
-            this.elements.sheetLink.classList.remove('hidden');
+            
+            // [수정] canEdit 권한이 있는 경우에만 시트 링크 표시
+            if (this.state.canEdit) {
+                this.elements.sheetLink.href = this.config.sheetLinks[grade];
+                this.elements.sheetLink.classList.remove('hidden');
+            } else {
+                this.elements.sheetLink.classList.add('hidden');
+            }
+
             const gradeText = grade.replace('y', '학년');
             this.elements.selectionTitle.textContent = `${gradeText} 어휘`;
             this.updateLastUpdatedText();
@@ -574,7 +576,7 @@ async handlePermissionFlow(user) {
             case 'mode':
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                if (this.state.user && this.state.user.email === this.config.adminEmail) {
+                if (this.state.user && (this.state.user.email === this.config.adminEmail || this.state.canEdit)) {
                     this.elements.refreshBtn.classList.remove('hidden');
                 }
                 this.elements.lastUpdatedText.classList.remove('hidden');
@@ -933,7 +935,7 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             return null;
         }
     },
-    // 권한 확인을 RTDB에서 수행하도록 변경
+    // [수정] 권한 확인 시 canEdit 정보도 함께 반환
     async checkPermission(email) {
         const rtdbKey = email.toLowerCase().replace(/\./g, '_');
         const rtdbRef = ref(rt_db, `roster/${rtdbKey}`);
@@ -943,17 +945,17 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             const data = snapshot.val();
 
             if (data && data.permissions) {
-                return data.permissions; // approved, denied, pending
+                return {
+                    status: data.permissions, // approved, denied, pending
+                    canEdit: data.canEdit === true // boolean 값으로 반환
+                };
             }
-            // RTDB에 명단 자체가 없으면 not_found
-            return 'not_found';
+            return { status: 'not_found', canEdit: false };
         } catch (error) {
             console.error("RTDB Permission Check Error:", error);
-            // 오류 발생 시 앱 사용을 막기 위해 denied나 pending으로 처리하는 대신, not_found를 반환하여 권한 요청을 유도합니다.
-            return 'not_found';
+            return { status: 'not_found', canEdit: false };
         }
     },
-    // 명단시트 Apps Script로 요청을 보내는 기능은 유지
     async requestPermission(email, name, grade) {
         const url = new URL(app.config.SCRIPT_URL);
         url.searchParams.append('action', 'requestPermission');
@@ -2714,4 +2716,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
