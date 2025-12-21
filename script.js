@@ -576,7 +576,7 @@ async handlePermissionFlow(user) {
             case 'mode':
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                if (this.state.user && (this.state.user.email === this.config.adminEmail || this.state.canEdit)) {
+                if (this.state.user && this.state.user.email === this.config.adminEmail) {
                     this.elements.refreshBtn.classList.remove('hidden');
                 }
                 this.elements.lastUpdatedText.classList.remove('hidden');
@@ -2716,3 +2716,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
