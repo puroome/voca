@@ -664,7 +664,7 @@ async handlePermissionFlow(user) {
             if (timestamp) {
                 const d = new Date(timestamp);
                 const dateString = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-                this.elements.lastUpdatedText.textContent = `최종 업데이트 : ${dateString}`;
+                this.elements.lastUpdatedText.textContent = `Update:  ${dateString}`;
                 this.elements.lastUpdatedText.classList.remove('hidden');
             } else {
                 this.elements.lastUpdatedText.textContent = '업데이트 정보 없음';
@@ -2714,3 +2714,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
