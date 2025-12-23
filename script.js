@@ -3,6 +3,7 @@ let initializeApp;
 let getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup;
 let getDatabase, ref, get, set;
 let getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch;
+
 document.addEventListener('firebaseSDKLoaded', () => {
     ({
         initializeApp,
@@ -13,6 +14,7 @@ document.addEventListener('firebaseSDKLoaded', () => {
     window.firebaseSDK.writeBatch = writeBatch;
     app.init();
 });
+
 const activityTracker = {
     sessionSeconds: 0,
     lastActivityTimestamp: 0,
@@ -68,6 +70,7 @@ const activityTracker = {
         activityTracker.lastActivityTimestamp = Date.now();
     }
 };
+
 const app = {
     config: {
         firebaseConfig: {
@@ -79,8 +82,9 @@ const app = {
             appId: "1:213863780677:web:78d6b8755866a0c5ddee2c",
             databaseURL: "https://wordapp-91c0a-default-rtdb.asia-southeast1.firebasedatabase.app/"
         },
-        SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec",
-        MERRIAM_WEBSTER_API_KEY: "02d1892d-8fb1-4e2d-bc43-4ddd4a47eab3",
+        // [보안 수정] 초기값을 비워두고 DB에서 불러옵니다.
+        SCRIPT_URL: "", 
+        MERRIAM_WEBSTER_API_KEY: "",
         sheetLinks: {
             '1y': 'https://docs.google.com/spreadsheets/d/1r7fWUV1ea9CU-s2iSOwLKexEe2_7L8oUKhK0n1DpDUM/edit?usp=sharing',
             '2y': 'https://docs.google.com/spreadsheets/d/1Xydj0im3Cqq9JhjN8IezZ-7DBp1-DV703cCIb3ORdc8/edit?usp=sharing',
@@ -94,7 +98,7 @@ const app = {
     },
     state: {
         user: null,
-        canEdit: false, // [수정] 편집 권한 상태 추가
+        canEdit: false,
         currentProgress: {},
         selectedSheet: '',
         isAppReady: false,
@@ -162,6 +166,10 @@ const app = {
         auth = getAuth(firebaseApp);
         db = getFirestore(firebaseApp);
         rt_db = getDatabase(firebaseApp);
+
+        // [보안 수정] 1. 앱 초기화 시 보안 키값을 먼저 불러옵니다.
+        await this.loadSecureKeys();
+
         await Promise.all([
             translationDBCache.init(),
             audioDBCache.init(),
@@ -185,7 +193,7 @@ const app = {
                 await this.handlePermissionFlow(user);
             } else {
                 this.state.user = null;
-                this.state.canEdit = false; // [수정] 로그아웃 시 권한 초기화
+                this.state.canEdit = false;
                 this.state.currentProgress = {};
                 this.elements.loginScreen.classList.remove('hidden');
                 this.elements.mainContainer.classList.add('hidden');
@@ -194,7 +202,33 @@ const app = {
             }
         });
     },
-async handlePermissionFlow(user) {
+    // [보안 수정] 2. Firebase RTDB에서 보안 키를 불러오는 함수 추가
+    async loadSecureKeys() {
+        try {
+            // DB 경로: 'secure_config' (1단계에서 만든 경로와 일치해야 함)
+            const configRef = ref(rt_db, 'secure_config');
+            const snapshot = await get(configRef);
+            
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                
+                // 앱 설정(config)에 키 주입
+                this.config.MERRIAM_WEBSTER_API_KEY = data.merriam_webster_key || "";
+                this.config.SCRIPT_URL = data.script_url || "";
+                
+                // api 객체(전역)에 키 주입
+                if (typeof api !== 'undefined') {
+                    api.googleTtsApiKey = data.google_tts_key || "";
+                }
+                console.log("보안 설정을 성공적으로 불러왔습니다.");
+            } else {
+                console.warn("보안 설정 데이터(secure_config)가 DB에 없습니다. 기능이 제한될 수 있습니다.");
+            }
+        } catch (error) {
+            console.error("보안 설정을 불러오는 중 오류 발생:", error);
+        }
+    },
+    async handlePermissionFlow(user) {
         this.elements.loginScreen.classList.add('hidden');
         this.elements.mainContainer.classList.add('hidden');
         document.body.classList.add('items-center');
@@ -203,7 +237,6 @@ async handlePermissionFlow(user) {
         await setDoc(userRef, { displayName: user.displayName, email: user.email }, { merge: true });
 
         try {
-            // [수정] checkPermission이 이제 객체({status, canEdit})를 반환합니다.
             const { status, canEdit } = await api.checkPermission(user.email); 
             
             const userDoc = await getDoc(userRef);
@@ -211,7 +244,7 @@ async handlePermissionFlow(user) {
 
             if (status === 'approved') {
                 this.state.user = user;
-                this.state.canEdit = canEdit; // [수정] 편집 권한 저장
+                this.state.canEdit = canEdit;
                 
                 this.elements.mainContainer.classList.remove('hidden');
                 document.body.classList.remove('items-center');
@@ -511,7 +544,6 @@ async handlePermissionFlow(user) {
             this.state.selectedSheet = grade;
             if (needsProgressLoad) await utils.loadUserProgress();
             
-            // [수정] canEdit 권한이 있는 경우에만 시트 링크 표시
             if (this.state.canEdit) {
                 this.elements.sheetLink.href = this.config.sheetLinks[grade];
                 this.elements.sheetLink.classList.remove('hidden');
@@ -813,6 +845,7 @@ const api = {
         try {
             const cached = await translationDBCache.get(text);
             if (cached) return cached;
+            // [보안 수정] this.googleTtsApiKey를 여기서 사용하는 것이 아니라, this.config.SCRIPT_URL을 사용합니다.
             const url = new URL(app.config.SCRIPT_URL);
             url.searchParams.append('action', 'translateText');
             url.searchParams.append('text', text);
@@ -830,7 +863,8 @@ const api = {
             return '번역 오류';
         }
     },
-    googleTtsApiKey: 'AIzaSyAJmQBGY4H9DVMlhMtvAAVMi_4N7__DfKA',
+    // [보안 수정] 초기값을 비워두고 DB에서 불러옵니다.
+    googleTtsApiKey: '',
     async speak(text) {
         if (!text || !text.trim()) return;
         activityTracker.recordActivity();
@@ -935,7 +969,6 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             return null;
         }
     },
-    // [수정] 권한 확인 시 canEdit 정보도 함께 반환
     async checkPermission(email) {
         const rtdbKey = email.toLowerCase().replace(/\./g, '_');
         const rtdbRef = ref(rt_db, `roster/${rtdbKey}`);
@@ -946,8 +979,8 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
             if (data && data.permissions) {
                 return {
-                    status: data.permissions, // approved, denied, pending
-                    canEdit: data.canEdit === true // boolean 값으로 반환
+                    status: data.permissions,
+                    canEdit: data.canEdit === true
                 };
             }
             return { status: 'not_found', canEdit: false };
@@ -1123,6 +1156,7 @@ const ui = {
         if (app.elements.wordContextMenu) app.elements.wordContextMenu.classList.add('hidden');
     }
 };
+// utils, dashboard, quizMode, learningMode 객체들은 변경사항 없이 기존 코드를 유지합니다.
 const utils = {
     _getProgressRef(grade = app.state.selectedSheet) {
         if (!app.state.user || !grade) return null;
@@ -1334,6 +1368,7 @@ const utils = {
         return array;
     }
 };
+// ... (dashboard, quizMode, learningMode 객체 및 levenshteinDistance 함수는 원본 코드와 동일하게 유지됩니다.)
 const dashboard = {
     elements: {
         container: document.getElementById('dashboard-container'),
@@ -2716,4 +2751,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
