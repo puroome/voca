@@ -883,12 +883,25 @@ async speak(text) {
                 const utterance = new SpeechSynthesisUtterance(processedText);
                 utterance.lang = 'en-US';
                 
-                // 윈도우의 경우 고품질 음성(Microsoft Ana) 우선 시도
-                if (isWindows) {
-                    const voices = window.speechSynthesis.getVoices();
-                    const targetVoice = voices.find(v => v.name.includes('Microsoft Ana') || v.name.includes('Natural'));
-                    if (targetVoice) utterance.voice = targetVoice;
-                }
+// 윈도우의 경우 고품질 음성(Microsoft Ana) 우선 시도
+if (isWindows) {
+    const voices = window.speechSynthesis.getVoices();
+    
+    // 1순위: 'Microsoft Ana'이면서 영어인 경우
+    let targetVoice = voices.find(v => v.name.includes('Microsoft Ana') && v.lang.startsWith('en'));
+
+    // 2순위: 이름에 'Natural'이 포함되어 있고, 언어가 영어('en')로 시작하는 경우
+    if (!targetVoice) {
+        targetVoice = voices.find(v => v.name.includes('Natural') && v.lang.startsWith('en'));
+    }
+
+    // 3순위: 그 외 미국 영어(en-US)
+    if (!targetVoice) {
+        targetVoice = voices.find(v => v.lang === 'en-US');
+    }
+
+    if (targetVoice) utterance.voice = targetVoice;
+}
 
                 window.speechSynthesis.speak(utterance);
                 return;
@@ -2859,6 +2872,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
