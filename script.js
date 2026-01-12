@@ -82,8 +82,8 @@ const app = {
             appId: "1:213863780677:web:78d6b8755866a0c5ddee2c",
             databaseURL: "https://wordapp-91c0a-default-rtdb.asia-southeast1.firebasedatabase.app/"
         },
-        // [보안 수정] 초기값을 비워두고 DB에서 불러옵니다.
-        SCRIPT_URL: "", 
+        // [수정] 아래와 같이 주소를 직접 입력합니다.
+        SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzjtB_Mh6TlEGwd_UzBe-gwOJ6-LxViJuFl1C-4U_4qhOb2cZGL-MRQ1nP39c3ibF4/exec",
         MERRIAM_WEBSTER_API_KEY: "",
         sheetLinks: {
             '1y': 'https://docs.google.com/spreadsheets/d/1r7fWUV1ea9CU-s2iSOwLKexEe2_7L8oUKhK0n1DpDUM/edit?usp=sharing',
@@ -2846,6 +2846,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
