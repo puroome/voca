@@ -1157,7 +1157,98 @@ const ui = {
     }
 };
 // utils, dashboard, quizMode, learningMode 객체들은 변경사항 없이 기존 코드를 유지합니다.
+// 불규칙 동사 데이터 정의
+const IRREGULAR_VERBS = {
+    "arise": ["arose", "arisen"], "bear": ["bore", "born"], "beat": ["beat", "beaten"],
+    "begin": ["began", "begun"], "bend": ["bent", "bent"], "bind": ["bound", "bound"],
+    "bite": ["bit", "bitten"], "bleed": ["bled", "bled"], "blow": ["blew", "blown"],
+    "break": ["broke", "broken"], "bring": ["brought", "brought"], "build": ["built", "built"],
+    "burn": ["burned", "burnt"], "buy": ["bought", "bought"], "cast": ["cast", "cast"],
+    "catch": ["caught", "caught"], "choose": ["chose", "chosen"], "cling": ["clung", "clung"],
+    "come": ["came", "come"], "cost": ["cost", "cost"], "creep": ["crept", "crept"],
+    "cut": ["cut", "cut"], "deal": ["dealt", "dealt"], "die": ["died", "died"],
+    "dig": ["dug", "dug"], "do": ["did", "done"], "draw": ["drew", "drawn"],
+    "drink": ["drank", "drunk"], "drive": ["drove", "driven"], "dwell": ["dwelt", "dwelt"],
+    "dye": ["dyed", "dyed"], "eat": ["ate", "eaten"], "fall": ["fell", "fallen"],
+    "feed": ["fed", "fed"], "feel": ["felt", "felt"], "fight": ["fought", "fought"],
+    "find": ["found", "found"], "flee": ["fled", "fled"], "fling": ["flung", "flung"],
+    "fly": ["flew", "flown"], "forget": ["forgot", "forgotten"], "freeze": ["froze", "frozen"],
+    "get": ["got", "got"], "give": ["gave", "given"], "go": ["went", "gone"],
+    "grind": ["ground", "ground"], "grow": ["grew", "grown"], "hang": ["hung", "hung"],
+    "have": ["had", "had"], "hear": ["heard", "heard"], "hide": ["hid", "hidden"],
+    "hit": ["hit", "hit"], "hold": ["held", "held"], "hurt": ["hurt", "hurt"],
+    "keep": ["kept", "kept"], "kneel": ["knelt", "knelt"], "know": ["knew", "known"],
+    "lay": ["laid", "laid"], "lead": ["led", "led"], "leave": ["left", "left"],
+    "lend": ["lent", "lent"], "let": ["let", "let"], "lie": ["lay", "lain"],
+    "light": ["lit", "lit"], "lose": ["lost", "lost"], "make": ["made", "made"],
+    "mean": ["meant", "meant"], "meet": ["met", "met"], "pay": ["paid", "paid"],
+    "prove": ["proved", "proven"], "put": ["put", "put"], "quit": ["quit", "quit"],
+    "read": ["read", "read"], "rend": ["rent", "rent"], "rid": ["rid", "rid"],
+    "ride": ["rode", "ridden"], "ring": ["rang", "rung"], "rise": ["rose", "risen"],
+    "run": ["ran", "run"], "say": ["said", "said"], "see": ["saw", "seen"],
+    "seek": ["sought", "sought"], "sell": ["sold", "sold"], "send": ["sent", "sent"],
+    "set": ["set", "set"], "shake": ["shook", "shaken"], "shed": ["shed", "shed"],
+    "shine": ["shone", "shone"], "shoot": ["shot", "shot"], "show": ["showed", "shown"],
+    "shrink": ["shrunk", "shrunk"], "shut": ["shut", "shut"], "sing": ["sang", "sung"],
+    "sink": ["sank", "sunk"], "sit": ["sat", "sat"], "slay": ["slew", "slain"],
+    "sleep": ["slept", "slept"], "slide": ["slid", "slid"], "speak": ["spoke", "spoken"],
+    "spend": ["spent", "spent"], "spill": ["spilt", "spilt"], "spit": ["spit", "spit"],
+    "split": ["split", "split"], "spread": ["spread", "spread"], "spring": ["sprang", "sprung"],
+    "stand": ["stood", "stood"], "steal": ["stole", "stolen"], "stick": ["stuck", "stuck"],
+    "sting": ["stung", "stung"], "strike": ["struck", "struck"], "sweep": ["swept", "swept"],
+    "swim": ["swam", "swum"], "swing": ["swung", "swung"], "take": ["took", "taken"],
+    "teach": ["taught", "taught"], "tear": ["tore", "torn"], "tell": ["told", "told"],
+    "think": ["thought", "thought"], "throw": ["threw", "thrown"], "thrust": ["thrust", "thrust"],
+    "wake": ["woke", "woken"], "wear": ["wore", "worn"], "weep": ["wept", "wept"],
+    "win": ["won", "won"], "wind": ["wound", "wound"], "write": ["wrote", "written"]
+};
+
 const utils = {
+    // [추가됨] 다양한 변형(복수, 과거, 진행형, 불규칙)을 포함하는 정규식 생성 함수
+    getFlexibleRegex(word) {
+        if (!word) return new RegExp("match_nothing_$^");
+        
+        const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const parts = [escaped]; 
+        const lowerWord = word.toLowerCase();
+
+        // 1. 불규칙 동사 추가
+        if (IRREGULAR_VERBS[lowerWord]) {
+            IRREGULAR_VERBS[lowerWord].forEach(form => parts.push(form));
+        }
+
+        // 2. 규칙 변화 (s, es, d, ed, ing) - 명사 복수형 및 동사 변화 포함
+        parts.push(`${escaped}(?:s|es|d|ed|ing)`);
+
+        // 3. 자음+y -> ies/ied (study -> studies, studied)
+        if (word.length > 2 && lowerWord.endsWith('y')) {
+            const base = escaped.slice(0, -1);
+            parts.push(`${base}(?:ies|ied)`);
+        }
+
+        // 4. f/fe -> ves (leaf -> leaves, knife -> knives)
+        if (word.length > 2 && lowerWord.endsWith('f')) {
+            parts.push(`${escaped.slice(0, -1)}ves`);
+        }
+        if (word.length > 3 && lowerWord.endsWith('fe')) {
+            parts.push(`${escaped.slice(0, -2)}ves`);
+        }
+
+        // 5. e로 끝나는 경우 (make -> making)
+        if (word.length > 2 && lowerWord.endsWith('e')) {
+            const base = escaped.slice(0, -1);
+            parts.push(`${base}(?:ing|d)`);
+        }
+
+        // 6. 자음 하나 더 추가 (run -> running)
+        const lastChar = escaped.slice(-1);
+        if (/[a-zA-Z]/.test(lastChar)) {
+             parts.push(`${escaped}${lastChar}(?:ing|ed)`);
+        }
+
+        return new RegExp(`\\b(?:${parts.join('|')})\\b`, 'i');
+    },
+
     _getProgressRef(grade = app.state.selectedSheet) {
         if (!app.state.user || !grade) return null;
         return doc(db, 'users', app.state.user.uid, 'progress', grade);
@@ -1946,13 +2037,14 @@ const quizMode = {
              const status = utils.getWordStatus(wordObj.word);
              return status !== 'learned' && !learnedWordsInType.includes(wordObj.word);
         });
-        if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
+if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
             candidates = candidates.filter(word => {
                 if (!word.sample || word.sample.trim() === '') return false;
                 const firstLine = word.sample.split('\n')[0];
                 const placeholderRegex = /\*(.*?)\*/;
-                const wordRegex = new RegExp(`\\b${word.word}\\b`, 'i');
-                return placeholderRegex.test(firstLine) || wordRegex.test(firstLine);
+                // [수정] utils.getFlexibleRegex 사용하여 변형된 단어도 찾음
+                const flexibleRegex = utils.getFlexibleRegex(word.word);
+                return placeholderRegex.test(firstLine) || flexibleRegex.test(firstLine);
             });
         }
         if (candidates.length === 0) return null;
@@ -2171,13 +2263,14 @@ const quizMode = {
             const finalStatus = localStatus !== undefined ? localStatus : serverStatus;
             return finalStatus !== 'correct';
         });
-        if (quizType === 'FILL_IN_THE_BLANK') {
+if (quizType === 'FILL_IN_THE_BLANK') {
             candidates = candidates.filter(word => {
                 if (!word.sample || word.sample.trim() === '') return false;
                 const firstLine = word.sample.split('\n')[0];
                 const placeholderRegex = /\*(.*?)\*/;
-                const wordRegex = new RegExp(`\\b${word.word}\\b`, 'i');
-                return placeholderRegex.test(firstLine) || wordRegex.test(firstLine);
+                // [수정] utils.getFlexibleRegex 사용
+                const flexibleRegex = utils.getFlexibleRegex(word.word);
+                return placeholderRegex.test(firstLine) || flexibleRegex.test(firstLine);
             });
         }
         if (candidates.length === 0) return null;
@@ -2207,12 +2300,14 @@ const quizMode = {
         utils.shuffleArray(choices);
         return { type: 'MULTIPLE_CHOICE_MEANING', question: { word: correctWordData.word }, choices, answer: correctWordData.meaning };
     },
-    createBlankQuiz(correctWordData, allWordsData) {
+createBlankQuiz(correctWordData, allWordsData) {
         if (!correctWordData.sample || correctWordData.sample.trim() === '') return null;
         const firstLineSentence = correctWordData.sample.split('\n')[0];
         let sentenceWithBlank = "";
         const placeholderRegex = /\*(.*?)\*/;
-        const wordRegex = new RegExp(`\\b${correctWordData.word}\\b`, 'i');
+        // [수정] utils.getFlexibleRegex 사용
+        const wordRegex = utils.getFlexibleRegex(correctWordData.word);
+        
         const match = firstLineSentence.match(placeholderRegex);
         if (match) {
             sentenceWithBlank = firstLineSentence.replace(placeholderRegex, "＿＿＿＿").trim();
@@ -2751,3 +2846,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
