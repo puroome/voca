@@ -151,7 +151,7 @@
         const rt_db = getDatabase(app);
 
         const adminApp = {
-            ADMIN_EMAIL: 'puroome@gmail.com',
+            ADMIN_EMAIL: ['puroome@gmail.com', 'puroome82@gmail.com'],
             SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec',
             state: {
                 wordLists: {},
@@ -240,7 +240,7 @@
 
                 onAuthStateChanged(auth, user => {
                     if (user) {
-                        if (user.email === this.ADMIN_EMAIL) this.showDashboard(user);
+                        if (this.ADMIN_EMAIL.includes(user.email)) this.showDashboard(user);
                         else this.showAccessDenied();
                     } else {
                         this.showLoginScreen();
