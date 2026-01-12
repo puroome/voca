@@ -865,79 +865,92 @@ const api = {
     },
     // [보안 수정] 초기값을 비워두고 DB에서 불러옵니다.
     googleTtsApiKey: '',
-    async speak(text) {
+async speak(text) {
         if (!text || !text.trim()) return;
         activityTracker.recordActivity();
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-        if (!isIOS && 'speechSynthesis' in window) {
+
+        // 1. 기기 환경 감지 (안드로이드 또는 윈도우인지 확인)
+        const ua = navigator.userAgent;
+        const isAndroid = /Android/i.test(ua);
+        const isWindows = /Windows/i.test(ua);
+
+        // 2. [규칙 적용] 안드로이드거나 윈도우면 -> 내장 TTS 사용
+        // (그 외 아이폰, 아이패드, 맥 등은 아래로 내려가 API를 사용함)
+        if ((isAndroid || isWindows) && 'speechSynthesis' in window) {
             try {
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(processedText);
-                utterance.lang = 'en-US'; 
-                const TARGET_VOICE_NAME = "Microsoft Ana Online (Natural) - English (United States)";
-                const voices = window.speechSynthesis.getVoices();
-                const selectedVoice = voices.find(v => v.name === TARGET_VOICE_NAME);
-                if (selectedVoice) {
-                    utterance.voice = selectedVoice;
+                utterance.lang = 'en-US';
+                
+                // 윈도우의 경우 고품질 음성(Microsoft Ana) 우선 시도
+                if (isWindows) {
+                    const voices = window.speechSynthesis.getVoices();
+                    const targetVoice = voices.find(v => v.name.includes('Microsoft Ana') || v.name.includes('Natural'));
+                    if (targetVoice) utterance.voice = targetVoice;
                 }
+
                 window.speechSynthesis.speak(utterance);
                 return;
             } catch (error) {
                 console.warn("Native TTS failed, falling back to Google TTS API:", error);
             }
         }
+
+        // 3. [API 사용] 아이폰, 아이패드, 맥 등
         const cacheKey = processedText;
-        let ttsAudioContext = null;
+
+        // [중요 수정] 아이폰 소리 안 남 해결: HTML5 Audio 객체 사용
+        // 기존 AudioContext는 비동기 요청(fetch) 후 실행되면 아이폰이 차단함
+        const playAudioBlob = (blob) => {
+            const audioUrl = URL.createObjectURL(blob);
+            const audio = new Audio(audioUrl);
+            audio.play().catch(e => console.error("Audio play failed:", e));
+        };
+
         try {
+            // 캐시 확인
             const cachedAudio = await audioDBCache.getAudio(cacheKey);
             if (cachedAudio) {
-                ttsAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-                if(ttsAudioContext.state === 'suspended') await ttsAudioContext.resume();
-                const audioBuffer = await ttsAudioContext.decodeAudioData(cachedAudio.slice(0));
-                const source = ttsAudioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(ttsAudioContext.destination);
-                source.start(0);
-                source.onended = () => ttsAudioContext.close();
+                // ArrayBuffer를 Blob으로 변환하여 재생
+                const audioBlob = new Blob([cachedAudio], { type: 'audio/mp3' });
+                playAudioBlob(audioBlob);
                 return;
             }
+
+            // 구글 API 호출
             const ttsUrl = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${this.googleTtsApiKey}`;
             const requestBody = {
                 input: { text: processedText },
                 voice: { languageCode: 'en-US', name: 'en-US-Standard-C' },
                 audioConfig: { audioEncoding: 'MP3' }
             };
+
             const response = await fetch(ttsUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
             });
+
             if (!response.ok) {
                  const errorData = await response.json();
                  throw new Error(`Google TTS API Error: ${errorData.error?.message || response.statusText}`);
             }
+
             const data = await response.json();
             if (data.audioContent) {
+                // Base64 -> Blob 변환
                 const audioBlob = new Blob([Uint8Array.from(atob(data.audioContent), c => c.charCodeAt(0))], { type: 'audio/mp3' });
                 const arrayBuffer = await audioBlob.arrayBuffer();
+                
+                // 캐시에 저장 및 재생
                 audioDBCache.saveAudio(cacheKey, arrayBuffer.slice(0));
-                ttsAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-                if(ttsAudioContext.state === 'suspended') await ttsAudioContext.resume();
-                const audioBuffer = await ttsAudioContext.decodeAudioData(arrayBuffer);
-                const source = ttsAudioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(ttsAudioContext.destination);
-                source.start(0);
-                source.onended = () => ttsAudioContext.close();
+                playAudioBlob(audioBlob);
             } else {
                  throw new Error("No audio content received from Google TTS API");
             }
         } catch (error) {
             console.error('Error fetching/playing TTS audio:', error);
-             if (ttsAudioContext && ttsAudioContext.state !== 'closed') {
-                 ttsAudioContext.close();
-             }
         }
     },
     async copyToClipboard(text) {
@@ -2846,6 +2859,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
