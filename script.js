@@ -94,7 +94,7 @@ const app = {
             'https://res.cloudinary.com/dx07dymqs/image/upload/v1761528368/bg1_mpvyd4.webp',
             'https://res.cloudinary.com/dx07dymqs/image/upload/v1761528368/bg2_e90yys.webp'
         ],
-        adminEmail: 'puroome@gmail.com'
+        adminEmail: ['puroome@gmail.com', 'puroome82@gmail.com']
     },
     state: {
         user: null,
@@ -2846,4 +2846,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
