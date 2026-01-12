@@ -608,7 +608,7 @@ const app = {
             case 'mode':
                 this.elements.selectionScreen.classList.remove('hidden');
                 this.elements.backToGradeSelectionBtn.classList.remove('hidden');
-                if (this.state.user && this.state.user.email === this.config.adminEmail) {
+                if (this.state.user && this.config.adminEmail.includes(this.state.user.email)) {
                     this.elements.refreshBtn.classList.remove('hidden');
                 }
                 this.elements.lastUpdatedText.classList.remove('hidden');
@@ -2846,5 +2846,6 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
