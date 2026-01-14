@@ -1409,22 +1409,30 @@ const utils = {
         });
         return favoriteWords;
     },
-    async saveStudyHistory(seconds, grade) {
+async saveStudyHistory(seconds, grade) {
         if (!app.state.user || seconds < 1 || !grade) return;
-        const today = new Date().toISOString().slice(0, 10);
+        
+        // [수정됨] 로컬 시간 기준으로 날짜 생성 (UTC 문제 해결)
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const today = `${year}-${month}-${day}`;
+
         const historyRef = doc(db, 'users', app.state.user.uid, 'history', 'study');
         try {
             const docSnap = await getDoc(historyRef);
             const data = docSnap.exists() ? docSnap.data() : {};
             const dailyData = data[today] || {};
             const currentSeconds = dailyData[grade] || 0;
-            // setDoc 대신 updateDoc을 사용하여 문서가 존재할 때만 업데이트되도록 합니다. (성능상 이점 없음, 코딩 스타일 유지)
+            // setDoc 대신 updateDoc을 사용하여 문서가 존재할 때만 업데이트되도록 합니다.
             await setDoc(historyRef, { [today]: { [grade]: currentSeconds + seconds } }, { merge: true });
         } catch(e) {
             console.error("Failed to update study history:", e);
             throw e;
         }
     },
+    
     saveQuizHistoryToLocal(quizType, isCorrect, grade) {
         if (!grade || !quizType) return;
         try {
@@ -1444,7 +1452,14 @@ const utils = {
     },
     async syncQuizHistory(statsToSync, grade) {
         if (!app.state.user || !statsToSync || !grade) return;
-        const today = new Date().toISOString().slice(0, 10);
+        
+        // [수정됨] 로컬 시간 기준으로 날짜 생성 (UTC 문제 해결)
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const today = `${year}-${month}-${day}`;
+
         const historyRef = doc(db, 'users', app.state.user.uid, 'history', 'quiz');
         try {
             const docSnap = await getDoc(historyRef);
@@ -2872,6 +2887,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
