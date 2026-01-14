@@ -192,6 +192,14 @@
                 studentDetailsLoader: document.getElementById('student-details-loader'),
             },
 
+        // [신규 추가] 날짜 객체를 로컬 시간 기준 'YYYY-MM-DD' 문자열로 변환
+            getLocalDateString(dateObj) {
+                const year = dateObj.getFullYear();
+                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const day = String(dateObj.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            },
+            
             init() {
                 this.bindAuthEvents();
             },
@@ -686,7 +694,7 @@
                 return `<h3 class="text-xl font-bold text-gray-700">${grade.replace('y','')}학년 (총 ${stats.total}단어)</h3><div class="space-y-4 mt-4">${itemsHtml}</div>`;
             },
 
-            getStatsForPeriod(days, grade, studyHistory, quizHistory) {
+getStatsForPeriod(days, grade, studyHistory, quizHistory) {
                 let totalSeconds = 0;
                 const quizStats = {
                     'MULTIPLE_CHOICE_MEANING': { correct: 0, total: 0, name: '영한 뜻' },
@@ -698,7 +706,9 @@
                 for (let i = 0; i < days; i++) {
                     const d = new Date(today);
                     d.setDate(d.getDate() - i);
-                    const dateString = d.toISOString().slice(0, 10);
+                    
+                    // [수정됨] 헬퍼 함수 사용
+                    const dateString = this.getLocalDateString(d);
 
                     if(studyHistory[dateString] && studyHistory[dateString][grade]) {
                         totalSeconds += studyHistory[dateString][grade];
@@ -717,7 +727,7 @@
                 return { totalSeconds, quizStats };
             },
             
-            render7DayCharts(block, grade, studyHistory, quizHistory) {
+render7DayCharts(block, grade, studyHistory, quizHistory) {
                 this.destroyGradeCharts(grade);
 
                 const today = new Date();
@@ -732,7 +742,10 @@
                 for (let i = 6; i >= 0; i--) {
                     const d = new Date(today);
                     d.setDate(d.getDate() - i);
-                    const dateString = d.toISOString().slice(0, 10);
+                    
+                    // [수정됨] 헬퍼 함수 사용
+                    const dateString = this.getLocalDateString(d);
+                    
                     labels.push(`${d.getMonth() + 1}/${d.getDate()}`);
                     studyData.push(Math.round(((studyHistory[dateString] && studyHistory[dateString][grade]) || 0) / 60));
 
@@ -900,7 +913,7 @@
                 return result.trim() || '0분';
             },
 
-            async loadAndDisplayRankings() {
+async loadAndDisplayRankings() {
                 this.elements.detailsPrompt.classList.add('hidden');
                 this.elements.studentDetails.classList.add('hidden');
                 this.elements.studentDetailsLoader.classList.remove('hidden');
@@ -921,7 +934,6 @@
                     localStorage.removeItem(cacheKey);
                 }
                 
-                // RTDB에서 가져온 approvedUsers 목록 사용
                 const students = Object.values(this.state.approvedUsers).filter(s => {
                     const studentGrade = s.grade || 'unassigned';
                     return grade === 'unassigned' ? studentGrade !== '1y' && studentGrade !== '2y' && studentGrade !== '3y' : studentGrade === grade;
@@ -934,7 +946,6 @@
                     return;
                 }
                 
-                // Firestore UID가 없는 학생 필터링
                 const studentsWithUid = students.filter(s => s.id);
 
                 if (!allStats) {
@@ -953,7 +964,9 @@
                             for (let i = 0; i < 7; i++) {
                                 const d = new Date(today);
                                 d.setDate(d.getDate() - i);
-                                const dateString = d.toISOString().slice(0, 10);
+                                
+                                // [수정됨] 헬퍼 함수 사용
+                                const dateString = this.getLocalDateString(d);
 
                                 if(studyHistory[dateString]) {
                                     Object.values(studyHistory[dateString]).forEach(seconds => totalSeconds += seconds);
