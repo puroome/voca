@@ -2723,9 +2723,9 @@ const learningMode = {
         ui.renderInteractiveText(this.elements.explanationDisplay, wordData.explanation);
         this.elements.explanationContainer.classList.toggle('hidden', !wordData.explanation || !wordData.explanation.trim());
         const hasSample = wordData.sample && wordData.sample.trim() !== '';
-        const defaultImg = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
-        const sampleImg = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
-        const backImgUrl = 'https://images.icon-icons.com/1055/PNG/128/5-remove-cat_icon-icons.com_76681.png';
+        const defaultImg = 'images/cat-add.png';
+        const sampleImg = 'images/cat-delivery.png';
+        const backImgUrl = 'images/cat-remove.png';
         this.elements.sampleBtnImg.src = this.elements.cardBack.classList.contains('is-slid-up') ? backImgUrl : (hasSample ? sampleImg : defaultImg);
         
         const grade = app.state.selectedSheet;
@@ -2780,9 +2780,9 @@ const learningMode = {
         const isBackVisible = this.elements.cardBack.classList.contains('is-slid-up');
         const wordData = this.state.currentDisplayList[this.state.currentIndex];
         const hasSample = wordData && wordData.sample && wordData.sample.trim() !== '';
-        const backImgUrl = 'https://images.icon-icons.com/1055/PNG/128/5-remove-cat_icon-icons.com_76681.png';
-        const sampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/14-delivery-cat_icon-icons.com_76690.png';
-        const noSampleImgUrl = 'https://images.icon-icons.com/1055/PNG/128/19-add-cat_icon-icons.com_76695.png';
+        const backImgUrl = 'images/cat-remove.png';
+        const sampleImgUrl = 'images/cat-delivery.png';
+        const noSampleImgUrl = 'images/cat-add.png';
         if (!isBackVisible) {
             if (!hasSample) { app.showNoSampleMessage(); return; }
             this.elements.backTitle.textContent = wordData.word;
@@ -2887,6 +2887,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
