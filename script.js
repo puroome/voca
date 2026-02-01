@@ -840,8 +840,8 @@ const translationDBCache = {
     }
 };
 const api = {
-// [수정됨] 유료 구글 번역 API 제거 -> 무료 Gemini AI 사용
-async translateText(text) {
+// [수정됨] 404 오류 해결 (모델명 변경: gemini-1.5-flash-latest)
+    async translateText(text) {
         if (!text) return "";
 
         // 무료 Gemini API 키
@@ -849,7 +849,8 @@ async translateText(text) {
         const k2 = "XtLUeVi7f-niGpXUu_0";
         const apiKey = k1 + k2; 
         
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        // 404 에러 방지를 위해 '-latest' 버전 사용
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
         const prompt = `Translate the following text into natural Korean. Output ONLY the Korean translation.\n\nText: "${text}"`;
 
         try {
@@ -859,12 +860,21 @@ async translateText(text) {
                 body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
             });
 
-            if (!response.ok) throw new Error('Translation failed');
+            if (!response.ok) {
+                // 에러 상세 내용을 콘솔에 출력
+                const errorData = await response.json().catch(() => ({}));
+                console.error("Gemini API Error:", response.status, errorData);
+                throw new Error(`Translation failed (${response.status})`);
+            }
 
             const data = await response.json();
-            const translatedText = data.candidates[0].content.parts[0].text.trim();
             
-            return translatedText;
+            // 응답 구조 안전하게 파싱
+            if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+                return data.candidates[0].content.parts[0].text.trim();
+            } else {
+                return "번역 결과 없음";
+            }
 
         } catch (error) {
             console.error("번역 실패:", error);
@@ -875,16 +885,16 @@ async translateText(text) {
     // [보안 수정] 초기값 비움 (사용 안 함)
     googleTtsApiKey: '',
 
-    // [수정됨] OS 구분 없이 무조건 브라우저 내장 무료 TTS 사용
+    // [수정됨] this -> app 변경으로 오류(Cannot set properties of undefined) 해결
     async speak(text) {
         if (!text) return;
         
-        // 1. [복구] 활동 기록 (공부 시간 체크용)
+        // 1. 활동 기록 (공부 시간 체크용)
         if (typeof activityTracker !== 'undefined' && activityTracker.recordActivity) {
             activityTracker.recordActivity();
         }
 
-        // 2. [복구] 약어 풀어서 읽기 (sb -> somebody, sth -> something)
+        // 2. 약어 풀어서 읽기
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
 
         // 3. 브라우저 TTS 지원 여부 확인
@@ -899,28 +909,42 @@ async translateText(text) {
         // processedText를 읽도록 설정
         const utterance = new SpeechSynthesisUtterance(processedText);
         
-        // 목소리 설정: '영어(en-US)' 기본값 사용
-        // 아이폰/맥에서는 자동으로 Apple 기본 고품질 음성(Siri 등)으로 재생됨
+        // 목소리 설정: '영어(en-US)' 기본값
+        // 아이폰/맥/안드로이드 등 기기 기본 고품질 음성 자동 사용
         utterance.lang = 'en-US'; 
         utterance.rate = 1.0; // 속도 정속
 
+        // --- [핵심 수정] this 대신 app 사용 ---
         // 말하기 상태 표시 (아이콘 활성화)
-        this.state.isSpeaking = true;
-        this.updateSpeakerIcon(true);
+        if (typeof app !== 'undefined' && app.state) {
+            app.state.isSpeaking = true;
+            if (typeof app.updateSpeakerIcon === 'function') {
+                app.updateSpeakerIcon(true);
+            }
+        }
 
         utterance.onend = () => {
-            this.state.isSpeaking = false;
-            this.updateSpeakerIcon(false);
+            if (typeof app !== 'undefined' && app.state) {
+                app.state.isSpeaking = false;
+                if (typeof app.updateSpeakerIcon === 'function') {
+                    app.updateSpeakerIcon(false);
+                }
+            }
         };
 
         utterance.onerror = (e) => {
             console.error("TTS 재생 오류", e);
-            this.state.isSpeaking = false;
-            this.updateSpeakerIcon(false);
+            if (typeof app !== 'undefined' && app.state) {
+                app.state.isSpeaking = false;
+                if (typeof app.updateSpeakerIcon === 'function') {
+                    app.updateSpeakerIcon(false);
+                }
+            }
         };
 
         window.speechSynthesis.speak(utterance);
     },
+    
     async copyToClipboard(text) {
         if (navigator.clipboard && text) {
             try { await navigator.clipboard.writeText(text); }
@@ -2842,6 +2866,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
