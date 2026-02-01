@@ -855,8 +855,8 @@ const api = {
         }
 
         // 2. Word 앱의 API 키 및 설정 가져오기
-        const k1 = "AIzaSyAdXvE2SkyEbPmU";
-        const k2 = "XtLUeVi7f-niGpXUu_0";
+        const k1 = "AIzaSyBDRkZl1hzVqMqX";
+        const k2 = "FyIcBym1Is36p2to000";
         const apiKey = k1 + k2; 
         
         // [중요] Word 앱과 동일하게 'gemini-2.5-flash' 모델 사용
@@ -2876,6 +2876,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
