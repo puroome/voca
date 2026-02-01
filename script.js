@@ -884,60 +884,50 @@ async translateText(text) {
     // [보안 수정] 초기값 비움 (사용 안 함)
     googleTtsApiKey: '',
 
-    // [수정됨] this -> app 변경으로 오류(Cannot set properties of undefined) 해결
+// [최종 수정] OS 상관없이 무조건 무료! + 오류 방지 적용
     async speak(text) {
         if (!text) return;
-        
-        // 1. 활동 기록 (공부 시간 체크용)
+
+        // 1. 활동 기록 (공부 시간 체크)
         if (typeof activityTracker !== 'undefined' && activityTracker.recordActivity) {
             activityTracker.recordActivity();
         }
 
-        // 2. 약어 풀어서 읽기
+        // 2. 약어 풀기 (sb -> somebody)
         const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
 
-        // 3. 브라우저 TTS 지원 여부 확인
+        // 3. 브라우저가 TTS 지원하는지 확인
         if (!window.speechSynthesis) {
-            console.warn("이 브라우저는 TTS를 지원하지 않습니다.");
+            console.warn("TTS 미지원 브라우저");
             return;
         }
 
-        // 기존 재생 중단 (중복 방지)
+        // 4. 기존 재생 중단
         window.speechSynthesis.cancel();
 
-        // processedText를 읽도록 설정
         const utterance = new SpeechSynthesisUtterance(processedText);
         
-        // 목소리 설정: '영어(en-US)' 기본값
-        // 아이폰/맥/안드로이드 등 기기 기본 고품질 음성 자동 사용
+        // [중요] 아이폰/윈도우/안드로이드 모두 '기본 영어'로 통일 (가장 안전하고 무료)
         utterance.lang = 'en-US'; 
-        utterance.rate = 1.0; // 속도 정속
+        utterance.rate = 1.0; 
 
-        // --- [핵심 수정] this 대신 app 사용 ---
-        // 말하기 상태 표시 (아이콘 활성화)
+        // 5. [오류 방지] this 대신 app 사용 (아이콘 상태 변경)
         if (typeof app !== 'undefined' && app.state) {
             app.state.isSpeaking = true;
-            if (typeof app.updateSpeakerIcon === 'function') {
-                app.updateSpeakerIcon(true);
-            }
+            if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(true);
         }
 
         utterance.onend = () => {
             if (typeof app !== 'undefined' && app.state) {
                 app.state.isSpeaking = false;
-                if (typeof app.updateSpeakerIcon === 'function') {
-                    app.updateSpeakerIcon(false);
-                }
+                if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(false);
             }
         };
 
-        utterance.onerror = (e) => {
-            console.error("TTS 재생 오류", e);
+        utterance.onerror = () => {
             if (typeof app !== 'undefined' && app.state) {
                 app.state.isSpeaking = false;
-                if (typeof app.updateSpeakerIcon === 'function') {
-                    app.updateSpeakerIcon(false);
-                }
+                if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(false);
             }
         };
 
@@ -2865,6 +2855,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
