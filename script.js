@@ -860,7 +860,7 @@ const api = {
         const apiKey = k1 + k2; 
         
         // [중요] Word 앱과 동일하게 'gemini-2.5-flash' 모델 사용
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
         
         // [중요] Word 앱과 동일한 프롬프트 사용
         const prompt = `Translate the following English text into natural Korean. Output ONLY the Korean translation, no extra text.\n\nText: "${text}"`;
@@ -2876,6 +2876,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
