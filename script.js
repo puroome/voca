@@ -841,10 +841,10 @@ const translationDBCache = {
 };
 const api = {
 // [수정됨] 유료 구글 번역 API 제거 -> 무료 Gemini AI 사용
-    async translateText(text) {
+async translateText(text) {
         if (!text) return "";
 
-        // 무료 Gemini API 키 (개인용 앱과 동일하게 적용)
+        // 무료 Gemini API 키
         const k1 = "AIzaSyAdXvE2SkyEbPmU";
         const k2 = "XtLUeVi7f-niGpXUu_0";
         const apiKey = k1 + k2; 
@@ -868,16 +868,26 @@ const api = {
 
         } catch (error) {
             console.error("번역 실패:", error);
-            return "번역 오류"; // 에러 시 사용자에게 보여줄 메시지
+            return "번역 오류"; 
         }
     },
-    // [보안 수정] 초기값을 비워두고 DB에서 불러옵니다.
+
+    // [보안 수정] 초기값 비움 (사용 안 함)
     googleTtsApiKey: '',
-// [수정됨] OS 구분 없이 무조건 브라우저 내장 무료 TTS 사용
+
+    // [수정됨] OS 구분 없이 무조건 브라우저 내장 무료 TTS 사용
     async speak(text) {
         if (!text) return;
+        
+        // 1. [복구] 활동 기록 (공부 시간 체크용)
+        if (typeof activityTracker !== 'undefined' && activityTracker.recordActivity) {
+            activityTracker.recordActivity();
+        }
 
-        // 브라우저 TTS 지원 여부 확인
+        // 2. [복구] 약어 풀어서 읽기 (sb -> somebody, sth -> something)
+        const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
+
+        // 3. 브라우저 TTS 지원 여부 확인
         if (!window.speechSynthesis) {
             console.warn("이 브라우저는 TTS를 지원하지 않습니다.");
             return;
@@ -886,9 +896,10 @@ const api = {
         // 기존 재생 중단 (중복 방지)
         window.speechSynthesis.cancel();
 
-        const utterance = new SpeechSynthesisUtterance(text);
+        // processedText를 읽도록 설정
+        const utterance = new SpeechSynthesisUtterance(processedText);
         
-        // 목소리 설정: 별도 토글이 없으므로 '영어(en-US)' 기본값 사용
+        // 목소리 설정: '영어(en-US)' 기본값 사용
         // 아이폰/맥에서는 자동으로 Apple 기본 고품질 음성(Siri 등)으로 재생됨
         utterance.lang = 'en-US'; 
         utterance.rate = 1.0; // 속도 정속
@@ -2831,6 +2842,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
