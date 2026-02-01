@@ -841,7 +841,7 @@ const translationDBCache = {
 };
 const api = {
 // [수정됨] 404 오류 해결 (모델명 변경: gemini-1.5-flash-latest)
-    async translateText(text) {
+async translateText(text) {
         if (!text) return "";
 
         // 무료 Gemini API 키
@@ -849,8 +849,8 @@ const api = {
         const k2 = "XtLUeVi7f-niGpXUu_0";
         const apiKey = k1 + k2; 
         
-        // 404 에러 방지를 위해 '-latest' 버전 사용
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+        // [핵심 수정] '-latest' 제거 -> 표준 모델명 사용
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         const prompt = `Translate the following text into natural Korean. Output ONLY the Korean translation.\n\nText: "${text}"`;
 
         try {
@@ -861,7 +861,7 @@ const api = {
             });
 
             if (!response.ok) {
-                // 에러 상세 내용을 콘솔에 출력
+                // 에러 발생 시 상세 로그 출력
                 const errorData = await response.json().catch(() => ({}));
                 console.error("Gemini API Error:", response.status, errorData);
                 throw new Error(`Translation failed (${response.status})`);
@@ -869,7 +869,6 @@ const api = {
 
             const data = await response.json();
             
-            // 응답 구조 안전하게 파싱
             if (data.candidates && data.candidates[0] && data.candidates[0].content) {
                 return data.candidates[0].content.parts[0].text.trim();
             } else {
@@ -2866,6 +2865,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
