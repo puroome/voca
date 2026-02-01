@@ -840,18 +840,30 @@ const translationDBCache = {
     }
 };
 const api = {
-// [수정됨] 404 오류 해결 (모델명 변경: gemini-1.5-flash-latest)
-async translateText(text) {
+// [Word 앱과 동일한 로직 적용] 무료 Gemini 2.5 Flash 사용
+    async translateText(text) {
         if (!text) return "";
 
-        // 무료 Gemini API 키
+        // 1. 캐시 확인 (학생 앱의 캐시 저장소인 translationDBCache 사용)
+        try {
+            if (typeof translationDBCache !== 'undefined') {
+                const cached = await translationDBCache.get(text);
+                if (cached) return cached;
+            }
+        } catch (e) { 
+            console.warn("Cache check failed:", e); 
+        }
+
+        // 2. Word 앱의 API 키 및 설정 가져오기
         const k1 = "AIzaSyAdXvE2SkyEbPmU";
         const k2 = "XtLUeVi7f-niGpXUu_0";
         const apiKey = k1 + k2; 
         
-        // [핵심 수정] '-latest' 제거 -> 표준 모델명 사용
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-        const prompt = `Translate the following text into natural Korean. Output ONLY the Korean translation.\n\nText: "${text}"`;
+        // [중요] Word 앱과 동일하게 'gemini-2.5-flash' 모델 사용
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+        
+        // [중요] Word 앱과 동일한 프롬프트 사용
+        const prompt = `Translate the following English text into natural Korean. Output ONLY the Korean translation, no extra text.\n\nText: "${text}"`;
 
         try {
             const response = await fetch(url, {
@@ -861,7 +873,6 @@ async translateText(text) {
             });
 
             if (!response.ok) {
-                // 에러 발생 시 상세 로그 출력
                 const errorData = await response.json().catch(() => ({}));
                 console.error("Gemini API Error:", response.status, errorData);
                 throw new Error(`Translation failed (${response.status})`);
@@ -869,8 +880,18 @@ async translateText(text) {
 
             const data = await response.json();
             
+            // 데이터 파싱
             if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-                return data.candidates[0].content.parts[0].text.trim();
+                const translatedText = data.candidates[0].content.parts[0].text.trim();
+                
+                // 3. 결과 캐싱 (학생 앱 저장소에 저장)
+                try {
+                    if (typeof translationDBCache !== 'undefined' && translatedText) {
+                        translationDBCache.save(text, translatedText);
+                    }
+                } catch (e) {}
+
+                return translatedText;
             } else {
                 return "번역 결과 없음";
             }
@@ -2855,6 +2876,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
