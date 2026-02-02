@@ -858,7 +858,7 @@ const api = {
 
         // 2. Google Apps Script Web App 호출
         // 🚨 [매우 중요] 아까 배포 후 복사한 '웹 앱 URL'을 아래 따옴표 안에 붙여넣으세요!
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbzjtB_Mh6TlEGwd_UzBe-gwOJ6-LxViJuFl1C-4U_4qhOb2cZGL-MRQ1nP39c3ibF4/exec";
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec";
         
         // 서버에 'translateText' 액션을 요청하는 주소 생성
         const requestUrl = `${GAS_URL}?action=translateText&text=${encodeURIComponent(text)}`;
@@ -2866,6 +2866,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
