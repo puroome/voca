@@ -840,43 +840,44 @@ const translationDBCache = {
     }
 };
 const api = {
-
-    
-// [수정됨] Google Apps Script(LanguageApp)를 이용한 무료 무제한 번역
+// script.js 파일 수정
     async translateText(text) {
         if (!text) return "";
 
-        // 1. 캐시 확인 (기존 로직 유지)
+        // 1. 캐시 확인 (이미 번역한 문장은 저장소에서 가져옴)
         try {
             if (typeof translationDBCache !== 'undefined') {
                 const cached = await translationDBCache.get(text);
                 if (cached) return cached;
             }
-        } catch (e) { 
-            console.warn("Cache check failed:", e); 
+        } catch (e) { console.warn("Cache check error:", e); }
+
+        // 2. 학생명단 GAS 주소(SCRIPT_URL) 가져오기
+        // (config에 있는 ...3ibF4/exec 주소를 자동으로 사용합니다)
+        const GAS_URL = app.config.SCRIPT_URL; 
+        
+        if (!GAS_URL) {
+            console.error("설정 오류: SCRIPT_URL이 없습니다.");
+            return "설정 오류 발생";
         }
 
-        // 2. Google Apps Script Web App 호출
-        // 🚨 [매우 중요] 아까 배포 후 복사한 '웹 앱 URL'을 아래 따옴표 안에 붙여넣으세요!
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbzmcgauS6eUd2QAncKzX_kQ1K1b7x7xn2k6s1JWwf-FxmrbIt-_9-eAvNrFkr5eDdwr0w/exec";
-        
-        // 서버에 'translateText' 액션을 요청하는 주소 생성
+        // 3. 서버에 번역 요청 (action=translateText)
         const requestUrl = `${GAS_URL}?action=translateText&text=${encodeURIComponent(text)}`;
 
         try {
             const response = await fetch(requestUrl);
 
             if (!response.ok) {
-                throw new Error(`HTTP Error: ${response.status}`);
+                throw new Error(`통신 오류: ${response.status}`);
             }
 
             const data = await response.json();
             
-            // 서버 응답 확인 (success: true 일 때만 처리)
+            // 4. 결과 처리
             if (data.success) {
                 const translatedText = data.translatedText;
                 
-                // 3. 결과 캐싱 (기존 로직 유지)
+                // 캐시에 저장 (다음엔 서버 요청 안 하도록)
                 try {
                     if (typeof translationDBCache !== 'undefined' && translatedText) {
                         translationDBCache.save(text, translatedText);
@@ -885,15 +886,17 @@ const api = {
 
                 return translatedText;
             } else {
-                // 서버가 에러 메시지를 보낸 경우
                 throw new Error(data.message || "번역 실패");
             }
 
         } catch (error) {
-            console.error("번역 시스템 오류:", error);
+            console.error("번역 실패:", error);
             return "번역 서버 연결 실패 (잠시 후 다시 시도)"; 
         }
     },
+    
+    // [보안] 기존에 있던 API Key 관련 변수는 이제 필요 없으므로 비워둡니다.
+    geminiApiKey: '',
 
 // [최종 수정] OS 상관없이 무조건 무료! + 오류 방지 적용
     async speak(text) {
@@ -2866,24 +2869,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
