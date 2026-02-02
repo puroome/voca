@@ -840,11 +840,13 @@ const translationDBCache = {
     }
 };
 const api = {
-// [Word 앱과 동일한 로직 적용] 무료 Gemini 2.5 Flash 사용
+
+    
+// [수정됨] Google Apps Script(LanguageApp)를 이용한 무료 무제한 번역
     async translateText(text) {
         if (!text) return "";
 
-        // 1. 캐시 확인 (학생 앱의 캐시 저장소인 translationDBCache 사용)
+        // 1. 캐시 확인 (기존 로직 유지)
         try {
             if (typeof translationDBCache !== 'undefined') {
                 const cached = await translationDBCache.get(text);
@@ -854,37 +856,27 @@ const api = {
             console.warn("Cache check failed:", e); 
         }
 
-        // 2. Word 앱의 API 키 및 설정 가져오기
-        const k1 = "AIzaSyBDRkZl1hzVqMqX";
-        const k2 = "FyIcBym1Is36p2to000";
-        const apiKey = k1 + k2; 
+        // 2. Google Apps Script Web App 호출
+        // 🚨 [매우 중요] 아까 배포 후 복사한 '웹 앱 URL'을 아래 따옴표 안에 붙여넣으세요!
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzjtB_Mh6TlEGwd_UzBe-gwOJ6-LxViJuFl1C-4U_4qhOb2cZGL-MRQ1nP39c3ibF4/exec";
         
-        // [중요] Word 앱과 동일하게 'gemini-2.5-flash' 모델 사용
-        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-        
-        // [중요] Word 앱과 동일한 프롬프트 사용
-        const prompt = `Translate the following English text into natural Korean. Output ONLY the Korean translation, no extra text.\n\nText: "${text}"`;
+        // 서버에 'translateText' 액션을 요청하는 주소 생성
+        const requestUrl = `${GAS_URL}?action=translateText&text=${encodeURIComponent(text)}`;
 
         try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-            });
+            const response = await fetch(requestUrl);
 
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                console.error("Gemini API Error:", response.status, errorData);
-                throw new Error(`Translation failed (${response.status})`);
+                throw new Error(`HTTP Error: ${response.status}`);
             }
 
             const data = await response.json();
             
-            // 데이터 파싱
-            if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-                const translatedText = data.candidates[0].content.parts[0].text.trim();
+            // 서버 응답 확인 (success: true 일 때만 처리)
+            if (data.success) {
+                const translatedText = data.translatedText;
                 
-                // 3. 결과 캐싱 (학생 앱 저장소에 저장)
+                // 3. 결과 캐싱 (기존 로직 유지)
                 try {
                     if (typeof translationDBCache !== 'undefined' && translatedText) {
                         translationDBCache.save(text, translatedText);
@@ -893,17 +885,15 @@ const api = {
 
                 return translatedText;
             } else {
-                return "번역 결과 없음";
+                // 서버가 에러 메시지를 보낸 경우
+                throw new Error(data.message || "번역 실패");
             }
 
         } catch (error) {
-            console.error("번역 실패:", error);
-            return "번역 오류"; 
+            console.error("번역 시스템 오류:", error);
+            return "번역 서버 연결 실패 (잠시 후 다시 시도)"; 
         }
     },
-
-    // [보안 수정] 초기값 비움 (사용 안 함)
-    googleTtsApiKey: '',
 
 // [최종 수정] OS 상관없이 무조건 무료! + 오류 방지 적용
     async speak(text) {
@@ -2876,6 +2866,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
