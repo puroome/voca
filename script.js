@@ -215,10 +215,6 @@ const app = {
                 // 앱 설정(config)에 키 주입
                 this.config.MERRIAM_WEBSTER_API_KEY = data.merriam_webster_key || "";
                 this.config.SCRIPT_URL = data.script_url || "";
-                
-                // api 객체(전역)에 키 주입
-                if (typeof api !== 'undefined') {
-                    api.googleTtsApiKey = data.google_tts_key || "";
                 }
                 console.log("보안 설정을 성공적으로 불러왔습니다.");
             } else {
@@ -2869,3 +2865,4 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
