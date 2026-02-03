@@ -215,7 +215,6 @@ const app = {
                 // 앱 설정(config)에 키 주입
                 this.config.MERRIAM_WEBSTER_API_KEY = data.merriam_webster_key || "";
                 this.config.SCRIPT_URL = data.script_url || "";
-                }
                 console.log("보안 설정을 성공적으로 불러왔습니다.");
             } else {
                 console.warn("보안 설정 데이터(secure_config)가 DB에 없습니다. 기능이 제한될 수 있습니다.");
@@ -2865,4 +2864,5 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
