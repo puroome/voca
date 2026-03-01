@@ -2305,19 +2305,75 @@ if (quizType === 'FILL_IN_THE_BLANK') {
         return quiz;
     },
     createMeaningQuiz(correctWordData, allWordsData) {
-        const wrongAnswers = new Set();
-        let candidates = allWordsData.filter(w => w.word !== correctWordData.word && w.meaning !== correctWordData.meaning);
-        utils.shuffleArray(candidates);
-        candidates.slice(0, 3).forEach(w => wrongAnswers.add(w.meaning));
-        while (wrongAnswers.size < 3 && allWordsData.length > 4) {
-            const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
-            if (randomWord.word !== correctWordData.word && randomWord.meaning !== correctWordData.meaning && !wrongAnswers.has(randomWord.meaning)) wrongAnswers.add(randomWord.meaning);
+    const wrongAnswers = new Set();
+
+    // 정답의 POS를 개별 토큰으로 파싱 (예: "n. v." → ["n.", "v."])
+    const correctPosRaw = (correctWordData.pos || '').trim();
+    const correctPosTokens = correctPosRaw
+        ? correctPosRaw.split(/\s+/).filter(p => p)
+        : [];
+
+    // 정답 단어/뜻 제외 기본 후보 풀
+    const base = allWordsData.filter(
+        w => w.word !== correctWordData.word && w.meaning !== correctWordData.meaning
+    );
+
+    if (correctPosTokens.length > 0) {
+        // 1순위: POS가 정확히 동일한 어휘
+        const tier1 = base.filter(w => {
+            if (!w.pos) return false;
+            const wTokens = w.pos.trim().split(/\s+/).filter(p => p);
+            return wTokens.length === correctPosTokens.length &&
+                   correctPosTokens.every(p => wTokens.includes(p));
+        });
+
+        // 2순위: POS 중 하나라도 겹치는 어휘 (1순위 제외)
+        const tier1Set = new Set(tier1.map(w => w.word));
+        const tier2 = base.filter(w => {
+            if (tier1Set.has(w.word) || !w.pos) return false;
+            const wTokens = w.pos.trim().split(/\s+/).filter(p => p);
+            return correctPosTokens.some(p => wTokens.includes(p));
+        });
+
+        // 3순위: POS 무관 (1·2순위 제외)
+        const tier2Set = new Set(tier2.map(w => w.word));
+        const tier3 = base.filter(w => !tier1Set.has(w.word) && !tier2Set.has(w.word));
+
+        // 각 순위 내에서 셔플 후 순서대로 오답 채우기
+        [tier1, tier2, tier3].forEach(tier => {
+            utils.shuffleArray(tier);
+            for (const w of tier) {
+                if (wrongAnswers.size >= 3) break;
+                wrongAnswers.add(w.meaning);
+            }
+        });
+    } else {
+        // POS 정보 없는 경우 기존 로직 그대로 사용
+        utils.shuffleArray(base);
+        base.slice(0, 3).forEach(w => wrongAnswers.add(w.meaning));
+    }
+
+    // 그래도 3개 미달이면 무작위 보충 (기존 while 로직)
+    while (wrongAnswers.size < 3 && allWordsData.length > 4) {
+        const randomWord = allWordsData[Math.floor(Math.random() * allWordsData.length)];
+        if (randomWord.word !== correctWordData.word &&
+            randomWord.meaning !== correctWordData.meaning &&
+            !wrongAnswers.has(randomWord.meaning)) {
+            wrongAnswers.add(randomWord.meaning);
         }
-        if(wrongAnswers.size < 3) return null;
-        const choices = [correctWordData.meaning, ...Array.from(wrongAnswers)];
-        utils.shuffleArray(choices);
-        return { type: 'MULTIPLE_CHOICE_MEANING', question: { word: correctWordData.word }, choices, answer: correctWordData.meaning };
-    },
+    }
+
+    if (wrongAnswers.size < 3) return null;
+
+    const choices = [correctWordData.meaning, ...Array.from(wrongAnswers)];
+    utils.shuffleArray(choices);
+    return {
+        type: 'MULTIPLE_CHOICE_MEANING',
+        question: { word: correctWordData.word },
+        choices,
+        answer: correctWordData.meaning
+    };
+},
 createBlankQuiz(correctWordData, allWordsData) {
         if (!correctWordData.sample || correctWordData.sample.trim() === '') return null;
         const firstLineSentence = correctWordData.sample.split('\n')[0];
@@ -2866,6 +2922,7 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
+
 
 
 
