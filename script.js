@@ -913,7 +913,7 @@ const api = {
       const voices = window.speechSynthesis.getVoices();
       if (voices.length > 0) {
         const enVoices = voices.filter(v => v.lang === 'en-US' || v.lang.startsWith('en-US'));
-        const quality = ['Premium', 'Enhanced', 'High Quality'];
+        const quality = ['Premium', 'Enhanced', 'High Quality', '프리미엄', '고품질', '향상됨'];
         const highQ = enVoices.find(v => quality.some(q => v.name.includes(q)));
 
         let best = null;
