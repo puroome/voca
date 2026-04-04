@@ -894,7 +894,7 @@ const api = {
     geminiApiKey: '',
 
 // [최종 수정] OS 상관없이 무조건 무료! + 오류 방지 적용
-      async speak(text) {
+    async speak(text) {
     if (!text) return;
     // 1. 활동 감지
     if (typeof activityTracker !== 'undefined') activityTracker.recordActivity();
@@ -908,33 +908,24 @@ const api = {
     utterance.lang = 'en-US';
     utterance.rate = 1.0;
 
-        // ✅ [추가] iOS 포함 전 플랫폼 최적 음성 선택 (고품질 우선)
+    // ✅ [추가] iOS 포함 전 플랫폼 최적 음성 선택
     const _setVoiceAndSpeak = () => {
       const voices = window.speechSynthesis.getVoices();
       if (voices.length > 0) {
-        const enVoices = voices.filter(v => v.lang === 'en-US' || v.lang.startsWith('en-US'));
-        const quality = ['Premium', 'Enhanced', 'High Quality', '프리미엄', '고품질', '향상됨'];
-        const highQ = enVoices.find(v => quality.some(q => v.name.includes(q)));
-
+        const preferred = ['Samantha', 'Google US English', 'Microsoft Aria Online', 'Microsoft David Online'];
         let best = null;
-        if (highQ) {
-          // 고품질 음성이 있으면 최우선
-          best = highQ;
-        } else {
-          // 없으면 기존 순서: Compact 제외 우선
-          const preferred = ['Samantha', 'Google US English', 'Microsoft Aria', 'Microsoft David'];
-          for (const name of preferred) {
-            best = enVoices.find(v => v.name.includes(name) && !v.name.toLowerCase().includes('compact'));
-            if (best) break;
-          }
-          if (!best) best = enVoices.find(v => !v.name.toLowerCase().includes('compact'));
-          if (!best) best = enVoices[0];
+        for (const name of preferred) {
+          best = voices.find(v => v.name.includes(name));
+          if (best) break;
         }
+        // Compact(저품질) 제외, en-US 우선
+        if (!best) best = voices.find(v => v.lang === 'en-US' && !v.name.toLowerCase().includes('compact'));
+        if (!best) best = voices.find(v => v.lang === 'en-US');
         if (best) utterance.voice = best;
-        app.showToast('🔊 ' + (best?.name ?? '기본(시스템)'), false);
       }
       window.speechSynthesis.speak(utterance);
     };
+
     // iOS는 getVoices()가 처음엔 빈 배열 → voiceschanged 후 재시도
     const voices = window.speechSynthesis.getVoices();
     if (voices.length > 0) {
