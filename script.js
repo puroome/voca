@@ -175,7 +175,8 @@ const app = {
             audioDBCache.init(),
             this.fetchAndSetBackgroundImages()
         ]).catch(e => console.error("Cache or image init failed", e));
-        this.bindGlobalEvents();
+            voiceManager.init();
+    this.bindGlobalEvents();
         quizMode.init();
         learningMode.init();
         dashboard.init();
@@ -772,6 +773,27 @@ const incorrectBeep = {
         { delay: 90, frequency: 400, duration: 0.07, type: 'square', gain: 0.15 }
     ]
 };
+const voiceManager = {
+  _voice: null,
+  init() {
+    const pick = () => {
+      const voices = window.speechSynthesis?.getVoices() || [];
+      const en = voices.filter(v => v.lang.startsWith('en'));
+      this._voice =
+        en.find(v => v.name.includes('Enhanced') && v.lang === 'en-US') ||
+        en.find(v => v.name.includes('Premium')  && v.lang === 'en-US') ||
+        en.find(v => v.name === 'Samantha') ||
+        en.find(v => v.lang === 'en-US') ||
+        en[0] || null;
+    };
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = pick;
+      pick();
+    }
+  },
+  get() { return this._voice; }
+};
+
 const audioDBCache = {
     db: null, dbName: 'ttsAudioCacheDB_voca', storeName: 'audioStore',
     init() {
@@ -894,54 +916,90 @@ const api = {
     geminiApiKey: '',
 
 // [최종 수정] OS 상관없이 무조건 무료! + 오류 방지 적용
-    async speak(text) {
-        if (!text) return;
+      _currentAudio: null,
 
-        // 1. 활동 기록 (공부 시간 체크)
-        if (typeof activityTracker !== 'undefined' && activityTracker.recordActivity) {
-            activityTracker.recordActivity();
-        }
+  _setSpeaking(v) {
+    if (typeof app === 'undefined') return;
+    app.state && (app.state.isSpeaking = v);
+    if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(v);
+  },
 
-        // 2. 약어 풀기 (sb -> somebody)
-        const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
+  _playBuffer(buffer) {
+    const blob = new Blob([buffer], { type: 'audio/mpeg' });
+    const url  = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    this._currentAudio = audio;
+    this._setSpeaking(true);
+    const done = () => { this._setSpeaking(false); URL.revokeObjectURL(url); };
+    audio.onended = done;
+    audio.onerror = done;
+    audio.play().catch(done);
+  },
 
-        // 3. 브라우저가 TTS 지원하는지 확인
-        if (!window.speechSynthesis) {
-            console.warn("TTS 미지원 브라우저");
+  _fallbackSpeak(text) {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.lang = 'en-US';
+    utt.rate = 1.0;
+    const v = voiceManager.get();
+    if (v) utt.voice = v;
+    this._setSpeaking(true);
+    utt.onend  = () => this._setSpeaking(false);
+    utt.onerror = () => this._setSpeaking(false);
+    window.speechSynthesis.speak(utt);
+  },
+
+  async speak(text) {
+    if (!text) return;
+    if (typeof activityTracker !== 'undefined') activityTracker.recordActivity();
+
+    const processed = text
+      .replace(/\bsb\b/g, 'somebody')
+      .replace(/\bsth\b/g, 'something');
+
+    if (this._currentAudio) { this._currentAudio.pause(); this._currentAudio = null; }
+
+    // ① IndexedDB 캐시 확인
+    try {
+      const cached = await audioDBCache.getAudio('gtts_' + processed);
+      if (cached) { this._playBuffer(cached); return; }
+    } catch (e) {}
+
+    // ② GAS 프록시로 Google Translate TTS 요청 + 캐시 저장
+    const gasUrl = app.config.SCRIPTURL;
+    if (gasUrl) {
+      try {
+        const res  = await fetch(`${gasUrl}?action=tts&text=${encodeURIComponent(processed)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.audio) {
+            const bin = atob(json.audio);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            const buffer = bytes.buffer;
+            audioDBCache.saveAudio('gtts_' + processed, buffer);
+            this._playBuffer(buffer);
             return;
+          }
         }
+      } catch (e) {}
+    }
 
-        // 4. 기존 재생 중단
-        window.speechSynthesis.cancel();
+    // ③ Fallback A: <audio> 직접 재생
+    try {
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(processed)}&tl=en-US&client=tw-ob`;
+      const audio = new Audio(url);
+      this._currentAudio = audio;
+      this._setSpeaking(true);
+      audio.onended = audio.onerror = () => this._setSpeaking(false);
+      await audio.play();
+      return;
+    } catch (e) {}
 
-        const utterance = new SpeechSynthesisUtterance(processedText);
-        
-        // [중요] 아이폰/윈도우/안드로이드 모두 '기본 영어'로 통일 (가장 안전하고 무료)
-        utterance.lang = 'en-US'; 
-        utterance.rate = 1.0; 
-
-        // 5. [오류 방지] this 대신 app 사용 (아이콘 상태 변경)
-        if (typeof app !== 'undefined' && app.state) {
-            app.state.isSpeaking = true;
-            if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(true);
-        }
-
-        utterance.onend = () => {
-            if (typeof app !== 'undefined' && app.state) {
-                app.state.isSpeaking = false;
-                if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(false);
-            }
-        };
-
-        utterance.onerror = () => {
-            if (typeof app !== 'undefined' && app.state) {
-                app.state.isSpeaking = false;
-                if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(false);
-            }
-        };
-
-        window.speechSynthesis.speak(utterance);
-    },
+    // ④ Fallback B: Web Speech API (voiceManager 최적 음성)
+    this._fallbackSpeak(processed);
+  },
     
     async copyToClipboard(text) {
         if (navigator.clipboard && text) {
