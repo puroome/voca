@@ -175,8 +175,7 @@ const app = {
             audioDBCache.init(),
             this.fetchAndSetBackgroundImages()
         ]).catch(e => console.error("Cache or image init failed", e));
-            voiceManager.init();
-    this.bindGlobalEvents();
+        this.bindGlobalEvents();
         quizMode.init();
         learningMode.init();
         dashboard.init();
@@ -773,27 +772,6 @@ const incorrectBeep = {
         { delay: 90, frequency: 400, duration: 0.07, type: 'square', gain: 0.15 }
     ]
 };
-const voiceManager = {
-  _voice: null,
-  init() {
-    const pick = () => {
-      const voices = window.speechSynthesis?.getVoices() || [];
-      const en = voices.filter(v => v.lang.startsWith('en'));
-      this._voice =
-        en.find(v => v.name.includes('Enhanced') && v.lang === 'en-US') ||
-        en.find(v => v.name.includes('Premium')  && v.lang === 'en-US') ||
-        en.find(v => v.name === 'Samantha') ||
-        en.find(v => v.lang === 'en-US') ||
-        en[0] || null;
-    };
-    if (window.speechSynthesis) {
-      window.speechSynthesis.onvoiceschanged = pick;
-      pick();
-    }
-  },
-  get() { return this._voice; }
-};
-
 const audioDBCache = {
     db: null, dbName: 'ttsAudioCacheDB_voca', storeName: 'audioStore',
     init() {
@@ -915,110 +893,92 @@ const api = {
     // [보안] 기존에 있던 API Key 관련 변수는 이제 필요 없으므로 비워둡니다.
     geminiApiKey: '',
 
-  _currentAudio: null,
-  _memCache: new Map(),
-
-  _setSpeaking(v) {
-    if (typeof app === 'undefined') return;
-    app.state && (app.state.isSpeaking = v);
-    if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(v);
-  },
-
-  _fallbackSpeak(text) {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.lang = 'en-US';
-    utt.rate = 1.0;
-    const v = voiceManager.get();
-    if (v) utt.voice = v;
-    this._setSpeaking(true);
-    utt.onend  = () => this._setSpeaking(false);
-    utt.onerror = () => this._setSpeaking(false);
-    window.speechSynthesis.speak(utt);
-  },
-
-  async _cacheInBackground(processed, cacheKey) {
-    const gasUrl = app.config?.SCRIPTURL;
-    if (!gasUrl) return;
-    try {
-      const res = await fetch(`${gasUrl}?action=tts&text=${encodeURIComponent(processed)}`);
-      if (!res.ok) return;
-      const json = await res.json();
-      if (!json.success || !json.audio) return;
-      const bin = atob(json.audio);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const buffer = bytes.buffer;
-      audioDBCache.saveAudio(cacheKey, buffer);
-      const url = URL.createObjectURL(new Blob([buffer], { type: 'audio/mpeg' }));
-      this._memCache.set(cacheKey, url);
-    } catch (e) {}
-  },
-
-  async speak(text) {
+// [최종 수정] OS 상관없이 무조건 무료! + 오류 방지 적용
+      async speak(text) {
     if (!text) return;
+    // 1. 활동 감지
     if (typeof activityTracker !== 'undefined') activityTracker.recordActivity();
+    // 2. sb -> somebody
+    const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
+    // 3. TTS 지원 확인
+    if (!window.speechSynthesis) { console.warn('TTS 지원 안 됨'); return; }
+    // 4. 발화
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(processedText);
+    utterance.lang = 'en-US';
+    utterance.rate = 1.0;
 
-    const processed = text
-      .replace(/\bsb\b/g, 'somebody')
-      .replace(/\bsth\b/g, 'something');
-    const cacheKey = 'gtts_' + processed;
-
-    if (this._currentAudio) { this._currentAudio.pause(); this._currentAudio = null; }
-
-    // ① 메모리 캐시 확인 (await 없음 → iOS 제스처 컨텍스트 유지)
-    const memUrl = this._memCache.get(cacheKey);
-    if (memUrl) {
-      const audio = new Audio(memUrl);
-      this._currentAudio = audio;
-      this._setSpeaking(true);
-      audio.onended = audio.onerror = () => this._setSpeaking(false);
-      audio.play().catch(() => this._fallbackSpeak(processed));
-      return;
-    }
-
-    // ② 즉시 직접 재생 (await 없음 → iOS 핵심!)
-    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(processed)}&tl=en-US&client=tw-ob`;
-    const audio = new Audio(ttsUrl);
-    this._currentAudio = audio;
-    this._setSpeaking(true);
-    audio.onended = audio.onerror = () => this._setSpeaking(false);
-    audio.play().catch(() => this._fallbackSpeak(processed));
-
-    // ③ 백그라운드 캐싱 (재생과 무관하게 진행)
-    this._cacheInBackground(processed, cacheKey);
-  },
-
-  async copyToClipboard(text) {
-    if (navigator.clipboard && text) {
-      try { await navigator.clipboard.writeText(text); }
-      catch (err) { console.warn("Clipboard write failed:", err); }
-    }
-  },
-  async fetchDefinition(word) {
-    if (!word) return null;
-    const apiKey = app.config.MERRIAM_WEBSTER_API_KEY;
-    const url = `https://dictionaryapi.com/api/v3/references/learners/json/${encodeURIComponent(word)}?key=${apiKey}`;
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        console.warn(`Definition fetch failed for ${word}: Status ${response.status}`);
-        return null;
-      }
-      const data = await response.json();
-      if (Array.isArray(data) && data.length > 0) {
-        const firstResult = data[0];
-        if (typeof firstResult === 'object' && firstResult !== null && firstResult.shortdef && Array.isArray(firstResult.shortdef) && firstResult.shortdef.length > 0) {
-          return firstResult.shortdef[0].split(';')[0].trim();
+    // ✅ [추가] iOS 포함 전 플랫폼 최적 음성 선택
+    const _setVoiceAndSpeak = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        const preferred = ['Samantha', 'Google US English', 'Microsoft Aria Online', 'Microsoft David Online'];
+        let best = null;
+        for (const name of preferred) {
+          best = voices.find(v => v.name.includes(name));
+          if (best) break;
         }
+        // Compact(저품질) 제외, en-US 우선
+        if (!best) best = voices.find(v => v.lang === 'en-US' && !v.name.toLowerCase().includes('compact'));
+        if (!best) best = voices.find(v => v.lang === 'en-US');
+        if (best) utterance.voice = best;
       }
-      return null;
-    } catch (e) {
-      console.error(`Error fetching definition for ${word}:`, e);
-      return null;
+      window.speechSynthesis.speak(utterance);
+    };
+
+    // iOS는 getVoices()가 처음엔 빈 배열 → voiceschanged 후 재시도
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      _setVoiceAndSpeak();
+    } else {
+      window.speechSynthesis.addEventListener('voiceschanged', _setVoiceAndSpeak, { once: true });
+      // voiceschanged가 발생 안 할 경우 대비 폴백
+      setTimeout(() => { if (!utterance.voice) window.speechSynthesis.speak(utterance); }, 300);
     }
+    // ✅ [끝]
+
+    // 5. 아이콘 상태 (this = app)
+    if (typeof app !== 'undefined' && app.state) app.state.isSpeaking = true;
+    if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(true);
+    utterance.onend = () => {
+      if (typeof app !== 'undefined') app.state.isSpeaking = false;
+      if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(false);
+    };
+    utterance.onerror = () => {
+      if (typeof app !== 'undefined') app.state.isSpeaking = false;
+      if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(false);
+    };
   },
+    
+    async copyToClipboard(text) {
+        if (navigator.clipboard && text) {
+            try { await navigator.clipboard.writeText(text); }
+            catch (err) { console.warn("Clipboard write failed:", err); }
+        }
+    },
+    async fetchDefinition(word) {
+        if (!word) return null;
+        const apiKey = app.config.MERRIAM_WEBSTER_API_KEY;
+        const url = `https://dictionaryapi.com/api/v3/references/learners/json/${encodeURIComponent(word)}?key=${apiKey}`;
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                console.warn(`Definition fetch failed for ${word}: Status ${response.status}`);
+                return null;
+            }
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+                const firstResult = data[0];
+                if (typeof firstResult === 'object' && firstResult !== null && firstResult.shortdef && Array.isArray(firstResult.shortdef) && firstResult.shortdef.length > 0) {
+                    return firstResult.shortdef[0].split(';')[0].trim();
+                }
+            }
+            return null;
+        } catch (e) {
+            console.error(`Error fetching definition for ${word}:`, e);
+            return null;
+        }
+    },
     async checkPermission(email) {
         const rtdbKey = email.toLowerCase().replace(/\./g, '_');
         const rtdbRef = ref(rt_db, `roster/${rtdbKey}`);
@@ -2969,9 +2929,3 @@ function levenshteinDistance(a = '', b = '') {
     }
     return track[b.length][a.length];
 }
-
-
-
-
-
-
