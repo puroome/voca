@@ -922,7 +922,7 @@ const api = {
           best = highQ;
         } else {
           // 없으면 기존 순서: Compact 제외 우선
-          const preferred = ['Samantha', 'Google US English', 'Microsoft Aria', 'Microsoft David'];
+          const preferred = ['Samantha', 'Ava', 'Allison', 'Nicky', 'Google US English', 'Microsoft Aria', 'Microsoft David'];
           for (const name of preferred) {
             best = enVoices.find(v => v.name.includes(name) && !v.name.toLowerCase().includes('compact'));
             if (best) break;
@@ -936,15 +936,35 @@ const api = {
       window.speechSynthesis.speak(utterance);
     };
 
-    // iOS는 getVoices()가 처음엔 빈 배열 → voiceschanged 후 재시도
-    const voices = window.speechSynthesis.getVoices();
-    if (voices.length > 0) {
-      _setVoiceAndSpeak();
-    } else {
-      window.speechSynthesis.addEventListener('voiceschanged', _setVoiceAndSpeak, { once: true });
-      // voiceschanged가 발생 안 할 경우 대비 폴백
-      setTimeout(() => { if (!utterance.voice) window.speechSynthesis.speak(utterance); }, 300);
-    }
+            // iOS: getVoices 비동기 로드 + voiceschanged 불안정 → 폴링으로 보완
+        const initialVoices = window.speechSynthesis.getVoices();
+        if (initialVoices.length > 0) {
+            setVoiceAndSpeak();
+        } else {
+            let spoken = false;
+            const safeSpeak = () => {
+                if (spoken) return;
+                const v = window.speechSynthesis.getVoices();
+                if (v.length > 0) {
+                    spoken = true;
+                    setVoiceAndSpeak();
+                }
+            };
+            window.speechSynthesis.addEventListener('voiceschanged', safeSpeak, { once: true });
+            // voiceschanged 미발화 대비: 100ms 간격 폴링, 최대 1.5초 대기
+            let pollCount = 0;
+            const pollId = setInterval(() => {
+                pollCount++;
+                safeSpeak();
+                if (spoken || pollCount >= 15) {
+                    clearInterval(pollId);
+                    if (!spoken) { // 최후 폴백
+                        spoken = true;
+                        window.speechSynthesis.speak(utterance);
+                    }
+                }
+            }, 100);
+        }
     // ✅ [끝]
 
     // 5. 아이콘 상태 (this = app)
