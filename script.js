@@ -909,19 +909,16 @@ const api = {
     utterance.rate = 1.0;
 
     // ✅ [추가] iOS 포함 전 플랫폼 최적 음성 선택 (고품질 우선)
-                    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
         const setVoiceAndSpeak = () => {
             const voices = window.speechSynthesis.getVoices();
             if (voices.length === 0) return;
-            const enVoices = voices.filter(v => v.lang === 'en-US' || v.lang.startsWith('en-US'));
+            const enVoices = voices.filter(v => v.lang === 'en-US' || v.lang.startsWith('en-US') || v.lang.startsWith('en'));
             const quality = ['Premium', 'Enhanced', 'High Quality', '고품질', '향상됨', '프리미엄'];
             const highQ = enVoices.find(v => quality.some(q => v.name.includes(q)));
             let best = null;
             if (highQ) {
                 best = highQ;
-            } else if (!isIOS) {
+            } else {
                 const preferred = ['Samantha', 'Google US English', 'Microsoft Aria', 'Microsoft David'];
                 for (const name of preferred) {
                     best = enVoices.find(v => v.name.includes(name) && !v.name.toLowerCase().includes('compact'));
@@ -931,7 +928,7 @@ const api = {
                 if (!best) best = enVoices[0];
             }
             if (best) utterance.voice = best;
-            app.showToast(best?.name ?? (isIOS ? 'iOS 시스템 기본 음성' : '...'), false);
+            app.showToast(best?.name ?? '...', false);
             window.speechSynthesis.speak(utterance);
         };
 
