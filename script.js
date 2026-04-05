@@ -909,12 +909,12 @@ const api = {
     utterance.rate = 1.0;
 
     // ✅ [추가] iOS 포함 전 플랫폼 최적 음성 선택 (고품질 우선)
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
         const setVoiceAndSpeak = () => {
             const voices = window.speechSynthesis.getVoices();
-            if (voices.length === 0) { ... 생략(원본유지) }
+            if (voices.length === 0) return;
             const enVoices = voices.filter(v => v.lang === 'en-US' || v.lang.startsWith('en-US'));
             const quality = ['Premium', 'Enhanced', 'High Quality', '고품질', '향상됨', '프리미엄'];
             const highQ = enVoices.find(v => quality.some(q => v.name.includes(q)));
@@ -922,8 +922,7 @@ const api = {
             if (highQ) {
                 best = highQ;
             } else if (!isIOS) {
-                // iOS는 voice 미설정 → 시스템 기본(고품질) 자동 사용
-                const preferred = ['Samantha', 'Ava', 'Allison', 'Nicky', 'Google US English', 'Microsoft Aria', 'Microsoft David'];
+                const preferred = ['Samantha', 'Google US English', 'Microsoft Aria', 'Microsoft David'];
                 for (const name of preferred) {
                     best = enVoices.find(v => v.name.includes(name) && !v.name.toLowerCase().includes('compact'));
                     if (best) break;
@@ -936,17 +935,15 @@ const api = {
             window.speechSynthesis.speak(utterance);
         };
 
-    // iOS는 getVoices()가 처음엔 빈 배열 → voiceschanged 후 재시도
-    const voices = window.speechSynthesis.getVoices();
-    if (voices.length > 0) {
-      _setVoiceAndSpeak();
-    } else {
-      window.speechSynthesis.addEventListener('voiceschanged', _setVoiceAndSpeak, { once: true });
-      // voiceschanged가 발생 안 할 경우 대비 폴백
-              setTimeout(() => {
-            if (!utterance.voice) setVoiceAndSpeak();
-        }, 500);
-    }
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+            setVoiceAndSpeak();
+        } else {
+            window.speechSynthesis.addEventListener('voiceschanged', setVoiceAndSpeak, { once: true });
+            setTimeout(() => {
+                if (!utterance.voice) setVoiceAndSpeak();
+            }, 500);
+        }
     // ✅ [끝]
 
     // 5. 아이콘 상태 (this = app)
