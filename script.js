@@ -914,36 +914,45 @@ const api = {
                 if (voices.length === 0) return;
                 const enVoices = voices.filter(v => v.lang === 'en-US' || v.lang.startsWith('en-US') || v.lang.startsWith('en'));
                 
-                // 1. 소문자 검색 추가 및 voiceURI 검사 추가 (iOS 대응)
+                // 1. 고품질 음성 찾기
                 const quality = ['premium', 'enhanced', 'high quality', '고품질', '향상됨', '프리미엄'];
-                const highQ = enVoices.find(v => 
+                let best = enVoices.find(v => 
                     quality.some(q => 
                         v.name.toLowerCase().includes(q) || 
                         (v.voiceURI && v.voiceURI.toLowerCase().includes(q))
                     )
                 );
                 
-                let best = null;
-                if (highQ) {
-                    best = highQ;
-                } else {
-                    // 2. iOS에서 가장 자연스러운 Alex, Siri 추가 (Samantha는 후순위로 배치)
-                    const preferred = ['Alex', 'Siri', 'Google US English', 'Microsoft Aria', 'Samantha', 'Microsoft David'];
+                if (!best) {
+                    // 2. 선호하는 기본 음성 먼저 확인 (Compact 제외)
+                    const preferred = ['Alex', 'Siri', 'Victoria', 'Karen', 'Samantha', 'Google US English', 'Microsoft Aria', 'Microsoft David'];
                     for (const name of preferred) {
                         best = enVoices.find(v => 
-                            v.name.includes(name) && 
+                            v.name.toLowerCase().includes(name.toLowerCase()) && 
                             !v.name.toLowerCase().includes('compact') &&
                             (!v.voiceURI || !v.voiceURI.toLowerCase().includes('compact'))
                         );
                         if (best) break;
                     }
-                    // 3. 그래도 없으면 compact가 아닌 다른 음성 찾기
-                    if (!best) best = enVoices.find(v => 
-                        !v.name.toLowerCase().includes('compact') &&
-                        (!v.voiceURI || !v.voiceURI.toLowerCase().includes('compact'))
-                    );
+                    
+                    // 3. [핵심 수정] 위에서 못 찾았다면, 저음질(Compact)이더라도 익숙한 선호 음성(Samantha 등)을 최우선으로 선택
+                    if (!best) {
+                        for (const name of preferred) {
+                            best = enVoices.find(v => v.name.toLowerCase().includes(name.toLowerCase()));
+                            if (best) break;
+                        }
+                    }
+
+                    // 4. 그래도 없다면, 특정 튀는 목소리(Rocko, Bubbles 등)를 제외한 평범한 음성 찾기
+                    if (!best) {
+                        const weirdVoices = ['rocko', 'shelley', 'sandy', 'eddy', 'flo', 'reed', 'grandma', 'grandpa', 'bubbles', 'bells', 'boing', 'trinoids', 'whisper', 'zarvox', 'cellos'];
+                        best = enVoices.find(v => !weirdVoices.some(w => v.name.toLowerCase().includes(w)));
+                    }
+
+                    // 5. 최후의 보루
                     if (!best) best = enVoices[0];
                 }
+                
                 if (best) utterance.voice = best;
                 app.showToast(best?.name ?? '...', false);
                 window.speechSynthesis.speak(utterance);
