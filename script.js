@@ -908,29 +908,46 @@ const api = {
     utterance.lang = 'en-US';
     utterance.rate = 1.0;
 
-    // ✅ [추가] iOS 포함 전 플랫폼 최적 음성 선택 (고품질 우선)
-        const setVoiceAndSpeak = () => {
-            const voices = window.speechSynthesis.getVoices();
-            if (voices.length === 0) return;
-            const enVoices = voices.filter(v => v.lang === 'en-US' || v.lang.startsWith('en-US') || v.lang.startsWith('en'));
-            const quality = ['Premium', 'Enhanced', 'High Quality', '고품질', '향상됨', '프리미엄'];
-            const highQ = enVoices.find(v => quality.some(q => v.name.includes(q)));
-            let best = null;
-            if (highQ) {
-                best = highQ;
-            } else {
-                const preferred = ['Samantha', 'Google US English', 'Microsoft Aria', 'Microsoft David'];
-                for (const name of preferred) {
-                    best = enVoices.find(v => v.name.includes(name) && !v.name.toLowerCase().includes('compact'));
-                    if (best) break;
+// ✅ [추가] iOS 포함 전 플랫폼 최적 음성 선택 (고품질 우선)
+            const setVoiceAndSpeak = () => {
+                const voices = window.speechSynthesis.getVoices();
+                if (voices.length === 0) return;
+                const enVoices = voices.filter(v => v.lang === 'en-US' || v.lang.startsWith('en-US') || v.lang.startsWith('en'));
+                
+                // 1. 소문자 검색 추가 및 voiceURI 검사 추가 (iOS 대응)
+                const quality = ['premium', 'enhanced', 'high quality', '고품질', '향상됨', '프리미엄'];
+                const highQ = enVoices.find(v => 
+                    quality.some(q => 
+                        v.name.toLowerCase().includes(q) || 
+                        (v.voiceURI && v.voiceURI.toLowerCase().includes(q))
+                    )
+                );
+                
+                let best = null;
+                if (highQ) {
+                    best = highQ;
+                } else {
+                    // 2. iOS에서 가장 자연스러운 Alex, Siri 추가 (Samantha는 후순위로 배치)
+                    const preferred = ['Alex', 'Siri', 'Google US English', 'Microsoft Aria', 'Samantha', 'Microsoft David'];
+                    for (const name of preferred) {
+                        best = enVoices.find(v => 
+                            v.name.includes(name) && 
+                            !v.name.toLowerCase().includes('compact') &&
+                            (!v.voiceURI || !v.voiceURI.toLowerCase().includes('compact'))
+                        );
+                        if (best) break;
+                    }
+                    // 3. 그래도 없으면 compact가 아닌 다른 음성 찾기
+                    if (!best) best = enVoices.find(v => 
+                        !v.name.toLowerCase().includes('compact') &&
+                        (!v.voiceURI || !v.voiceURI.toLowerCase().includes('compact'))
+                    );
+                    if (!best) best = enVoices[0];
                 }
-                if (!best) best = enVoices.find(v => !v.name.toLowerCase().includes('compact'));
-                if (!best) best = enVoices[0];
-            }
-            if (best) utterance.voice = best;
-            app.showToast(best?.name ?? '...', false);
-            window.speechSynthesis.speak(utterance);
-        };
+                if (best) utterance.voice = best;
+                app.showToast(best?.name ?? '...', false);
+                window.speechSynthesis.speak(utterance);
+            };
 
         const voices = window.speechSynthesis.getVoices();
         if (voices.length > 0) {
