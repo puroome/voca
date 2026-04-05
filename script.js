@@ -954,7 +954,7 @@ const api = {
                 }
                 
                 if (best) utterance.voice = best;
-                app.showToast(best?.name ?? '...', false);
+                console.log('[TTS] 선택된 음성:', best?.name ?? '기본값');
                 window.speechSynthesis.speak(utterance);
             };
 
