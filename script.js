@@ -170,9 +170,11 @@ const app = {
         // [보안 수정] 1. 앱 초기화 시 보안 키값을 먼저 불러옵니다.
         await this.loadSecureKeys();
 
-                await Promise.all([translationDBCache.init(), audioDBCache.init(), this.fetchAndSetBackgroundImages()])
-            .catch(e => console.error('Cache or image init failed', e));
-        api._initTTSVoices();   // ← 추가: TTS 음성 목록 사전 로드 (iOS 개선)
+        await Promise.all([
+            translationDBCache.init(),
+            audioDBCache.init(),
+            this.fetchAndSetBackgroundImages()
+        ]).catch(e => console.error("Cache or image init failed", e));
         this.bindGlobalEvents();
         quizMode.init();
         learningMode.init();
@@ -891,114 +893,62 @@ const api = {
     // [보안] 기존에 있던 API Key 관련 변수는 이제 필요 없으므로 비워둡니다.
     geminiApiKey: '',
 
-    // ─── TTS 음성 초기화 (앱 시작 시 1회 호출) ───────────────────────────
-    _ttsVoices: [],
-    _initTTSVoices() {
-        const load = () => {
-            const v = window.speechSynthesis?.getVoices();
-            if (v?.length) this._ttsVoices = v;
-        };
-        load();
-        if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = load;
-    },
+// [최종 수정] OS 상관없이 무조건 무료! + 오류 방지 적용
+      async speak(text) {
+    if (!text) return;
+    // 1. 활동 감지
+    if (typeof activityTracker !== 'undefined') activityTracker.recordActivity();
+    // 2. sb -> somebody
+    const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
+    // 3. TTS 지원 확인
+    if (!window.speechSynthesis) { console.warn('TTS 지원 안 됨'); return; }
+    // 4. 발화
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(processedText);
+    utterance.lang = 'en-US';
+    utterance.rate = 1.0;
 
-    // ─── iOS: Eloquence > Enhanced > non-compact 순 우선 선택 ─────────────
-    _getBestEnglishVoice() {
-        const voices = this._ttsVoices.length
-            ? this._ttsVoices
-            : (window.speechSynthesis?.getVoices() || []);
-        const en = voices.filter(v => v.lang.startsWith('en'));
-        if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-            // iOS 16+ 신경망 음성 (최고 품질)
-            const eloquence = en.find(v => /eloquence/i.test(v.voiceURI || v.name));
-            if (eloquence) return eloquence;
-            // Enhanced / Premium 음성
-            const enhanced = en.find(v => /enhanced|premium/i.test(v.voiceURI || v.name));
-            if (enhanced) return enhanced;
-            // compact가 아닌 en-US 음성
-            const nonCompact = en.find(
-                v => v.lang === 'en-US' && !/compact/i.test(v.voiceURI || v.name)
-            );
-            if (nonCompact) return nonCompact;
+    // ✅ [추가] iOS 포함 전 플랫폼 최적 음성 선택
+    const _setVoiceAndSpeak = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        const preferred = ['Samantha', 'Google US English', 'Microsoft Aria Online', 'Microsoft David Online'];
+        let best = null;
+        for (const name of preferred) {
+          best = voices.find(v => v.name.includes(name));
+          if (best) break;
         }
-        return en.find(v => v.lang === 'en-US') || en[0] || null;
-    },
+        // Compact(저품질) 제외, en-US 우선
+        if (!best) best = voices.find(v => v.lang === 'en-US' && !v.name.toLowerCase().includes('compact'));
+        if (!best) best = voices.find(v => v.lang === 'en-US');
+        if (best) utterance.voice = best;
+      }
+      window.speechSynthesis.speak(utterance);
+    };
 
-    // ─── TTS 재생 (iOS: Google TTS 고품질 → Web Speech API 폴백) ─────────
-    async speak(text) {
-        if (!text) return;
-        // 1. 활동 기록
-        if (typeof activityTracker !== 'undefined') activityTracker.recordActivity();
-        activityTracker.recordActivity();
-        // 2. sb → somebody
-        const processedText = text.replace(/\bsb\b/g, 'somebody').replace(/\bsth\b/g, 'something');
+    // iOS는 getVoices()가 처음엔 빈 배열 → voiceschanged 후 재시도
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      _setVoiceAndSpeak();
+    } else {
+      window.speechSynthesis.addEventListener('voiceschanged', _setVoiceAndSpeak, { once: true });
+      // voiceschanged가 발생 안 할 경우 대비 폴백
+      setTimeout(() => { if (!utterance.voice) window.speechSynthesis.speak(utterance); }, 300);
+    }
+    // ✅ [끝]
 
-        const _setSpeaking = (val) => {
-            if (typeof app !== 'undefined' && app.state) {
-                app.state.isSpeaking = val;
-                if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(val);
-            }
-        };
-
-        // ── iOS: Google Translate TTS로 고품질 발음 재생 ──────────────────
-        if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-            const cacheKey = 'gtts_v1_' + processedText;
-
-            // IndexedDB 캐시 확인
-            const cached = await audioDBCache.getAudio(cacheKey);
-            if (cached) {
-                const blob = new Blob([cached], { type: 'audio/mpeg' });
-                const url = URL.createObjectURL(blob);
-                const audio = new Audio(url);
-                _setSpeaking(true);
-                audio.onended = () => { _setSpeaking(false); URL.revokeObjectURL(url); };
-                audio.onerror  = () => { _setSpeaking(false); URL.revokeObjectURL(url); };
-                audio.play().catch(() => _setSpeaking(false));
-                return;
-            }
-
-            const gttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(processedText)}&tl=en-US&client=tw-ob`;
-            try {
-                // fetch 성공 시 → ArrayBuffer 캐시 후 재생
-                const res = await fetch(gttsUrl);
-                if (res.ok) {
-                    const buf = await res.arrayBuffer();
-                    audioDBCache.saveAudio(cacheKey, buf);
-                    const blob = new Blob([buf], { type: 'audio/mpeg' });
-                    const url = URL.createObjectURL(blob);
-                    const audio = new Audio(url);
-                    _setSpeaking(true);
-                    audio.onended = () => { _setSpeaking(false); URL.revokeObjectURL(url); };
-                    audio.onerror  = () => { _setSpeaking(false); URL.revokeObjectURL(url); };
-                    audio.play().catch(() => _setSpeaking(false));
-                    return;
-                }
-            } catch (_) {
-                // CORS 등 fetch 실패 → Audio 태그로 직접 재생(캐시 없음, 그래도 고품질)
-                try {
-                    const audio = new Audio(gttsUrl);
-                    _setSpeaking(true);
-                    audio.onended = () => _setSpeaking(false);
-                    audio.onerror  = () => _setSpeaking(false);
-                    await audio.play();
-                    return;
-                } catch (_2) { /* 완전 실패 → Web Speech API 폴백 */ }
-            }
-        }
-
-        // ── Android / Windows / iOS 최후 폴백: Web Speech API ─────────────
-        if (!window.speechSynthesis) { console.warn('TTS를 지원하지 않는 환경입니다.'); return; }
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(processedText);
-        utterance.lang = 'en-US';
-        utterance.rate = 1.0;
-        const voice = this._getBestEnglishVoice();
-        if (voice) utterance.voice = voice;
-        _setSpeaking(true);
-        utterance.onend  = () => _setSpeaking(false);
-        utterance.onerror = () => _setSpeaking(false);
-        window.speechSynthesis.speak(utterance);
-    },
+    // 5. 아이콘 상태 (this = app)
+    if (typeof app !== 'undefined' && app.state) app.state.isSpeaking = true;
+    if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(true);
+    utterance.onend = () => {
+      if (typeof app !== 'undefined') app.state.isSpeaking = false;
+      if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(false);
+    };
+    utterance.onerror = () => {
+      if (typeof app !== 'undefined') app.state.isSpeaking = false;
+      if (typeof app.updateSpeakerIcon === 'function') app.updateSpeakerIcon(false);
+    };
+  },
     
     async copyToClipboard(text) {
         if (navigator.clipboard && text) {
