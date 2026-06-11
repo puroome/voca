@@ -90,10 +90,7 @@ const app = {
             '2y': 'https://docs.google.com/spreadsheets/d/1Xydj0im3Cqq9JhjN8IezZ-7DBp1-DV703cCIb3ORdc8/edit?usp=sharing',
             '3y': 'https://docs.google.com/spreadsheets/d/1Z_n9IshFSC5cBBW6IkZNfQsLb2BBrp9QeOlsGsCkn2Y/edit?usp=sharing'
         },
-        backgroundImages: [
-            'https://res.cloudinary.com/dx07dymqs/image/upload/v1761528368/bg1_mpvyd4.webp',
-            'https://res.cloudinary.com/dx07dymqs/image/upload/v1761528368/bg2_e90yys.webp'
-        ],
+        backgroundImages: [],
         adminEmail: ['puroome@gmail.com', 'puroome82@gmail.com']
     },
     state: {
