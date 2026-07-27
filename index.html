@@ -9,8 +9,7 @@
     <link rel="manifest" href="manifest.json">
     
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20260726-1">
     <style>
         .grade-select-card:hover .grade-tooltip {
             opacity: 1;
@@ -92,8 +91,9 @@
                     <path d="M4.2 8.1 H19.8 V10.6 H4.2 Z M8.1 4.2 H10.6 V19.8 H8.1 Z" fill="white"></path>
                 </svg>
             </a>
-            <h1 id="selection-title" class="text-3xl font-bold text-gray-800 mb-2 mt-4"></h1>
-            <p class="text-gray-600 mb-8">원하는 학습 방식을 선택하세요.</p>
+             <h1 id="selection-title" class="text-3xl font-bold text-gray-800 mb-2 mt-4"></h1>
+             <p class="text-gray-600 mb-2">원하는 학습 방식을 선택하세요.</p>
+             <p id="today-summary" class="text-sm text-gray-500 mb-8">오늘의 학습 기록을 불러오는 중...</p>
             
             <div class="inline-block">
                 <div class="flex flex-col sm:flex-row justify-center items-center sm:gap-x-6 gap-y-4">
@@ -167,24 +167,30 @@
                 <h1 class="text-2xl font-bold text-gray-800 mb-6">퀴즈 유형</h1>
                 <div class="text-gray-600 mb-8">
                     <p>원하는 퀴즈 유형과 범위를 선택하세요.</p>
-                    <div class="flex justify-center items-center mt-3 text-base font-semibold">
+                     <div class="flex justify-center items-center mt-3 text-base font-semibold">
                         <span id="quiz-range-label" class="mr-1 cursor-pointer">🔒출제범위 :</span>
                         <button id="quiz-range-start" data-min="1" data-max="1"
                                 class="min-w-[1.5rem] text-center font-bold text-white bg-red-500 bg-opacity-30 hover:bg-opacity-60 rounded-md px-0.5 py-0.5 transition-colors">1</button>
                         <span class="mx-1">-</span>
-                        <button id="quiz-range-end" data-min="1" data-max="1"
-                                class="min-w-[1.5rem] text-center font-bold text-white bg-red-500 bg-opacity-30 hover:bg-opacity-60 rounded-md px-0.5 py-0.5 transition-colors">1</button>
-                    </div>
-                </div>
+                         <button id="quiz-range-end" data-min="1" data-max="1"
+                                 class="min-w-[1.5rem] text-center font-bold text-white bg-red-500 bg-opacity-30 hover:bg-opacity-60 rounded-md px-0.5 py-0.5 transition-colors">1</button>
+                     </div>
+                     <div class="flex justify-center items-center gap-2 mt-4">
+                         <button class="mixed-type-btn w-9 h-9 rounded-lg border-2 border-gray-300 bg-white text-gray-600 font-bold transition-colors" data-quiz-type="MULTIPLE_CHOICE_MEANING" aria-pressed="false" title="영한 퀴즈">1</button>
+                         <button class="mixed-type-btn w-9 h-9 rounded-lg border-2 border-gray-300 bg-white text-gray-600 font-bold transition-colors" data-quiz-type="FILL_IN_THE_BLANK" aria-pressed="false" title="빈칸 퀴즈">2</button>
+                         <button class="mixed-type-btn w-9 h-9 rounded-lg border-2 border-gray-300 bg-white text-gray-600 font-bold transition-colors" data-quiz-type="MULTIPLE_CHOICE_DEFINITION" aria-pressed="false" title="영영 퀴즈">3</button>
+                         <button id="start-mixed-quiz-btn" class="ml-1 font-bold h-9 px-4 rounded-lg transition-colors">MIX</button>
+                     </div>
+                 </div>
                 <div class="grid grid-cols-3 justify-center items-center gap-3 sm:gap-4 w-full mx-auto">
                     <div id="start-meaning-quiz-btn" class="relative cursor-pointer overflow-hidden rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:-rotate-2 w-full aspect-[4/5]">
-                        <img src="images/quiz1.png" alt="뜻 맞히기 이미지" class="w-full h-full object-cover">
+                        <img src="images/quiz1.webp" alt="뜻 맞히기 이미지" class="w-full h-full object-cover">
                     </div>
                     <div id="start-blank-quiz-btn" class="relative cursor-pointer overflow-hidden rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 w-full aspect-[4/5]">
-                        <img src="images/quiz2.png" alt="빈칸 채우기 이미지" class="w-full h-full object-cover">
+                        <img src="images/quiz2.webp" alt="빈칸 채우기 이미지" class="w-full h-full object-cover">
                     </div>
                     <div id="start-definition-quiz-btn" class="relative cursor-pointer overflow-hidden rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:rotate-2 w-full aspect-[4/5]">
-                        <img src="images/quiz3.png" alt="영영풀이 퀴즈 이미지" class="w-full h-full object-cover">
+                        <img src="images/quiz3.webp" alt="영영풀이 퀴즈 이미지" class="w-full h-full object-cover">
                     </div>
                 </div>
             </div>
@@ -319,6 +325,23 @@
             </div>
         </div>
     </div>
+    <div id="mistake-mode-modal" class="hidden fixed inset-0 bg-black/50 z-[250] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl p-7 text-center w-full max-w-sm content-panel">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">오답 노트</h2>
+            <p id="mistake-mode-count" class="text-gray-500 mb-6"></p>
+            <div class="grid grid-cols-2 gap-3">
+                <button id="mistake-vocab-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-3 rounded-xl">
+                    <span class="block text-xl mb-1">어휘카드</span>
+                    <span class="block text-xs font-normal opacity-90">틀린 단어 전체 학습</span>
+                </button>
+                <button id="mistake-quiz-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 px-3 rounded-xl">
+                    <span class="block text-xl mb-1">퀴즈카드</span>
+                    <span class="block text-xs font-normal opacity-90">틀린 유형만 다시 풀기</span>
+                </button>
+            </div>
+            <button id="mistake-mode-cancel-btn" class="mt-4 w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg">취소</button>
+        </div>
+    </div>
     
     <!-- New Permission Modals Start -->
 <div id="permission-request-modal" class="hidden fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[300]">
@@ -347,17 +370,25 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
         import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
         
         window.firebaseSDK = {
             initializeApp,
             getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup,
             getDatabase, ref, get, set,
-            getFirestore, doc, getDoc, setDoc, updateDoc,
+            getFirestore, doc, getDoc, setDoc, updateDoc, increment,
         };
         document.dispatchEvent(new Event('firebaseSDKLoaded'));
     </script>
+    <script src="stats-store.js"></script>
     <script src="script.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/services.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/dashboard.js"></script>
+    <script src="js/quiz.js"></script>
+    <script src="js/learning.js"></script>
 
     <script>
       if ('serviceWorker' in navigator) {
