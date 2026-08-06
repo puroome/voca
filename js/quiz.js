@@ -751,7 +751,8 @@ if (quizType === 'FILL_IN_THE_BLANK') {
             .replace(/&#39;/gi, "'")
             .replace(/&amp;/gi, '&')
             .replace(/\u00a0/g, ' ');
-        return (plainText.split(/\r\n?|\n/, 1)[0] || '').trim();
+        const firstLine = (plainText.split(/\r\n?|\n/, 1)[0] || '').trim();
+        return firstLine.replace(/[,;:，；：]+\s*$/, '').trimEnd();
     },
     createBlankQuiz(correctWordData, allWordsData) {
         if (!correctWordData.sample || correctWordData.sample.trim() === '') return null;
