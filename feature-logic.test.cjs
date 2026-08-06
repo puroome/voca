@@ -122,6 +122,30 @@ assert.deepEqual(
     ['correct-meaning', 'exact-meaning', 'overlap-meaning', 'superset-meaning'].sort()
 );
 
+const multilineMeaningCorrect = {
+    word: 'multiline-target',
+    meaning: '<b>1. 정답</b>\n2. 정답의 둘째 뜻',
+    pos: 'n'
+};
+const multilineMeaningCandidates = [
+    { word: 'same-first-line', meaning: '<i>1. 정답</i><br>2. 중복 오답', pos: 'n' },
+    { word: 'wrong-b', meaning: '1. 오답 B<br>2. B의 둘째 뜻', pos: 'n' },
+    { word: 'wrong-c', meaning: '1. 오답 C\n2. C의 둘째 뜻', pos: 'n' },
+    { word: 'wrong-d', meaning: '<div>1. 오답 D</div><div>2. D의 둘째 뜻</div>', pos: 'n' }
+];
+const multilineMeaningQuiz = quizMode.createMeaningQuiz(
+    multilineMeaningCorrect,
+    [multilineMeaningCorrect, ...multilineMeaningCandidates]
+);
+assert.equal(multilineMeaningQuiz.answer, '1. 정답');
+assert.deepEqual(
+    JSON.parse(JSON.stringify([...multilineMeaningQuiz.choices].sort())),
+    ['1. 정답', '1. 오답 B', '1. 오답 C', '1. 오답 D'].sort()
+);
+assert.equal(new Set(multilineMeaningQuiz.choices).size, 4);
+assert.equal(multilineMeaningCorrect.meaning, '<b>1. 정답</b>\n2. 정답의 둘째 뜻');
+console.log('PASS 영한 퀴즈는 원본 뜻을 유지하면서 첫 줄만 사용하고 중복 오답을 제외한다');
+
 const blankQuiz = quizMode.createBlankQuiz(posCorrect, [posCorrect, ...posCandidates]);
 const definitionQuiz = quizMode.createDefinitionQuiz(
     posCorrect,
