@@ -699,14 +699,17 @@ if (quizType === 'FILL_IN_THE_BLANK') {
         tiers.forEach(tier => utils.shuffleArray(tier));
         return tiers.flat();
     },
-    _selectDistractorsByPos(correctWordData, allWordsData, choiceField) {
-        const correctChoice = correctWordData[choiceField];
+    _selectDistractorsByPos(correctWordData, allWordsData, choiceField, choiceSelector = null) {
+        const readChoice = choiceSelector || ((wordData) => wordData[choiceField]);
+        const correctChoice = readChoice(correctWordData);
+        if (!correctChoice || !String(correctChoice).trim()) return [];
+
         const wrongAnswers = new Set();
         const rankedCandidates = this._rankDistractorCandidatesByPos(correctWordData, allWordsData);
 
         for (const candidate of rankedCandidates) {
-            const choice = candidate[choiceField];
-            if (!choice || choice === correctChoice || wrongAnswers.has(choice)) continue;
+            const choice = readChoice(candidate);
+            if (!choice || !String(choice).trim() || choice === correctChoice || wrongAnswers.has(choice)) continue;
             wrongAnswers.add(choice);
             if (wrongAnswers.size === 3) break;
         }
@@ -714,17 +717,41 @@ if (quizType === 'FILL_IN_THE_BLANK') {
         return [...wrongAnswers];
     },
     createMeaningQuiz(correctWordData, allWordsData) {
-        const wrongAnswers = this._selectDistractorsByPos(correctWordData, allWordsData, 'meaning');
+        const getFirstMeaningLine = (wordData) => this._getFirstMeaningLine(wordData.meaning);
+        const correctMeaning = getFirstMeaningLine(correctWordData);
+        if (!correctMeaning) return null;
+
+        const wrongAnswers = this._selectDistractorsByPos(
+            correctWordData,
+            allWordsData,
+            'meaning',
+            getFirstMeaningLine
+        );
         if (wrongAnswers.length < 3) return null;
 
-        const choices = [correctWordData.meaning, ...wrongAnswers];
+        const choices = [correctMeaning, ...wrongAnswers];
         utils.shuffleArray(choices);
         return {
             type: 'MULTIPLE_CHOICE_MEANING',
             question: { word: correctWordData.word },
             choices,
-            answer: correctWordData.meaning
+            answer: correctMeaning
         };
+    },
+    // 원본 meaning은 유지하고 영한 퀴즈 보기에서만 첫 줄의 일반 텍스트를 사용한다.
+    _getFirstMeaningLine(meaning) {
+        const plainText = String(meaning ?? '')
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/(?:div|p)>/gi, '\n')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/&lt;/gi, '<')
+            .replace(/&gt;/gi, '>')
+            .replace(/&quot;/gi, '"')
+            .replace(/&#39;/gi, "'")
+            .replace(/&amp;/gi, '&')
+            .replace(/\u00a0/g, ' ');
+        return (plainText.split(/\r\n?|\n/, 1)[0] || '').trim();
     },
     createBlankQuiz(correctWordData, allWordsData) {
         if (!correctWordData.sample || correctWordData.sample.trim() === '') return null;
