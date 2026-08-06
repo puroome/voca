@@ -146,6 +146,12 @@ assert.equal(new Set(multilineMeaningQuiz.choices).size, 4);
 assert.equal(multilineMeaningCorrect.meaning, '<b>1. 정답</b>\n2. 정답의 둘째 뜻');
 console.log('PASS 영한 퀴즈는 원본 뜻을 유지하면서 첫 줄만 사용하고 중복 오답을 제외한다');
 
+assert.equal(quizMode._getFirstMeaningLine('크고, 아름답다,  \n둘째 뜻'), '크고, 아름답다');
+assert.equal(quizMode._getFirstMeaningLine('<b>첫째 뜻，</b><br>둘째 뜻'), '첫째 뜻');
+assert.equal(quizMode._getFirstMeaningLine('원인: 결과;  \n둘째 뜻'), '원인: 결과');
+assert.equal(quizMode._getFirstMeaningLine('<i>첫째 뜻；：</i><br>둘째 뜻'), '첫째 뜻');
+console.log('PASS 영한 퀴즈는 첫 줄 끝 쉼표·세미콜론·콜론만 제거하고 중간 기호는 유지한다');
+
 const blankQuiz = quizMode.createBlankQuiz(posCorrect, [posCorrect, ...posCandidates]);
 const definitionQuiz = quizMode.createDefinitionQuiz(
     posCorrect,
