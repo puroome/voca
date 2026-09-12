@@ -16,6 +16,9 @@ const learningMode = {
             startScreen: document.getElementById('learning-start-screen'),
             startInputContainer: document.getElementById('learning-start-input-container'),
             startWordInput: document.getElementById('learning-start-word-input'),
+            startTitle: document.getElementById('learning-start-title'),
+            startHint: document.getElementById('learning-start-hint'),
+            partSelect: document.getElementById('learning-part-select'),
             startBtn: document.getElementById('learning-start-btn'),
             suggestionsContainer: document.getElementById('learning-suggestions-container'),
             suggestionsTitle: document.getElementById('learning-suggestions-title'),
@@ -56,6 +59,7 @@ const learningMode = {
             e.target.value = sanitizedValue;
         });
         this.elements.backToStartBtn.addEventListener('click', () => this.resetStartScreen());
+        this.elements.partSelect.addEventListener('change', () => this.selectPart(this.elements.partSelect.value));
         this.elements.nextBtn.addEventListener('click', () => this.navigate(1));
         this.elements.prevBtn.addEventListener('click', () => this.navigate(-1));
         this.elements.sampleBtn.addEventListener('click', () => this.handleFlip());
@@ -84,78 +88,88 @@ const learningMode = {
         document.addEventListener('touchmove', this.handleProgressBarInteraction.bind(this));
         document.addEventListener('touchend', this.handleProgressBarInteraction.bind(this));
     },
-    async loadWordList(force = false, grade = app.state.selectedSheet) {
-        if (!grade) return;
-        if (!force && this.state.isWordListReady[grade]) return;
-        const cacheKey = `wordListCache_${grade}`;
-        const timestampKey = app.state.LOCAL_STORAGE_KEYS.CACHE_TIMESTAMP(grade);
-        const versionKey = app.state.LOCAL_STORAGE_KEYS.CACHE_VERSION(grade);
-        let forceRefreshDueToVersion = false;
-        if (!force) {
-            try {
-                const versionRef = ref(rt_db, `app_config/vocab_version_${grade}`);
-                const snapshot = await get(versionRef);
-                const remoteVersion = snapshot.val() || 0;
-                const localVersion = parseInt(localStorage.getItem(versionKey) || '0');
-                if (remoteVersion > localVersion) {
-                    forceRefreshDueToVersion = true;
-                }
-            } catch (e) {
-                console.error("버전 확인 중 오류 발생:", e);
-                forceRefreshDueToVersion = true;
-            }
+    // 같은 학년 목록을 여러 곳에서 동시에 부르면 진행 중인 요청 하나를 함께 기다린다(중복 요청 방지).
+    _loadingWordLists: {},
+    loadWordList(force = false, grade = app.state.selectedSheet) {
+        if (!grade) return Promise.resolve();
+        if (!force && this.state.isWordListReady[grade]) return Promise.resolve();
+        const inFlight = this._loadingWordLists[grade];
+        if (inFlight) {
+            // 강제 새로고침은 진행 중인 요청이 끝난 뒤 한 번 더 받아야 최신 버전이 확실하다.
+            return force ? inFlight.catch(() => {}).then(() => this.loadWordList(true, grade)) : inFlight;
         }
-        const shouldForceRefresh = force || forceRefreshDueToVersion;
-        if (shouldForceRefresh) {
-            try {
-                localStorage.removeItem(cacheKey);
-                localStorage.removeItem(timestampKey);
-                localStorage.removeItem(versionKey);
-            } catch(e) {}
-            this.state.isWordListReady[grade] = false;
-        }
+        const loading = this._fetchWordList(force, grade).finally(() => {
+            if (this._loadingWordLists[grade] === loading) delete this._loadingWordLists[grade];
+        });
+        this._loadingWordLists[grade] = loading;
+        return loading;
+    },
+    // 단어장은 기기에 저장해 두고 서버 버전이 더 새로울 때만 다시 받는다.
+    // 버전 확인이나 다시 받기가 실패하면(오프라인 등) 저장해 둔 단어장을 그대로 쓴다. 지워 버리면 앱을 쓸 수 없게 된다.
+    async _fetchWordList(force, grade) {
+        const keys = app.state.LOCAL_STORAGE_KEYS;
+        const cacheKey = keys.WORD_LIST_CACHE(grade);
+        const timestampKey = keys.CACHE_TIMESTAMP(grade);
+        const versionKey = keys.CACHE_VERSION(grade);
+        const applyWords = (words, timestamp) => {
+            this.state.wordList[grade] = words.sort((a, b) => a.id - b.id);
+            this.state.isWordListReady[grade] = true;
+            app.state.lastCacheTimestamp[grade] = timestamp;
+            app.updateLastUpdatedText();
+        };
+
+        let cached = null;
         try {
             const cachedData = localStorage.getItem(cacheKey);
             const savedTimestamp = localStorage.getItem(timestampKey);
-            if (!shouldForceRefresh && cachedData && savedTimestamp) {
+            if (cachedData && savedTimestamp) {
                 const { words } = JSON.parse(cachedData);
-                this.state.wordList[grade] = words.sort((a, b) => a.id - b.id);
-                this.state.isWordListReady[grade] = true;
-                app.state.lastCacheTimestamp[grade] = parseInt(savedTimestamp);
-                app.updateLastUpdatedText();
-                return;
+                if (Array.isArray(words)) cached = { words, timestamp: parseInt(savedTimestamp) };
             }
         } catch (e) {
             console.warn("Error reading or parsing word list cache:", e);
-            try {
-                localStorage.removeItem(cacheKey);
-                localStorage.removeItem(timestampKey);
-                localStorage.removeItem(versionKey);
-            } catch(e2) {}
+            utils._removeWordListCache(grade);
         }
+
+        let needsFetch = force || !cached;
+        if (!needsFetch) {
+            try {
+                const snapshot = await get(ref(rt_db, `app_config/vocab_version_${grade}`));
+                const remoteVersion = snapshot.val() || 0;
+                const localVersion = parseInt(localStorage.getItem(versionKey) || '0');
+                needsFetch = remoteVersion > localVersion;
+            } catch (e) {
+                console.warn(`버전을 확인하지 못해 저장해 둔 '${grade}' 단어장을 씁니다.`, e);
+            }
+        }
+        if (!needsFetch) {
+            applyWords(cached.words, cached.timestamp);
+            return;
+        }
+
         try {
-            const dbRef = ref(rt_db, `${grade}/vocabulary`);
-            const snapshot = await get(dbRef);
+            const snapshot = await get(ref(rt_db, `${grade}/vocabulary`));
             const data = snapshot.val();
             if (!data) throw new Error(`Firebase에 '${grade}' 단어 데이터가 없습니다.`);
-            const wordsArray = Object.values(data).sort((a, b) => a.id - b.id);
-            this.state.wordList[grade] = wordsArray;
-            this.state.isWordListReady[grade] = true;
-            const timestampRef = ref(rt_db, `app_config/vocab_timestamp_${grade}`);
-            const timestampSnapshot = await get(timestampRef);
+            const wordsArray = Object.values(data);
+            const timestampSnapshot = await get(ref(rt_db, `app_config/vocab_timestamp_${grade}`));
             const newTimestamp = timestampSnapshot.val() || Date.now();
-            const versionRef = ref(rt_db, `app_config/vocab_version_${grade}`);
-            const versionSnapshot = await get(versionRef);
+            const versionSnapshot = await get(ref(rt_db, `app_config/vocab_version_${grade}`));
             const currentRemoteVersion = versionSnapshot.val() || 1;
-            const cachePayload = { words: wordsArray };
-             try {
-                localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
-                localStorage.setItem(timestampKey, newTimestamp.toString());
-                app.state.lastCacheTimestamp[grade] = newTimestamp;
-                localStorage.setItem(versionKey, currentRemoteVersion.toString());
-                app.updateLastUpdatedText();
-             } catch(e) { console.error("Error saving word list cache:", e); }
+            applyWords(wordsArray, newTimestamp);
+            try {
+                utils.withStorageRecovery(() => {
+                    localStorage.setItem(cacheKey, JSON.stringify({ words: wordsArray }));
+                    localStorage.setItem(timestampKey, newTimestamp.toString());
+                    localStorage.setItem(versionKey, currentRemoteVersion.toString());
+                });
+            } catch (e) { console.error("Error saving word list cache:", e); }
         } catch (error) {
+            if (cached && !force) {
+                console.warn(`새 '${grade}' 단어장을 받지 못해 저장해 둔 단어장을 씁니다.`, error);
+                applyWords(cached.words, cached.timestamp);
+                return;
+            }
             this.showError(error.message);
             throw error;
         }
@@ -171,54 +185,77 @@ const learningMode = {
             this.elements.loader.classList.add('hidden');
             this.elements.startScreen.classList.remove('hidden');
             if (!this.state.isWordListReady[grade]) return;
+            this.renderPartOptions();
         }
         this.state.isMistakeMode = false;
         this.state.isFavoriteMode = false;
-        const currentWordList = this.state.wordList[grade];
+        const allWords = this.state.wordList[grade];
+        const partName = this.elements.partSelect.value;
+        const part = partName ? utils.getParts(grade).find(item => item.name === partName) : null;
+        if (partName && !part) {
+            app.showToast('선택한 Part에 어휘가 없습니다.', true);
+            return;
+        }
         const startWord = this.elements.startWordInput.value.trim().toLowerCase();
+        let savedIndex = 0;
         if (!startWord) {
-            this.elements.startScreen.classList.add('hidden');
             try {
-                const key = app.state.LOCAL_STORAGE_KEYS.LAST_INDEX(grade);
-                const savedIndex = parseInt(localStorage.getItem(key) || '0');
-                this.state.currentIndex = (savedIndex >= 0 && savedIndex < currentWordList.length) ? savedIndex : 0;
-            } catch(e) {
-                this.state.currentIndex = 0;
-            }
-            this.launchApp(currentWordList);
-            return;
+                savedIndex = parseInt(localStorage.getItem(app.state.LOCAL_STORAGE_KEYS.LAST_INDEX(grade)) || '0');
+            } catch (e) {}
         }
-        const exactMatchIndex = currentWordList.findIndex(item => item.word.toLowerCase() === startWord);
-        if (exactMatchIndex !== -1) {
+        const result = this.findStart(allWords, part, startWord, savedIndex);
+        if (result.index !== undefined) {
             this.elements.startScreen.classList.add('hidden');
-            this.state.currentIndex = exactMatchIndex;
-            this.launchApp(currentWordList);
+            this.state.currentIndex = result.index;
+            this.launchApp(allWords);
             return;
         }
-        const searchRegex = new RegExp(`\\b${startWord}\\b`, 'i');
-        const explanationMatches = currentWordList
-            .map((item, index) => ({ word: item.word, index }))
-            .filter((item, index) => {
-                const explanation = currentWordList[index].explanation;
-                if (!explanation) return false;
-                const cleanedExplanation = explanation.replace(/\[.*?\]/g, '');
-                return searchRegex.test(cleanedExplanation);
-            });
-        const levenshteinSuggestions = currentWordList
-            .map((item, index) => ({
-                word: item.word, index,
-                distance: levenshteinDistance(startWord, item.word.toLowerCase())
-            }))
-            .sort((a, b) => a.distance - b.distance)
-            .slice(0, 5)
-            .filter(s => s.distance < s.word.length / 2 + 1);
-        if (levenshteinSuggestions.length > 0 || explanationMatches.length > 0) {
-            const title = `<strong>'${startWord}'</strong>(을)를 찾을 수 없습니다. 혹시 이 단어인가요?`;
-            this.displaySuggestions(levenshteinSuggestions, explanationMatches, currentWordList, title);
+        // 제목 줄이 가려지므로 어느 Part에서 찾았는지 안내문에 함께 적는다.
+        const scope = part ? `<strong>${ui.escapeHtml(part.name)}</strong>에서` : '';
+        if (result.vocabMatches.length > 0 || result.explanationMatches.length > 0) {
+            const title = `<strong>'${startWord}'</strong>(을)를${scope ? ' ' + scope : ''} 찾을 수 없습니다. 혹시 이 단어인가요?`;
+            this.displaySuggestions(result.vocabMatches, result.explanationMatches, allWords, title);
         } else {
-            const title = `<strong>'${startWord}'</strong>에 대한 검색 결과가 없습니다.`;
-            this.displaySuggestions([], [], currentWordList, title);
+            const title = `${scope ? scope + ' ' : ''}<strong>'${startWord}'</strong>에 대한 검색 결과가 없습니다.`;
+            this.displaySuggestions([], [], allWords, title);
         }
+    },
+    // 시작할 카드를 정한다. Part는 시작 위치와 검색 범위만 정하고, 카드 목록과 번호는 늘 전체 기준이라
+    // 들어간 뒤에는 앞뒤로 Part를 넘나든다. 반환하는 index는 전체 목록에서의 위치다.
+    findStart(allWords, part, startWord, savedIndex) {
+        if (!startWord) {
+            if (part) return { index: part.start - 1 };
+            return { index: savedIndex >= 0 && savedIndex < allWords.length ? savedIndex : 0 };
+        }
+        const searchEntries = allWords
+            .map((item, index) => ({ item, index }))
+            .filter(({ item }) => !part || utils.getPartName(item) === part.name);
+        const exactMatch = searchEntries.find(({ item }) => item.word.toLowerCase() === startWord);
+        if (exactMatch) return { index: exactMatch.index };
+        const searchRegex = new RegExp(`\\b${startWord}\\b`, 'i');
+        const explanationMatches = searchEntries
+            .filter(({ item }) => item.explanation && searchRegex.test(item.explanation.replace(/\[.*?\]/g, '')))
+            .map(({ item, index }) => ({ word: item.word, index }));
+        // 앞 글자가 같은 단어 → 검색어를 포함한 단어 → 철자가 비슷한 단어 순으로 최대 50개를 보여 준다.
+        const startsWith = [];
+        const includes = [];
+        const similar = [];
+        searchEntries.forEach(({ item, index }) => {
+            const wordLower = item.word.toLowerCase();
+            if (wordLower.startsWith(startWord)) {
+                startsWith.push({ word: item.word, index });
+            } else if (wordLower.includes(startWord)) {
+                includes.push({ word: item.word, index });
+            } else if (Math.abs(wordLower.length - startWord.length) <= 2) {
+                const distance = levenshteinDistance(startWord, wordLower, 2);
+                if (distance <= 2 && distance < Math.max(wordLower.length, startWord.length) * 0.4) {
+                    similar.push({ word: item.word, index, distance });
+                }
+            }
+        });
+        similar.sort((a, b) => a.distance - b.distance);
+        const vocabMatches = [...startsWith, ...includes, ...similar].slice(0, 50);
+        return { vocabMatches, explanationMatches };
     },
     async startMistakeReview(mistakeWordsFromQuiz) {
         this.state.isMistakeMode = true;
@@ -285,9 +322,45 @@ const learningMode = {
         this.elements.suggestionsContainer.classList.add('hidden');
         this.elements.startWordInput.value = '';
         this.elements.startWordInput.focus();
+        this.renderPartOptions();
         if (app.state.selectedSheet) {
-            this.loadWordList(false, app.state.selectedSheet);
+            this.loadWordList(false, app.state.selectedSheet)
+                .then(() => this.renderPartOptions())
+                .catch(error => console.error('단어 목록을 불러오지 못했습니다.', error));
         }
+    },
+    // 학습 Part 목록을 채우고 제목을 맞춘다. 저장해 둔 Part가 사라졌으면 전체로 돌린다.
+    renderPartOptions() {
+        const grade = app.state.selectedSheet;
+        if (!grade) return;
+        const isReady = this.state.isWordListReady[grade];
+        const partNames = isReady ? utils.getParts(grade).map(part => part.name) : [];
+        let selected = '';
+        try {
+            selected = localStorage.getItem(app.state.LOCAL_STORAGE_KEYS.LEARNING_PART(grade)) || '';
+        } catch (e) {}
+        // 목록을 받기 전에는 저장된 Part를 그대로 보여 두고, 받은 뒤에 아직 있는지 확인한다.
+        if (!isReady && selected) partNames.push(selected);
+        if (isReady && !partNames.includes(selected)) selected = '';
+        ui.fillPartSelect(this.elements.partSelect, partNames);
+        this.elements.partSelect.value = selected;
+        this.updateStartText(selected);
+    },
+    selectPart(partName) {
+        const grade = app.state.selectedSheet;
+        if (!grade) return;
+        try {
+            localStorage.setItem(app.state.LOCAL_STORAGE_KEYS.LEARNING_PART(grade), partName);
+        } catch (e) {
+            console.error("Error saving learning part to localStorage", e);
+        }
+        this.updateStartText(partName);
+    },
+    updateStartText(partName) {
+        this.elements.startTitle.textContent = `학습 모드 (${partName || '전체'})`;
+        this.elements.startHint.textContent = partName
+            ? '(비워두면 이 Part의 첫 어휘부터 시작합니다.)'
+            : '(비워두면 최근 학습한 어휘부터 시작합니다.)';
     },
     showError(message) {
         this.elements.loader.querySelector('.loader').style.display = 'none';
@@ -320,7 +393,7 @@ const learningMode = {
         this.elements.wordDisplay.textContent = wordData.word;
         ui.adjustFontSize(this.elements.wordDisplay);
         this.elements.meaningDisplay.innerHTML = wordData.meaning.replace(/\n/g, '<br>');
-        ui.renderInteractiveText(this.elements.explanationDisplay, wordData.explanation);
+        ui.renderExplanation(this.elements.explanationDisplay, wordData.explanation);
         this.elements.explanationContainer.classList.toggle('hidden', !wordData.explanation || !wordData.explanation.trim());
         const hasSample = wordData.sample && wordData.sample.trim() !== '';
         const defaultImg = 'images/cat-add.png';
@@ -405,7 +478,8 @@ const learningMode = {
         if (!this.isLearningModeActive() || this.state.touchstartX === 0 || e.target.closest('button, a, input, [onclick], #progress-bar-track')) { this.state.touchstartX = this.state.touchstartY = 0; return; }
         const deltaX = e.changedTouches[0].screenX - this.state.touchstartX;
         const deltaY = e.changedTouches[0].screenY - this.state.touchstartY;
-        if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) this.navigate(deltaX > 0 ? -1 : 1);
+        // 가로 움직임이 세로의 2배를 넘을 때만 넘긴다. 설명을 위아래로 스크롤하다 카드가 넘어가지 않게 한다.
+        if (Math.abs(deltaX) > Math.abs(deltaY) * 2 && Math.abs(deltaX) > 50) this.navigate(deltaX > 0 ? -1 : 1);
         this.state.touchstartX = this.state.touchstartY = 0;
     },
     updateProgressBar(index) {
@@ -464,19 +538,25 @@ const learningMode = {
         }
     },
 };
-function levenshteinDistance(a = '', b = '') {
-    const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
-    for (let i = 0; i <= a.length; i += 1) track[0][i] = i;
-    for (let j = 0; j <= b.length; j += 1) track[j][0] = j;
-    for (let j = 1; j <= b.length; j += 1) {
-        for (let i = 1; i <= a.length; i += 1) {
-            const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
-            track[j][i] = Math.min(
-                track[j][i - 1] + 1,
-                track[j - 1][i] + 1,
-                track[j - 1][i - 1] + indicator,
-            );
+// 편집 거리. limit를 주면 그보다 커지는 순간 limit + 1을 돌려주고 멈춘다(검색이 빨라진다).
+function levenshteinDistance(s = '', t = '', limit = Infinity) {
+    if (s === t) return 0;
+    if (s.length === 0) return t.length;
+    if (t.length === 0) return s.length;
+    if (Math.abs(s.length - t.length) > limit) return limit + 1;
+    let v0 = new Array(t.length + 1);
+    let v1 = new Array(t.length + 1);
+    for (let i = 0; i < v0.length; i++) v0[i] = i;
+    for (let i = 0; i < s.length; i++) {
+        v1[0] = i + 1;
+        let minRow = v1[0];
+        for (let j = 0; j < t.length; j++) {
+            const cost = s[i] === t[j] ? 0 : 1;
+            v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
+            minRow = Math.min(minRow, v1[j + 1]);
         }
+        if (minRow > limit) return limit + 1;
+        [v0, v1] = [v1, v0];
     }
-    return track[b.length][a.length];
+    return v0[t.length];
 }

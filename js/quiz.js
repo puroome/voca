@@ -23,8 +23,10 @@ const quizMode = {
             '1y': {}, '2y': {}, '3y': {}
         },
         currentRangeInputTarget: null,
+        isFinalResult: false,
     },
     elements: {},
+    CUSTOM_PART_VALUE: '__custom__',
     init() {
         this.elements = {
             quizSelectionScreen: document.getElementById('quiz-selection-screen'),
@@ -35,6 +37,7 @@ const quizMode = {
             mixedTypeButtons: Array.from(document.querySelectorAll('.mixed-type-btn')),
             quizRangeStart: document.getElementById('quiz-range-start'),
             quizRangeEnd: document.getElementById('quiz-range-end'),
+            quizPartSelect: document.getElementById('quiz-part-select'),
             loader: document.getElementById('quiz-loader'),
             loaderText: document.getElementById('quiz-loader-text'),
             contentContainer: document.getElementById('quiz-content-container'),
@@ -65,6 +68,7 @@ const quizMode = {
         });
         this.elements.quizRangeStart.addEventListener('click', (e) => this.promptForRangeValue(e.target));
         this.elements.quizRangeEnd.addEventListener('click', (e) => this.promptForRangeValue(e.target));
+        this.elements.quizPartSelect.addEventListener('change', () => this.applyQuizPart(this.elements.quizPartSelect.value));
         this.elements.rangeInputConfirmBtn.addEventListener('click', () => this.confirmRangeInput());
         this.elements.rangeInputCancelBtn.addEventListener('click', () => this.hideRangeInput());
         this.elements.rangeInputModal.addEventListener('click', () => this.hideRangeInput());
@@ -143,6 +147,7 @@ const quizMode = {
                 app.showToast("숫자만 입력 가능합니다.", true);
             }
         }
+        this.syncQuizPartSelect();
         this.hideRangeInput();
     },
     resetQuizRange() {
@@ -159,6 +164,62 @@ const quizMode = {
         } catch (e) {
             console.error("Error saving reset quiz range to localStorage", e);
         }
+        this.syncQuizPartSelect();
+    },
+    // Part를 고르면 그 Part의 첫·마지막 어휘카드 번호를 출제범위에 넣는다. 전체는 1부터 끝까지다.
+    applyQuizPart(partName) {
+        const grade = app.state.selectedSheet;
+        if (!grade) return;
+        const part = partName && utils.getParts(grade).find(item => item.name === partName);
+        if (!part) {
+            this.resetQuizRange();
+            return;
+        }
+        this.elements.quizRangeStart.textContent = part.start;
+        this.elements.quizRangeEnd.textContent = part.end;
+        try {
+            localStorage.setItem(app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_START(grade), part.start);
+            localStorage.setItem(app.state.LOCAL_STORAGE_KEYS.QUIZ_RANGE_END(grade), part.end);
+        } catch (e) {
+            console.error("Error saving part quiz range to localStorage", e);
+        }
+        this.clearAndPreloadQuizzesForNewRange(grade);
+        this.syncQuizPartSelect();
+    },
+    renderQuizPartOptions() {
+        const grade = app.state.selectedSheet;
+        if (!grade) return;
+        ui.fillPartSelect(this.elements.quizPartSelect, utils.getParts(grade).map(part => part.name));
+        this.syncQuizPartSelect();
+    },
+    // 출제범위가 1부터 끝이면 전체, 어느 Part와 꼭 맞으면 그 Part, 둘 다 아니면 '직접 입력'을 보여 준다.
+    syncQuizPartSelect() {
+        const grade = app.state.selectedSheet;
+        const select = this.elements.quizPartSelect;
+        if (!grade || !select) return;
+        const value = this.getPartValueForRange(
+            parseInt(this.elements.quizRangeStart.textContent),
+            parseInt(this.elements.quizRangeEnd.textContent),
+            learningMode.state.wordList[grade]?.length || 0,
+            utils.getParts(grade)
+        );
+        // '직접 입력'은 고를 수 있는 항목이 아니라 상태 표시이므로 필요할 때만 넣는다.
+        select.querySelector(`option[value="${this.CUSTOM_PART_VALUE}"]`)?.remove();
+        if (value === this.CUSTOM_PART_VALUE) {
+            const option = document.createElement('option');
+            option.value = this.CUSTOM_PART_VALUE;
+            option.textContent = '직접 입력';
+            option.disabled = true;
+            select.appendChild(option);
+        }
+        select.value = value;
+    },
+    getPartValueForRange(start, end, totalWords, parts) {
+        const low = Math.min(start, end);
+        const high = Math.max(start, end);
+        if (low === 1 && high === totalWords) return '';
+        const part = parts.find(item => item.start === low && item.end === high);
+        return part ? part.name : this.CUSTOM_PART_VALUE;
     },
     clearAndPreloadQuizzesForNewRange(grade) {
         if (!grade || !this.state.preloadedQuizzes[grade]) return;
@@ -288,6 +349,7 @@ const quizMode = {
             this.elements.quizRangeEnd.textContent = endValue;
             this.elements.quizRangeEnd.dataset.min = 1;
             this.elements.quizRangeEnd.dataset.max = totalWords;
+            this.renderQuizPartOptions();
         }
     },
     async displayNextQuiz() {
@@ -373,17 +435,7 @@ const quizMode = {
                 const wordData = allWords.find(item => item.word === word);
                 if (!wordData) continue;
 
-                let quiz = null;
-                if (quizType === 'MULTIPLE_CHOICE_MEANING') {
-                    quiz = this.createMeaningQuiz(wordData, usableAllWordsForChoices);
-                } else if (quizType === 'FILL_IN_THE_BLANK') {
-                    quiz = this.createBlankQuiz(wordData, usableAllWordsForChoices);
-                } else if (quizType === 'MULTIPLE_CHOICE_DEFINITION') {
-                    const definition = await api.fetchDefinition(wordData.word);
-                    if (definition) {
-                        quiz = this.createDefinitionQuiz(wordData, usableAllWordsForChoices, definition);
-                    }
-                }
+                const quiz = await this._makeQuizFromCandidates(quizType, [wordData], usableAllWordsForChoices);
                 if (quiz) {
                     this.state.currentQuizType = quizType;
                     return quiz;
@@ -422,21 +474,39 @@ if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
             });
         }
         if (candidates.length === 0) return null;
-        candidates.sort(() => 0.5 - Math.random());
+        utils.shuffleArray(candidates);
         const usableAllWordsForChoices = allWords.length >= 4 ? allWords : [...allWords, {word: 'dummy1', meaning: '오답1'}, {word: 'dummy2', meaning: '오답2'}, {word: 'dummy3', meaning: '오답3'}];
-        for (const wordData of candidates) {
-            let quiz = null;
-            if (this.state.currentQuizType === 'MULTIPLE_CHOICE_MEANING') {
-                quiz = this.createMeaningQuiz(wordData, usableAllWordsForChoices);
-            } else if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
-                quiz = this.createBlankQuiz(wordData, usableAllWordsForChoices);
-            } else if (this.state.currentQuizType === 'MULTIPLE_CHOICE_DEFINITION') {
-                const definition = await api.fetchDefinition(wordData.word);
-                if (definition) {
-                    quiz = this.createDefinitionQuiz(wordData, usableAllWordsForChoices, definition);
-                }
+        return this._makeQuizFromCandidates(this.state.currentQuizType, candidates, usableAllWordsForChoices);
+    },
+    // 후보 단어 가운데 처음으로 만들어지는 퀴즈를 돌려준다. 영한·빈칸은 바로 만들 수 있어 차례로 시도하고,
+    // 영영은 사전 API를 기다려야 해서 5개씩 동시에 물어 가장 먼저 뜻풀이가 온 단어로 낸다.
+    // exhaustive가 false면(미리 준비용) 첫 5개만 시도한다.
+    async _makeQuizFromCandidates(quizType, candidates, allWordsForChoices, { exhaustive = true } = {}) {
+        if (candidates.length === 0) return null;
+        if (quizType === 'MULTIPLE_CHOICE_MEANING' || quizType === 'FILL_IN_THE_BLANK') {
+            for (const wordData of candidates) {
+                const quiz = quizType === 'MULTIPLE_CHOICE_MEANING'
+                    ? this.createMeaningQuiz(wordData, allWordsForChoices)
+                    : this.createBlankQuiz(wordData, allWordsForChoices);
+                if (quiz) return quiz;
             }
-            if (quiz) return quiz;
+            return null;
+        }
+        if (quizType !== 'MULTIPLE_CHOICE_DEFINITION') return null;
+        const BATCH_SIZE = 5;
+        const limit = exhaustive ? candidates.length : Math.min(BATCH_SIZE, candidates.length);
+        for (let i = 0; i < limit; i += BATCH_SIZE) {
+            const batch = candidates.slice(i, Math.min(i + BATCH_SIZE, limit));
+            try {
+                return await Promise.any(batch.map(async wordData => {
+                    const definition = await api.fetchDefinition(wordData.word);
+                    const quiz = definition ? this.createDefinitionQuiz(wordData, allWordsForChoices, definition) : null;
+                    if (!quiz) throw new Error('no-quiz');
+                    return quiz;
+                }));
+            } catch (e) {
+                // 이 묶음에서 하나도 만들지 못했으면 다음 묶음을 시도한다.
+            }
         }
         return null;
     },
@@ -473,7 +543,7 @@ if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
             questionDisplay.classList.add('justify-center', 'items-center');
             const h1 = document.createElement('h1');
             h1.className = 'text-3xl sm:text-4xl font-bold text-center text-gray-800 cursor-pointer';
-            h1.title = "클릭하여 발음 듣기";
+            if (!isIosDevice()) h1.title = "클릭하여 발음 듣기";
             h1.textContent = question.word;
             h1.onclick = () => api.speak(question.word);
             questionDisplay.appendChild(h1);
@@ -483,7 +553,14 @@ if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
         choices.forEach((choice, index) => {
             const li = document.createElement('li');
             li.className = 'choice-item border-2 border-gray-300 py-3 px-4 rounded-lg cursor-pointer flex items-start transition-all text-lg hover:bg-blue-50';
-            li.innerHTML = `<span class="font-bold mr-3">${index + 1}.</span> <span>${choice}</span>`;
+            const indexSpan = document.createElement('span');
+            indexSpan.className = 'font-bold mr-3';
+            indexSpan.textContent = `${index + 1}.`;
+            const choiceSpan = document.createElement('span');
+            choiceSpan.textContent = choice;
+            li.append(indexSpan, choiceSpan);
+            // 정답 표시는 화면 글자가 아니라 보기 값으로 찾는다(뜻에 < & 같은 글자가 있어도 정확하다).
+            li._choice = choice;
             li.onclick = () => this.checkAnswer(li, choice);
             this.elements.choices.appendChild(li);
         });
@@ -522,29 +599,30 @@ if (this.state.currentQuizType === 'FILL_IN_THE_BLANK') {
              this.state.practiceLearnedWords.push(word);
         }
         if (!isCorrect || isPass) {
-            const correctAnswerEl = Array.from(this.elements.choices.children).find(li => {
-                const choiceSpan = li.querySelector('span:last-child');
-                return choiceSpan && choiceSpan.textContent === this.state.currentQuiz.answer;
-            });
+            const correctAnswerEl = Array.from(this.elements.choices.children)
+                .find(li => li._choice === this.state.currentQuiz.answer);
             correctAnswerEl?.classList.add('correct');
         }
+        // 틀렸을 때는 정답을 확인할 시간을 더 준다.
         setTimeout(() => {
             if (this.state.sessionAnsweredInSet >= this.state.sessionLimit) {
                 this.showSessionResultModal(true);
             } else {
                 this.displayNextQuiz();
             }
-        }, 600);
+        }, (isCorrect && !isPass) ? 1200 : 2000);
     },
     showSessionResultModal(isFinal = false) {
         this.elements.quizResultScore.textContent = `${this.state.sessionAnsweredInSet}문제 중 ${this.state.sessionCorrectInSet}개 정답!`;
         this.elements.quizResultMistakesBtn.classList.toggle('hidden', this.state.sessionMistakes.length === 0);
+        // 버튼 문구가 아니라 상태로 다음 동작을 정한다(문구를 바꿔도 동작이 틀어지지 않게).
+        this.state.isFinalResult = isFinal;
         this.elements.quizResultContinueBtn.textContent = isFinal ? "퀴즈 유형으로" : "다음 퀴즈 계속";
         this.elements.quizResultModal.classList.remove('hidden');
     },
     continueAfterResult() {
         this.elements.quizResultModal.classList.add('hidden');
-        if (this.elements.quizResultContinueBtn.textContent === "퀴즈 유형으로") {
+        if (this.state.isFinalResult) {
             app.syncOfflineData();
             app.navigateTo('quiz', app.state.selectedSheet);
             return;
@@ -646,17 +724,10 @@ if (quizType === 'FILL_IN_THE_BLANK') {
             });
         }
         if (candidates.length === 0) return null;
-        candidates.sort(() => 0.5 - Math.random());
+        utils.shuffleArray(candidates);
         const usableAllWordsForChoices = allWords.length >= 4 ? allWords : [...allWords, {word: 'dummy1', meaning: '오답1'}, {word: 'dummy2', meaning: '오답2'}, {word: 'dummy3', meaning: '오답3'}];
-        const wordData = candidates[0];
-        let quiz = null;
-        if (quizType === 'MULTIPLE_CHOICE_MEANING') quiz = this.createMeaningQuiz(wordData, usableAllWordsForChoices);
-        else if (quizType === 'FILL_IN_THE_BLANK') quiz = this.createBlankQuiz(wordData, usableAllWordsForChoices);
-        else if (quizType === 'MULTIPLE_CHOICE_DEFINITION') {
-             const definition = await api.fetchDefinition(wordData.word);
-             if (definition) quiz = this.createDefinitionQuiz(wordData, usableAllWordsForChoices, definition);
-        }
-        return quiz;
+        // 미리 준비는 한 문제면 되므로 영영도 첫 5개만 시도한다.
+        return this._makeQuizFromCandidates(quizType, candidates, usableAllWordsForChoices, { exhaustive: false });
     },
     _parsePosTokens(pos) {
         if (typeof pos !== 'string') return [];

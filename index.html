@@ -9,7 +9,7 @@
     <link rel="manifest" href="manifest.json">
     
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="style.css?v=20260726-1">
+    <link rel="stylesheet" href="style.css?v=20260912-3">
     <style>
         .grade-select-card:hover .grade-tooltip {
             opacity: 1;
@@ -167,13 +167,16 @@
                 <h1 class="text-2xl font-bold text-gray-800 mb-6">퀴즈 유형</h1>
                 <div class="text-gray-600 mb-8">
                     <p>원하는 퀴즈 유형과 범위를 선택하세요.</p>
-                     <div class="flex justify-center items-center mt-3 text-base font-semibold">
+                     <div class="flex flex-wrap justify-center items-center gap-x-3 gap-y-2 mt-3 text-base font-semibold">
+                        <span class="inline-flex items-center whitespace-nowrap">
                         <span id="quiz-range-label" class="mr-1 cursor-pointer">🔒출제범위 :</span>
                         <button id="quiz-range-start" data-min="1" data-max="1"
                                 class="min-w-[1.5rem] text-center font-bold text-white bg-red-500 bg-opacity-30 hover:bg-opacity-60 rounded-md px-0.5 py-0.5 transition-colors">1</button>
                         <span class="mx-1">-</span>
                          <button id="quiz-range-end" data-min="1" data-max="1"
                                  class="min-w-[1.5rem] text-center font-bold text-white bg-red-500 bg-opacity-30 hover:bg-opacity-60 rounded-md px-0.5 py-0.5 transition-colors">1</button>
+                        </span>
+                        <select id="quiz-part-select" class="part-select h-8 max-w-[10rem] text-base" aria-label="출제 Part"></select>
                      </div>
                      <div class="flex justify-center items-center gap-2 mt-4">
                          <button class="mixed-type-btn w-9 h-9 rounded-lg border-2 border-gray-300 bg-white text-gray-600 font-bold transition-colors" data-quiz-type="MULTIPLE_CHOICE_MEANING" aria-pressed="false" title="영한 퀴즈">1</button>
@@ -215,9 +218,12 @@
         <div id="learning-mode-container" class="hidden">
             <div id="learning-start-screen" class="content-panel p-8 rounded-2xl shadow-lg text-center">
                 <div id="learning-start-input-container">
-                    <h1 class="text-2xl font-bold text-gray-800 mb-4">학습 모드</h1>
-                    <p class="text-gray-600 mb-6">학습을 시작할 단어를 입력하세요.<br>(비워두면 최근 학습한 어휘부터 시작합니다.)</p>
-                    <input type="text" id="learning-start-word-input" class="w-full border-2 border-gray-300 p-3 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="예: serendipity" style="ime-mode: inactive;">
+                    <h1 id="learning-start-title" class="text-2xl font-bold text-gray-800 mb-4">학습 모드 (전체)</h1>
+                    <p class="text-gray-600 mb-6">학습을 시작할 단어를 입력하세요.<br><span id="learning-start-hint">(비워두면 최근 학습한 어휘부터 시작합니다.)</span></p>
+                    <div class="grid grid-cols-3 gap-2">
+                        <input type="text" id="learning-start-word-input" class="col-span-2 min-w-0 w-full border-2 border-gray-300 p-3 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="예: serendipity" style="ime-mode: inactive;">
+                        <select id="learning-part-select" class="part-select min-w-0 w-full text-lg" aria-label="학습할 Part"></select>
+                    </div>
                     <button id="learning-start-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors mt-4">학습 시작</button>
                 </div>
                 <div id="learning-suggestions-container" class="hidden mt-4 text-left">
@@ -300,7 +306,7 @@
             <div class="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-gray-900"></div>
         </div>
     </div>
-    <div id="word-context-menu" class="hidden absolute bg-white rounded-md shadow-lg py-1 z-[120] border border-gray-200 flex flex-col">
+    <div id="word-context-menu" class="hidden fixed bg-white rounded-md shadow-lg py-1 z-[120] border border-gray-200 flex flex-col">
         <button id="search-daum-context-btn" class="text-left w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap">Daum</button>
         <button id="search-naver-context-btn" class="text-left w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap">Naver</button>
         <button id="search-longman-context-btn" class="text-left w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap">Longman</button>

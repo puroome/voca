@@ -35,9 +35,10 @@ const activityTracker = {
         if (!this.activeGrade) return;
         try {
             Object.entries(this.sessionSecondsByDate).forEach(([date, seconds]) => {
-                vocaStatsStore.addStudySeconds(this.activeGrade, date, seconds);
+                utils.withStorageRecovery(() => vocaStatsStore.addStudySeconds(this.activeGrade, date, seconds));
+                // 날짜마다 저장이 끝나면 지워서, 도중에 실패해 다시 저장해도 두 번 더해지지 않게 한다.
+                delete this.sessionSecondsByDate[date];
             });
-            this.sessionSecondsByDate = {};
         } catch (error) {
             console.error("Error saving study time to localStorage", error);
         }
@@ -120,10 +121,11 @@ const app = {
         LOCAL_STORAGE_KEYS: {
             LAST_GRADE: 'student_lastGrade',
             PRACTICE_MODE: 'student_practiceMode',
-            LAST_INDEX: (grade) => `student_lastIndex_${grade}`,
+            LAST_INDEX: (grade) => `student_lastIndex_${grade}`,            LEARNING_PART: (grade) => `student_learningPart_${grade}`,
             UNSYNCED_PROGRESS_UPDATES: (grade) => `student_unsyncedProgress_${grade}`,
             CACHE_TIMESTAMP: (grade) => `wordListCacheTimestamp_${grade}`,
             CACHE_VERSION: (grade) => `wordListVersion_${grade}`,
+            WORD_LIST_CACHE: (grade) => `wordListCache_${grade}`,
             QUIZ_RANGE_START: (grade) => `student_quizRangeStart_${grade}`,
             QUIZ_RANGE_END: (grade) => `student_quizRangeEnd_${grade}`
         }
@@ -188,6 +190,7 @@ const app = {
         await Promise.all([
             translationDBCache.init(),
             audioDBCache.init(),
+            definitionDBCache.init(),
             this.fetchAndSetBackgroundImages()
         ]).catch(e => console.error("Cache or image init failed", e));
         this.bindGlobalEvents();
@@ -314,7 +317,7 @@ const app = {
             }
         } catch (error) {
             console.error("Permission Check Error:", error);
-            this.showToast("권한 확인 중 오류가 발생했습니다. 다시 시도해 주세요.", true);
+            this.showToast("권한을 확인하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 로그인해 주세요.", true);
             signOut(auth);
         }
     },
@@ -596,6 +599,9 @@ const app = {
                      console.error("Web Audio API is not supported in this browser", e);
                  }
             }
+            if (this.state.audioContext && this.state.audioContext.state !== 'running') {
+                this.state.audioContext.resume().catch(() => {});
+            }
             document.body.removeEventListener('click', initAudioForBeep, { capture: true });
             document.body.removeEventListener('touchstart', initAudioForBeep, { capture: true, passive: true });
         };
@@ -628,6 +634,8 @@ const app = {
     },
     async _renderView(view, grade, options = {}) {
         activityTracker.stopAndSave();
+        // 다른 화면으로 옮기면 읽던 발음을 멈춘다.
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
         this.elements.gradeSelectionScreen.classList.add('hidden');
         this.elements.selectionScreen.classList.add('hidden');
         this.elements.quizModeContainer.classList.add('hidden');

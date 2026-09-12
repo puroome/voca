@@ -128,15 +128,17 @@ const utils = {
     addProgressUpdateToLocalSync(word, key, value, grade = app.state.selectedSheet) {
         if (!grade) return;
         try {
-            const previous = this.getUnsyncedProgress(grade);
-            const unsynced = {
-                ...previous,
-                [word]: {
-                    ...(previous[word] || {}),
-                    [key]: value
-                }
-            };
-            this._writeUnsyncedProgress(grade, unsynced);
+            this.withStorageRecovery(() => {
+                const previous = this.getUnsyncedProgress(grade);
+                const unsynced = {
+                    ...previous,
+                    [word]: {
+                        ...(previous[word] || {}),
+                        [key]: value
+                    }
+                };
+                this._writeUnsyncedProgress(grade, unsynced);
+            });
         } catch (e) {
             console.error("Error adding progress update to localStorage sync", e);
         }
@@ -277,12 +279,12 @@ const utils = {
     saveQuizHistoryToLocal(quizType, isCorrect, grade) {
         if (!grade || !quizType) return;
         try {
-            vocaStatsStore.addQuizResult(
+            this.withStorageRecovery(() => vocaStatsStore.addQuizResult(
                 grade,
                 vocaStatsStore.getLocalDateString(),
                 quizType,
                 isCorrect
-            );
+            ));
         } catch (e) {
             console.error("Error saving quiz stats to localStorage", e);
         }
@@ -326,6 +328,66 @@ const utils = {
              throw error;
          }
      },
+    isQuotaError(error) {
+        return Boolean(error) && (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+            || error.code === 22 || error.code === 1014);
+    },
+    _removeWordListCache(grade) {
+        const keys = app.state.LOCAL_STORAGE_KEYS;
+        [keys.WORD_LIST_CACHE(grade), keys.CACHE_TIMESTAMP(grade), keys.CACHE_VERSION(grade)]
+            .forEach(key => localStorage.removeItem(key));
+    },
+    // 저장 공간이 차서 쓰기가 실패하면 다시 받을 수 있는 단어장 캐시를 비우고 한 번 더 쓴다.
+    // 학습 기록은 다시 만들 수 없으니 캐시를 먼저 비운다. 지금 학년 단어장은 이미 화면에 올라와 있어 맨 나중에 비운다.
+    withStorageRecovery(write) {
+        try {
+            return write();
+        } catch (error) {
+            if (!this.isQuotaError(error)) throw error;
+            let lastError = error;
+            const current = app.state.selectedSheet;
+            const grades = ['1y', '2y', '3y'];
+            for (const batch of [grades.filter(grade => grade !== current), grades.filter(grade => grade === current)]) {
+                if (batch.length === 0) continue;
+                batch.forEach(grade => this._removeWordListCache(grade));
+                try {
+                    const result = write();
+                    console.warn(`저장 공간이 부족해 단어장 캐시(${batch.join(', ')})를 비우고 저장했습니다.`);
+                    return result;
+                } catch (retryError) {
+                    if (!this.isQuotaError(retryError)) throw retryError;
+                    lastError = retryError;
+                }
+            }
+            throw lastError;
+        }
+    },
+    // 시트 Part 열로 나눈 구간을 시트에 적힌 순서대로 돌려준다. start·end는 어휘카드 번호(1부터)다.
+    getParts(grade = app.state.selectedSheet) {
+        const words = learningMode.state.wordList[grade] || [];
+        const parts = new Map();
+        words.forEach((wordObj, index) => {
+            const name = this.getPartName(wordObj);
+            if (!name) return;
+            if (!parts.has(name)) {
+                parts.set(name, {
+                    name,
+                    order: Number(wordObj.partOrder) || Infinity,
+                    start: index + 1,
+                    end: index + 1,
+                    count: 0
+                });
+            }
+            const part = parts.get(name);
+            part.end = index + 1;
+            part.count++;
+        });
+        // partOrder가 없는 예전 데이터는 목록에 처음 나온 순서를 따른다.
+        return [...parts.values()].sort((a, b) => (a.order - b.order) || (a.start - b.start));
+    },
+    getPartName(wordObj) {
+        return String(wordObj?.part ?? '').trim();
+    },
     shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));

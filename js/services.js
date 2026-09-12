@@ -4,6 +4,8 @@ function playSingleBeep({ frequency, duration = 0.1, type = 'sine', gain = 0.3, 
         console.warn("AudioContext not initialized. Cannot play beep.");
         return;
     }
+    // 아이폰은 앱을 나갔다 오면 소리 장치가 멈추므로(suspended·interrupted) 다시 깨운다.
+    if (app.state.audioContext.state !== 'running') app.state.audioContext.resume().catch(() => {});
     const oscillator = app.state.audioContext.createOscillator();
     const gainNode = app.state.audioContext.createGain();
     const now = app.state.audioContext.currentTime;
@@ -48,6 +50,15 @@ const incorrectBeep = {
         { delay: 90, frequency: 400, duration: 0.07, type: 'square', gain: 0.15 }
     ]
 };
+// 아이폰과 아이패드의 Web Speech 음성은 품질이 낮아 발음을 들려주지 않는다 (novel 앱과 같은 판별).
+// iPadOS 13+는 데스크톱 Safari인 척하므로 터치 지점 수로 맥과 구분한다. 맥은 0이다.
+// iOS의 크롬·엣지도 속은 WebKit이라 사용자 문자열에 iPhone/iPad가 들어가 함께 걸린다.
+function isIosDevice(navigatorLike = globalThis.navigator) {
+    if (!navigatorLike) return false;
+    if (/iPad|iPhone|iPod/.test(String(navigatorLike.userAgent || ''))) return true;
+    return String(navigatorLike.platform || '') === 'MacIntel'
+        && Number(navigatorLike.maxTouchPoints || 0) > 1;
+}
 const audioDBCache = {
     db: null, dbName: 'ttsAudioCacheDB_voca', storeName: 'audioStore',
     init() {
@@ -108,6 +119,45 @@ const translationDBCache = {
             tx.onerror = (e) => console.error("IndexedDB save translation transaction error:", e.target.error);
         }
         catch (e) { console.error("IndexedDB save translation error:", e); }
+    }
+};
+// 영영 풀이 캐시: 메모리에 먼저 두고 IndexedDB에도 저장한다.
+// 저장된 적 없는 단어는 undefined, 사전에 뜻풀이가 없다고 확인된 단어는 ''이다.
+const definitionDBCache = {
+    db: null, dbName: 'definitionCacheDB_voca', storeName: 'definitionStore', memory: new Map(),
+    init() {
+        return new Promise(resolve => {
+            if (!('indexedDB' in window)) return resolve();
+            const request = indexedDB.open(this.dbName, 1);
+            request.onupgradeneeded = event => { const db = event.target.result; if (!db.objectStoreNames.contains(this.storeName)) db.createObjectStore(this.storeName); };
+            request.onsuccess = event => { this.db = event.target.result; resolve(); };
+            request.onerror = event => { console.error("IndexedDB error (definition):", event.target.error); resolve(); };
+        });
+    },
+    get(key) {
+        if (this.memory.has(key)) return Promise.resolve(this.memory.get(key));
+        if (!this.db) return Promise.resolve(undefined);
+        return new Promise(resolve => {
+            try {
+                const request = this.db.transaction([this.storeName], 'readonly').objectStore(this.storeName).get(key);
+                request.onsuccess = () => {
+                    if (request.result !== undefined) this.memory.set(key, request.result);
+                    resolve(request.result);
+                };
+                request.onerror = () => resolve(undefined);
+            } catch (e) {
+                resolve(undefined);
+            }
+        });
+    },
+    save(key, value) {
+        this.memory.set(key, value);
+        if (!this.db) return;
+        try {
+            const tx = this.db.transaction([this.storeName], 'readwrite');
+            tx.objectStore(this.storeName).put(value, key);
+            tx.onerror = e => console.error("IndexedDB save definition error:", e.target.error);
+        } catch (e) { console.error("IndexedDB save definition error:", e); }
     }
 };
 const api = {
@@ -171,6 +221,8 @@ const api = {
 // [최종 수정] OS 상관없이 무조건 무료! + 오류 방지 적용
       async speak(text) {
     if (!text) return;
+    // iOS에서는 읽지 않는다. 눌러도 아무 일이 없을 뿐이다.
+    if (isIosDevice()) return;
     // 1. 활동 감지
     if (typeof activityTracker !== 'undefined') activityTracker.recordActivity();
     // 2. sb -> somebody
@@ -265,6 +317,11 @@ const api = {
     },
     async fetchDefinition(word) {
         if (!word) return null;
+        // 한 번 받은 영영 풀이는 기기에 저장해 두고 다시 쓴다. 모든 학생이 API 키 하나를 함께 쓰므로 호출을 줄인다.
+        // 뜻풀이가 없다는 답('')도 저장해 같은 단어를 또 묻지 않는다. 통신 오류는 저장하지 않는다.
+        const cacheKey = word.trim().toLowerCase();
+        const cached = await definitionDBCache.get(cacheKey);
+        if (cached !== undefined) return cached || null;
         const apiKey = app.config.MERRIAM_WEBSTER_API_KEY;
         const url = `https://dictionaryapi.com/api/v3/references/learners/json/${encodeURIComponent(word)}?key=${apiKey}`;
         try {
@@ -274,13 +331,15 @@ const api = {
                 return null;
             }
             const data = await response.json();
+            let definition = '';
             if (Array.isArray(data) && data.length > 0) {
                 const firstResult = data[0];
                 if (typeof firstResult === 'object' && firstResult !== null && firstResult.shortdef && Array.isArray(firstResult.shortdef) && firstResult.shortdef.length > 0) {
-                    return firstResult.shortdef[0].split(';')[0].trim();
+                    definition = firstResult.shortdef[0].split(';')[0].trim();
                 }
             }
-            return null;
+            definitionDBCache.save(cacheKey, definition);
+            return definition || null;
         } catch (e) {
             console.error(`Error fetching definition for ${word}:`, e);
             return null;
@@ -302,8 +361,13 @@ const api = {
             }
             return { status: 'not_found', canEdit: false };
         } catch (error) {
+            // 명단을 읽을 권한이 없다는 답은 '명단에 없음'과 같게 본다(새 학생이 권한을 요청하는 흐름).
+            // 연결 끊김 같은 다른 오류까지 '명단에 없음'으로 보면 승인된 학생에게 권한 요청 창이 떠서, 오류로 올려 보낸다.
+            if (/permission[_ ]denied/i.test(`${error?.code || ''} ${error?.message || ''}`)) {
+                return { status: 'not_found', canEdit: false };
+            }
             console.error("RTDB Permission Check Error:", error);
-            return { status: 'not_found', canEdit: false };
+            throw error;
         }
     },
     async requestPermission(email, name, grade) {
