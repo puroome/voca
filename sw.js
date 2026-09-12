@@ -1,8 +1,8 @@
-const CACHE_VERSION = 'voca-app-v7';
+const CACHE_VERSION = 'voca-app-v9';
 const APP_SHELL = [
   './',
   './index.html',
-  './style.css?v=20260912-3',
+  './style.css?v=20260912-5',
   './stats-store.js',
   './script.js',
   './js/app.js',

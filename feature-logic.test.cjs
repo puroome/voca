@@ -452,6 +452,23 @@ assert.deepEqual(separateLinesBlock.rows[0].items, [
 ]);
 console.log('PASS 같은 줄에서만 뜻 없는 어휘가 뒤의 뜻을 함께 쓰고, 줄바꿈을 넘어서는 묶지 않는다');
 
+const meaningRows = text => {
+    const blocks = ui.parseMeaning(text);
+    return blocks && plain(blocks.map(block => [block.label, block.items]));
+};
+assert.deepEqual(meaningRows(['n. ①닻 ②정신적 버팀목', '③뉴스 진행자', 'v. ④~을 정박시키다', '⑤~을 단단히 고정하다'].join('\n')), [
+    ['n', ['①닻', '②정신적 버팀목', '③뉴스 진행자']],
+    ['v', ['④~을 정박시키다', '⑤~을 단단히 고정하다']]
+]);
+assert.deepEqual(meaningRows('a. ①살아 있는 adv. ②생방송으로'), [['a', ['①살아 있는']], ['adv', ['②생방송으로']]]);
+assert.deepEqual(meaningRows(['adj. 생생한', 'ad. 생방송으로', 'prep. ~에 관하여', 'conj. ~하는 동안'].join('\n')),
+    [['a', ['생생한']], ['adv', ['생방송으로']], ['prep', ['~에 관하여']], ['conj', ['~하는 동안']]]);
+assert.deepEqual(meaningRows(['n. 닻', '버팀목', 'n. ③뉴스 진행자'].join('\n')), [['n', ['닻', '버팀목', '③뉴스 진행자']]]);
+assert.equal(meaningRows(['~을 이끌다', '앞서다', '선두, 우세'].join('\n')), null);
+assert.equal(meaningRows('a.m. 오전'), null);
+assert.equal(meaningRows(''), null);
+console.log('PASS 뜻은 품사별로 나눠 같은 품사를 한 줄에 잇고, 품사로 시작하지 않으면 그대로 둔다');
+
 const levenshtein = vm.runInContext('levenshteinDistance', context);
 assert.equal(levenshtein('kitten', 'sitting'), 3);
 assert.equal(levenshtein('abcdef', 'xyz', 2), 3);

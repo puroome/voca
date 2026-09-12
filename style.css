@@ -1337,6 +1337,54 @@ body {
 .ex-item { display: inline-block; max-width: 100%; margin-right: 2px; }
 /* 덩어리가 한 줄보다 길면 영어와 뜻 사이에서 먼저 끊기도록 뜻도 한 덩어리로 둔다. */
 .ex-gloss { display: inline-block; max-width: 100%; color: var(--ink-soft); font-size: 0.9em; margin-left: 0.3em; }
+
+/* 어휘카드 뜻: 품사마다 색 알약을 달고 같은 품사의 뜻은 한 줄에 잇는다. "번호 + 뜻"은 한 덩어리로
+   다음 줄에 넘어가고, 넘친 줄은 알약 칸만큼 들여 써진다. */
+#meaning-display.mn-list {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 9px;
+  row-gap: 2px;
+  align-items: start;
+}
+.mn-pos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  min-width: 30px;
+  height: 20px;
+  margin-top: 4px;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+.mn-pos[data-tone="blue"]   { background: #E6F1FB; color: #0C447C; }
+.mn-pos[data-tone="coral"]  { background: #FAECE7; color: #712B13; }
+.mn-pos[data-tone="green"]  { background: #EAF3DE; color: #27500A; }
+.mn-pos[data-tone="purple"] { background: #EEEDFE; color: #3C3489; }
+.mn-pos[data-tone="teal"]   { background: #E1F5EE; color: #085041; }
+.mn-pos[data-tone="pink"]   { background: #FBEAF0; color: #72243E; }
+.mn-item { display: inline-block; max-width: 100%; margin-right: 0.5em; }
+/* ①②… 번호: 글자 절반 크기의 호박색 동그라미 숫자를 위첨자처럼 글자 위쪽에 붙인다. */
+.mn-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 11px;
+  height: 11px;
+  margin-right: 2px;
+  padding: 0 2px;
+  border-radius: 6px;
+  background: #BA7517;
+  color: #FFFFFF;
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: 0.5em;
+}
 .ex-sep { color: #B4A98F; margin: 0 0.35em 0 0.25em; }
 .ex-root {
   display: inline-block;

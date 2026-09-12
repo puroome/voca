@@ -206,6 +206,84 @@ const ui = {
             targetElement.appendChild(blockEl);
         });
     },
+    // 뜻 앞의 품사 표시(n. v. a. …)를 색 알약으로 바꾼다. adj.는 a로, ad.는 adv로 같게 본다.
+    meaningPosThemes: {
+        n: { label: 'n', name: '명사', tone: 'blue' },
+        v: { label: 'v', name: '동사', tone: 'coral' },
+        a: { label: 'a', name: '형용사', tone: 'green' },
+        adj: { label: 'a', name: '형용사', tone: 'green' },
+        ad: { label: 'adv', name: '부사', tone: 'purple' },
+        adv: { label: 'adv', name: '부사', tone: 'purple' },
+        prep: { label: 'prep', name: '전치사', tone: 'teal' },
+        conj: { label: 'conj', name: '접속사', tone: 'pink' }
+    },
+    // 품사로 시작하는 뜻만 품사별로 나눈다. 품사가 없으면 null을 돌려 지금처럼 줄 그대로 보인다.
+    // 같은 품사는 시트의 줄바꿈과 상관없이 한 줄에 잇는다. ①②… 번호가 있으면 "번호 + 뜻"이,
+    // 없으면 시트의 한 줄이 한 덩어리다. "a.m."처럼 점 뒤에 글자가 바로 붙으면 품사로 보지 않는다.
+    parseMeaning(text) {
+        const source = String(text || '').trim();
+        const markerPattern = /(^|\s)(n|v|a|adj|ad|adv|prep|conj)\.(?=\s|[①-⑳가-힣~(\[]|$)/gi;
+        const markers = [...source.matchAll(markerPattern)];
+        if (markers.length === 0 || markers[0].index !== 0) return null;
+        const blocks = [];
+        markers.forEach((marker, index) => {
+            const start = marker.index + marker[0].length;
+            const end = index + 1 < markers.length ? markers[index + 1].index : source.length;
+            const body = source.slice(start, end);
+            const lines = body.split('\n').map(line => line.trim()).filter(Boolean);
+            const items = /[①-⑳]/.test(body)
+                ? lines.join(' ').split(/(?=[①-⑳])/).map(item => item.trim()).filter(Boolean)
+                : lines;
+            const theme = this.meaningPosThemes[marker[2].toLowerCase()];
+            const previous = blocks[blocks.length - 1];
+            if (previous && previous.label === theme.label) previous.items.push(...items);
+            else blocks.push({ label: theme.label, name: theme.name, tone: theme.tone, items });
+        });
+        return blocks.filter(block => block.items.length > 0);
+    },
+    renderMeaning(targetElement, text) {
+        if (!targetElement) return;
+        const blocks = this.parseMeaning(text);
+        targetElement.classList.toggle('mn-list', !!blocks);
+        if (!blocks) {
+            targetElement.innerHTML = '';
+            String(text || '').split('\n').forEach((line, index) => {
+                if (index > 0) targetElement.appendChild(document.createElement('br'));
+                this._appendMeaningText(targetElement, line);
+            });
+            return;
+        }
+        targetElement.innerHTML = '';
+        // 알약과 뜻 칸이 한 격자에 놓여, 넘친 줄은 알약 폭만큼 들여 쓰고 품사끼리 뜻의 시작이 맞는다.
+        blocks.forEach(({ label, name, tone, items }) => {
+            const badge = this._createSpan('mn-pos', label);
+            badge.dataset.tone = tone;
+            badge.title = name;
+            badge.setAttribute('aria-label', name);
+            const body = this._createSpan('mn-items', '');
+            items.forEach(item => {
+                const unit = this._createSpan('mn-item', '');
+                this._appendMeaningText(unit, item);
+                body.appendChild(unit);
+            });
+            targetElement.appendChild(badge);
+            targetElement.appendChild(body);
+        });
+    },
+    // ①②… 번호는 작은 호박색 동그라미 숫자로 바꿔 글자 위쪽에 붙이고, 나머지는 글자 그대로 둔다.
+    _appendMeaningText(targetElement, text) {
+        String(text).split(/([①-⑳])\s*/).forEach(part => {
+            if (!part) return;
+            const code = part.charCodeAt(0);
+            if (part.length === 1 && code >= 0x2460 && code <= 0x2473) {
+                const number = this._createSpan('mn-num', String(code - 0x2460 + 1));
+                number.setAttribute('aria-label', part);
+                targetElement.appendChild(number);
+            } else {
+                targetElement.appendChild(document.createTextNode(part));
+            }
+        });
+    },
     _createSpan(className, text) {
         const span = document.createElement('span');
         span.className = className;
